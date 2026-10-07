@@ -28,7 +28,9 @@ int main(int argc, char **argv)
 		return 2;
 	const bool inventoryFailure = argc > 3 && QString(argv[3]) == "--journal-inventory-failure";
 	const QString fault = argc > 3 ? QString(argv[3]) : QString();
-	const bool runtimeFault = fault == "--low-disk" || fault == "--stop-timeout" || fault == "--header-timeout";
+	const bool externalStop = fault == "--external-stop";
+	const bool runtimeFault = fault == "--low-disk" || fault == "--stop-timeout" || fault == "--header-timeout" ||
+				  fault == "--media-stall" || externalStop;
 	if (runtimeFault)
 		qputenv("HHC_TEST_CAPTURE_FAULT", fault.toUtf8());
 	const bool journal = runtimeFault || inventoryFailure ||
@@ -131,8 +133,17 @@ int main(int argc, char **argv)
 				result = 6;
 			}
 		} else if (runtimeFault) {
-			std::this_thread::sleep_for(std::chrono::seconds(fault == "--header-timeout" ? 12 : 3));
-			capture.stop(hhc::StopReason::User);
+			std::this_thread::sleep_for(
+				std::chrono::seconds(fault == "--header-timeout" || fault == "--media-stall" ? 13 : 3));
+			if (externalStop)
+				obs_enum_outputs(
+					[](void *, obs_output_t *output) {
+						obs_output_force_stop(output);
+						return true;
+					},
+					nullptr);
+			else
+				capture.stop(hhc::StopReason::User);
 			const bool ok = capture.wait(15000);
 			const auto recovered = store.loadPending(config.account);
 			QFile inv(out + "/inventory.json");
@@ -142,8 +153,9 @@ int main(int argc, char **argv)
 				result = 21;
 			} else {
 				const auto evidence = QJsonDocument::fromJson(inv.readAll()).object();
-				const auto expected = fault == "--low-disk" ? hhc::StopReason::DiskLimit
-									    : hhc::StopReason::EncoderFailure;
+				const auto expected = externalStop            ? hhc::StopReason::Shutdown
+						      : fault == "--low-disk" ? hhc::StopReason::DiskLimit
+									      : hhc::StopReason::EncoderFailure;
 				if (evidence["normalEnd"].toBool() || evidence["stopReason"].toInt() != int(expected))
 					result = 22;
 			}

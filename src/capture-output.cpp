@@ -11,9 +11,24 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
+#include <limits>
 
 namespace hhc {
 struct CaptureOutput::Impl {
+	Impl()
+	{
+		for (auto &pts : lastDts)
+			pts = std::numeric_limits<int64_t>::min();
+	}
+	static int64_t clockMs()
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(
+			       std::chrono::steady_clock::now().time_since_epoch())
+			.count();
+	}
+	std::array<std::atomic<int64_t>, 4> lastProgressMs{}, lastDts{};
+	std::atomic<int64_t> firstProgressMs{0};
+	std::atomic<bool> successful{false};
 	obs_output_t *output = nullptr;
 	std::array<obs_encoder_t *, 3> video{};
 	obs_encoder_t *audio = nullptr;
@@ -127,6 +142,8 @@ struct CaptureOutput::Impl {
 		const auto fault = qEnvironmentVariable("HHC_TEST_CAPTURE_FAULT");
 		if (fault == "--header-timeout" || (fault == "--stop-timeout" && s.cutoffPts > 0))
 			return;
+		if (fault == "--media-stall" && s.firstProgressMs > 0 && clockMs() - s.firstProgressMs > 1000)
+			return;
 #endif
 		if (!p) {
 			s.fail("OBS encoder failed");
@@ -134,6 +151,17 @@ struct CaptureOutput::Impl {
 		}
 		if (s.failed)
 			return;
+		const unsigned stream = p->type == OBS_ENCODER_AUDIO ? 3 : p->track_idx;
+		if (stream < 4) {
+			auto previous = s.lastDts[stream].load();
+			if (p->dts > previous) {
+				s.lastDts[stream] = p->dts;
+				const auto now = clockMs();
+				s.lastProgressMs[stream] = now;
+				int64_t unset = 0;
+				s.firstProgressMs.compare_exchange_strong(unset, now);
+			}
+		}
 		if (p->type == OBS_ENCODER_VIDEO && p->track_idx == 0 && s.firstVideoSys == 0)
 			s.firstVideoSys = p->sys_dts_usec;
 		if (s.cutoffPts > 0 && p->pts * 30000 >= s.cutoffPts * p->timebase_den) {
@@ -177,6 +205,12 @@ struct CaptureOutput::Impl {
 				mux[i] = std::make_unique<HlsMuxer>(config.directory, i, video[i], audio);
 			while (true) {
 				const auto now = std::chrono::steady_clock::now();
+				if (!failed && !stopRequested && now - began > std::chrono::seconds(10)) {
+					for (auto &last : lastProgressMs)
+						if (last == 0 || clockMs() - last > 10000)
+							throw std::runtime_error(
+								"Encoded video/audio progress stalled for 10 seconds; capture incomplete");
+				}
 				if (stopDeadline > 0 &&
 				    now - std::chrono::steady_clock::time_point(
 						  std::chrono::steady_clock::duration(stopDeadline.load())) >
@@ -306,6 +340,11 @@ struct CaptureOutput::Impl {
 				obs_encoder_packet_release(&p);
 			packets.clear();
 			bytes = 0;
+		}
+		successful = hhc::normalEnd(reason.load(), closed, failed);
+		if (!successful && !failed) {
+			std::lock_guard lock(mutex);
+			error = "Capture ended without normal user-stop completion; local media retained";
 		}
 		done = true;
 		cv.notify_all();
@@ -467,7 +506,8 @@ bool CaptureOutput::finished() const
 bool CaptureOutput::wait(unsigned timeoutMs)
 {
 	std::unique_lock lock(d->mutex);
-	return d->cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&] { return d->done.load(); }) && !d->failed;
+	return d->cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&] { return d->done.load(); }) &&
+	       d->successful;
 }
 QString CaptureOutput::error() const
 {

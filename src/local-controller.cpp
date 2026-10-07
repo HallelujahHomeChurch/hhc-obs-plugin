@@ -73,7 +73,11 @@ void LocalController::shutdown()
 	if (capture_)
 		capture_->stop(StopReason::Shutdown);
 	capture_.reset();
-	recovery_.waitForFinished();
+	try {
+		recovery_.waitForFinished();
+	} catch (...) {
+		state_.issue = QString::fromUtf8("本機恢復檢查失敗，資料已保留。");
+	}
 }
 bool LocalController::eventFilter(QObject *, QEvent *event)
 {
@@ -86,7 +90,8 @@ bool LocalController::eventFilter(QObject *, QEvent *event)
 			event->ignore();
 			return true;
 		}
-		shutdown();
+		// OBS may still veto the close (recording/stream confirmation or remux).
+		// Keep capture and controls alive until the accepted frontend EXIT event.
 	}
 	return false;
 }

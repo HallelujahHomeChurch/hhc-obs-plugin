@@ -16,8 +16,8 @@ Retain Windows media at 30000/1001 (29.97), including exact EXTINF values and 60
 - W1: independent Program output, selected mixer 1–6, three NVENC H.264 renditions and HLS fMP4 implemented as a native prototype. Real OBS frontend F1 passed local QA. F1-L passed local QA; concurrency qualification is pending. This is not W1 acceptance or P1 yet.
 - W2: account-bound atomic local journal and recovery primitives tested independently. Capture now checkpoints into the account-bound journal when queue identity is supplied; no uploader is implemented. No HTTP, guessed wire schema, stop/seal/abort receipt mapping, or server publication exists.
 - W3: direct integration awaits Mac platform readiness, fixed contract, endpoints and login settings; separate cross-host fixture delivery is no longer a prerequisite. OAuth PKCE/callback validation and Windows Credential Manager are local primitives only; no network login or loopback listener.
-- W4: Qt mock states rendered at 100/150/200 percent and tested. Mock is not wired to the operator plugin. CI definition exists, but no remote or hosted run.
-- W5/P1: not reached. No signing certificate, tested installer/uninstaller, production candidate, end-to-end or deployment evidence.
+- W4: native local-validation dock is wired to capture/recovery. Qt states tested; real OBS install/remove and 61-second dock capture passed. GitHub feature branch and hosted CI exist. Platform actions still await Mac integration.
+- W5/P1: not reached. Unsigned local-preview ZIP and Explorer install/remove smoke exist, but no production candidate, current-build long/concurrent qualification or E2E/deployment evidence.
 
 ## Decisions
 
@@ -105,3 +105,19 @@ LocalController now attaches the native dock, starts/stops an independent Captur
 Actual OBS frontend dock test: 61-second synthetic scene, button start/stop, all three timelines 60.9609 seconds with three segments, full decode/object hashes passed. Journal normalEnd/stopIntent true and remote ready/seal false. OBS exit allocation count was 0 for this run; this does not establish the root cause of the older one-allocation reports. Native production DLL installation smoke confirmed dock present; removal smoke confirmed dock absent and synthetic queue marker unchanged. Both ran only in .deps/portable-short, exit 0 and allocation count 0. Operator ZIP installation/removal uses Explorer, not CLI. No production plugin installation occurred.
 
 Separate fault-only harness injects a low runtime disk reading, missing headers and missing stop packets. All three stopped incomplete with expected DiskLimit/EncoderFailure reasons and retained journals. The stop-timeout regression first failed before injection was wired, then passed. Fault code is compiled only into hhc-capture-faults, never the normal plugin library. These are real libobs with simulated faults, not physical disk-full or power-cut evidence. All four CTest suites pass. Platform integration, concurrency qualification and current-build long-run acceptance remain distinct.
+
+## Review fix pass and hosted CI (2026-10-08)
+
+Fresh review c1c50c5 found four Important lifecycle/outcome issues. Final: fixed close-veto teardown, recovery-future exception on exit, post-start media-stall watchdog and external-stop false success — each reproduced RED and verified GREEN in developer regressions; CTest 4/4. Details in docs/reviews/local-preview-2026-10-08.md. Current native OBS dock short capture passed complete decode/hash/timeline verification, 61.027633 seconds across all three renditions, exit allocation count 0.
+
+Final: minor (deferred): package script does not enforce a build-source stamp; this run builds immediately before packaging and verifies hashes, but a future stale local DLL could be mislabeled.
+
+Final: Ruling: defer wire integration until fixed Mac contract/endpoints/login — local validation remains available; cost is no platform features yet.
+Final: Ruling: no Mac compatibility/server publication/E2E inference from local success — cost is production acceptance still pending.
+Final: Ruling: older F1-L cannot qualify current build — cost is a new long/concurrent-output run is still required.
+Final: Ruling: physical disk-full/power loss/GPU hang are not proven by test-only faults — cost is hardware-failure qualification remains open.
+Final: Ruling: review was source analysis, followed by actual fix regressions — cost is remaining untested lifecycle combinations are not certified.
+
+GitHub Actions run 37651614864 on c1c50c5 completed success: clean pinned SDK build, native compilation, four CTest suites, package and artifact upload. New fix commit needs its own CI result. Initial main contains only the repo bootstrap; all implementation is on feat/windows-capture, without merge.
+
+Attempt to start a new 9000-second OBS run plus monitoring helper was rejected by automatic command approval review with only 'blocked by policy'. Nothing in that rejected command executed; no new long capture is running. A bounded 61-second regression ran successfully afterward. Do not report the new long run as launched or passed. GitHub CLI token remains invalid; PR creation is waiting for the user's refreshed login, while SSH push and public CI reads work.
