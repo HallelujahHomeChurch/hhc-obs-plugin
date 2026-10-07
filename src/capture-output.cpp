@@ -1,5 +1,6 @@
 #include "capture-output.hpp"
 #include "hls-muxer.hpp"
+#include "session-store.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonObject>
@@ -18,6 +19,24 @@ struct CaptureOutput::Impl {
 	obs_encoder_t *audio = nullptr;
 	std::array<std::unique_ptr<HlsMuxer>, 3> mux;
 	CaptureConfig config;
+	std::unique_ptr<SessionStore> store;
+	std::mutex journalMutex;
+	qsizetype checkpointCount = 0;
+	void checkpoint(const QJsonArray &objects, bool stop = false, bool normal = false)
+	{
+		if (!store)
+			return;
+		std::lock_guard lock(journalMutex);
+		if (objects.size() == checkpointCount && !stop && !normal)
+			return;
+		QVector<ClosedObject> closed;
+		for (const auto &item : objects) {
+			const auto o = item.toObject();
+			closed.append({o["path"].toString(), o["size"].toInteger(), o["sha256"].toString(), false});
+		}
+		store->checkpointLocal(config.account, config.localId, closed, stop, normal);
+		checkpointCount = std::max(checkpointCount, objects.size());
+	}
 	std::thread worker;
 	mutable std::mutex mutex;
 	std::condition_variable cv;
@@ -174,6 +193,12 @@ struct CaptureOutput::Impl {
 						reason = *limit;
 						fail("Local capture quota or disk reserve reached");
 					}
+					QJsonArray closedObjects;
+					for (auto &m : mux)
+						if (m)
+							for (const auto &o : m->objects())
+								closedObjects.append(o);
+					checkpoint(closedObjects);
 				}
 				if (failed && !stopping) {
 					stopping = true;
@@ -257,6 +282,9 @@ struct CaptureOutput::Impl {
 				    {"keyintFrames", 60},
 				    {"bframes", 0},
 				    {"obsVersion", QString::fromUtf8(obs_get_version_string())}});
+			// The recoverable session is committed successful only after its final
+			// inventory is durable. A failed inventory write must leave it incomplete.
+			checkpoint(inventory, stopRequested.load(), hhc::normalEnd(reason.load(), closed, failed));
 		} catch (const std::exception &e) {
 			fail(e.what());
 		}
@@ -332,6 +360,22 @@ bool CaptureOutput::start(const CaptureConfig &config)
 	}
 	d->config = config;
 	d->config.directory = QFileInfo(config.directory).absoluteFilePath();
+	try {
+		if (!config.queueRoot.isEmpty() || !config.account.isEmpty() || !config.localId.isEmpty()) {
+			if (config.queueRoot.isEmpty())
+				throw std::runtime_error("Queue root required");
+			d->store = std::make_unique<SessionStore>(config.queueRoot);
+			if (d->store->mediaDirectory(config.account, config.localId) != d->config.directory)
+				throw std::runtime_error("Capture directory does not match account journal");
+			CaptureJournal journal;
+			journal.account = config.account;
+			journal.localId = config.localId;
+			d->store->save(journal);
+		}
+	} catch (const std::exception &e) {
+		d->fail(e.what());
+		return false;
+	}
 	auto *settings = obs_data_create();
 	obs_data_set_int(settings, "owner", static_cast<long long>(reinterpret_cast<uintptr_t>(d.get())));
 	d->output = obs_output_create("hhc_hls_output", "HHC capture", settings, nullptr);
@@ -394,6 +438,7 @@ void CaptureOutput::stop(StopReason reason)
 	       !d->reason.compare_exchange_weak(previous, reason)) {
 	}
 	try {
+		d->checkpoint({}, true, false);
 		atomicJson(d->config.directory + "/stop-intent.json",
 			   {{"reason", static_cast<int>(reason)}, {"stopAcknowledged", false}});
 	} catch (const std::exception &e) {

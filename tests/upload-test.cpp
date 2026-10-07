@@ -4,6 +4,10 @@
 #include <QDir>
 #include <QFile>
 #include <QCryptographicHash>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <windows.h>
 #include <iostream>
 int main(int argc, char **argv)
 {
@@ -49,6 +53,57 @@ int main(int argc, char **argv)
 		check(loaded[0].objects[0].sha256 == j.objects[0].sha256, "immutable object identity survives restart");
 	}
 	check(store.loadPending("account-b").empty(), "different account cannot resume queue");
+	// A capture checkpoint appends closed media without inventing remote receipts.
+	hhc::CaptureJournal active;
+	active.account = "account-a";
+	active.localId = "active-002";
+	store.save(active);
+	auto activePath = store.mediaDirectory(active.account, active.localId);
+	QDir().mkpath(activePath + "/1080p");
+	check(QFile::copy(path + "/1080p/init.mp4", activePath + "/1080p/init.mp4"), "copy closed test object");
+	store.checkpointLocal(active.account, active.localId, j.objects, false, false);
+	store.checkpointLocal(active.account, active.localId, j.objects, true, false);
+	auto recovered = store.loadPending(active.account);
+	auto found = std::find_if(recovered.begin(), recovered.end(),
+				  [&](const auto &item) { return item.localId == active.localId; });
+	check(found != recovered.end() && found->stopIntent && !found->normalEnd && found->objects.size() == 1 &&
+		      !found->sealAcknowledged,
+	      "idempotent checkpoints recover partial capture and durable stop");
+	rejects([&] { store.checkpointLocal(active.account, active.localId, {}, true, true); },
+		"incomplete capture cannot finalize journal");
+	auto changed = j.objects;
+	changed[0].sha256 = QString(64, '0');
+	rejects([&] { store.checkpointLocal(active.account, active.localId, changed, false, false); },
+		"checkpoint cannot replace immutable object");
+	check(QFile::copy(path + "/1080p/init.mp4", activePath + "/1080p/seg-000000.m4s"), "copy orphan closed object");
+	QFile receipt(activePath + "/1080p/closed.json");
+	check(receipt.open(QIODevice::WriteOnly), "open atomic close receipt fixture");
+	receipt.write(QJsonDocument(QJsonObject{{"objects", QJsonArray{QJsonObject{{"path", "1080p/seg-000000.m4s"},
+										   {"size", 12},
+										   {"sha256", j.objects[0].sha256}}}}})
+			      .toJson());
+	receipt.close();
+	recovered = store.loadPending(active.account);
+	found = std::find_if(recovered.begin(), recovered.end(),
+			     [&](const auto &item) { return item.localId == active.localId; });
+	check(found != recovered.end() && found->objects.size() == 2 && !found->normalEnd,
+	      "restart recovers closed receipt committed before session checkpoint");
+	hhc::CaptureJournal blocked;
+	blocked.account = "account-a";
+	blocked.localId = "blocked-003";
+	store.save(blocked);
+	const auto blockedPath = store.mediaDirectory(blocked.account, blocked.localId) + "/journal.json";
+	HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(blockedPath.utf16()), GENERIC_READ, FILE_SHARE_READ,
+				    nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	check(handle != INVALID_HANDLE_VALUE, "lock existing journal against replacement");
+	rejects([&] { store.checkpointLocal(blocked.account, blocked.localId, {}, true, false); },
+		"failed atomic replacement reports failure");
+	if (handle != INVALID_HANDLE_VALUE)
+		CloseHandle(handle);
+	recovered = store.loadPending(blocked.account);
+	found = std::find_if(recovered.begin(), recovered.end(),
+			     [&](const auto &item) { return item.localId == blocked.localId; });
+	check(found != recovered.end() && !found->stopIntent, "failed replacement retains previous valid journal");
 	check(store.mediaDirectory("account-b", j.localId) != path, "account paths isolated");
 	rejects([&] { store.mediaDirectory("account-a", "../outside"); }, "reject path traversal");
 	auto bad = j;

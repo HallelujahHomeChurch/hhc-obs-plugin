@@ -7,6 +7,8 @@ namespace hhc {
 struct CaptureConfig {
 	QString directory;
 	unsigned audioTrack = 1;
+	// Empty only for standalone media fixtures. Real queue sessions bind all three.
+	QString queueRoot, account, localId;
 };
 class CaptureOutput {
 public:

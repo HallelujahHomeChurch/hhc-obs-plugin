@@ -1,4 +1,5 @@
 #include "capture-output.hpp"
+#include "session-store.hpp"
 #include <QGuiApplication>
 #include <QImage>
 #include <QPainter>
@@ -25,7 +26,21 @@ int main(int argc, char **argv)
 	const bool muxFailure = argc > 3 && QString(argv[3]) == "--mux-failure";
 	if (seconds < 1 || seconds > 9000)
 		return 2;
-	const QString out = QDir::cleanPath(QString::fromLocal8Bit(argv[1]));
+	const bool inventoryFailure = argc > 3 && QString(argv[3]) == "--journal-inventory-failure";
+	const bool journal = inventoryFailure ||
+			     (argc > 3 && (QString(argv[3]) == "--journal" || QString(argv[3]) == "--recover"));
+	const QString requested = QDir::cleanPath(QString::fromLocal8Bit(argv[1]));
+	hhc::SessionStore store(requested);
+	const QString out = journal ? store.mediaDirectory("synthetic-test-account", "capture-test") : requested;
+	if (argc > 3 && QString(argv[3]) == "--recover") {
+		const auto pending = store.loadPending("synthetic-test-account");
+		if (pending.size() != 1 || pending[0].objects.size() < 6 || pending[0].normalEnd ||
+		    pending[0].stopIntent || pending[0].sealAcknowledged || pending[0].confirmedReady)
+			return 17;
+		std::cout << "Recovered interrupted capture: " << pending[0].objects.size()
+			  << " verified closed objects; not normal or published\n";
+		return 0;
+	}
 	if (QFile::exists(out)) {
 		std::cerr << "output must be new\n";
 		return 2;
@@ -82,7 +97,13 @@ int main(int argc, char **argv)
 	int result = 0;
 	{
 		hhc::CaptureOutput capture;
-		if (!capture.start({out, 1})) {
+		hhc::CaptureConfig config{out, 1};
+		if (journal) {
+			config.queueRoot = requested;
+			config.account = "synthetic-test-account";
+			config.localId = "capture-test";
+		}
+		if (!capture.start(config)) {
 			if (missingNvenc) {
 				int encoders = 0, outputs = 0;
 				obs_enum_encoders(
@@ -104,6 +125,17 @@ int main(int argc, char **argv)
 			} else {
 				std::cerr << "FAIL native output start: " << capture.error().toStdString() << '\n';
 				result = 6;
+			}
+		} else if (inventoryFailure) {
+			if (!QDir().mkpath(out + "/inventory.json"))
+				return 19;
+			std::this_thread::sleep_for(std::chrono::seconds(3));
+			capture.stop(hhc::StopReason::User);
+			const bool ok = capture.wait(15000);
+			const auto recovered = store.loadPending(config.account);
+			if (ok || !capture.finished() || recovered.size() != 1 || recovered[0].normalEnd) {
+				std::cerr << "FAIL final inventory failure declared successful journal\n";
+				result = 20;
 			}
 		} else if (muxFailure) {
 			for (unsigned i = 0; i < 100 && !QFile::exists(out + "/staging/1080p/init.mp4"); ++i)
@@ -201,6 +233,15 @@ int main(int argc, char **argv)
 				}
 			}
 			QFile inventory(out + "/inventory.json");
+			if (journal) {
+				const auto pending = store.loadPending(config.account);
+				if (pending.size() != 1 || !pending[0].stopIntent || !pending[0].normalEnd ||
+				    pending[0].objects.size() < 10 || pending[0].sealAcknowledged ||
+				    pending[0].confirmedReady) {
+					std::cerr << "FAIL capture not checkpointed into account journal\n";
+					result = 18;
+				}
+			}
 			if (!QFile::exists(out + "/master.m3u8")) {
 				std::cerr << "FAIL missing master playlist\n";
 				result = 16;

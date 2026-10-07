@@ -166,10 +166,99 @@ QVector<CaptureJournal> SessionStore::loadPending(const QString &account) const
 			"corrupt journal retained for manual recovery");
 		auto j = parse(doc.object());
 		require(j.account == account && j.localId == id, "journal account mismatch");
+		// A crash may occur after an atomic per-rendition close receipt but before
+		// the next session checkpoint. Recover only receipted bytes, never .tmp files
+		// or a normal-end inference. This read does not rewrite the saved journal.
+		if (!j.normalEnd) {
+			for (const auto *rendition : {"1080p", "720p", "480p"}) {
+				QFile receipt(dir + "/" + rendition + "/closed.json");
+				if (!receipt.exists())
+					continue;
+				require(!QFileInfo(receipt).isSymLink() && receipt.size() <= 8 * 1024 * 1024 &&
+						receipt.open(QIODevice::ReadOnly),
+					"close receipt unreadable");
+				QJsonParseError receiptError;
+				const auto closed = QJsonDocument::fromJson(receipt.readAll(), &receiptError);
+				require(receiptError.error == QJsonParseError::NoError && closed.isObject() &&
+						closed.object()["objects"].isArray(),
+					"corrupt close receipt retained");
+				for (const auto &value : closed.object()["objects"].toArray()) {
+					const auto o = value.toObject();
+					require(o.size() == 3 && o["size"].isDouble() &&
+							o["path"].toString().startsWith(QString(rendition) + "/"),
+						"invalid close receipt object");
+					ClosedObject recovered{o["path"].toString(), o["size"].toInteger(),
+							       o["sha256"].toString(), false};
+					auto found =
+						std::find_if(j.objects.begin(), j.objects.end(), [&](const auto &old) {
+							return old.path == recovered.path;
+						});
+					if (found == j.objects.end())
+						j.objects.append(recovered);
+					else
+						require(found->size == recovered.size &&
+								found->sha256 == recovered.sha256,
+							"conflicting close receipt retained");
+				}
+			}
+		}
 		validateObjects(dir, j);
 		result.append(j);
 	}
 	return result;
+}
+void SessionStore::checkpointLocal(const QString &account, const QString &localId, const QVector<ClosedObject> &closed,
+				   bool stopIntent, bool normalEnd)
+{
+	const auto dir = mediaDirectory(account, localId);
+	require(!QFileInfo(root_).isSymLink() && !QFileInfo(QFileInfo(dir).absolutePath()).isSymLink() &&
+			!QFileInfo(dir).isSymLink(),
+		"session ancestor is a link");
+	QFile file(dir + "/journal.json");
+	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && file.open(QIODevice::ReadOnly),
+		"checkpoint requires existing journal");
+	QJsonParseError error;
+	const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
+	require(error.error == QJsonParseError::NoError && doc.isObject(), "corrupt journal retained");
+	file.close();
+	auto j = parse(doc.object());
+	require(j.account == account && j.localId == localId, "checkpoint identity mismatch");
+	CaptureJournal added;
+	for (const auto &o : closed) {
+		auto found = std::find_if(j.objects.begin(), j.objects.end(),
+					  [&](const auto &old) { return old.path == o.path; });
+		if (found != j.objects.end()) {
+			require(found->size == o.size && found->sha256 == o.sha256,
+				"immutable checkpoint identity changed");
+		} else {
+			require(!j.normalEnd && !o.confirmed, "cannot append after finalization or invent receipt");
+			added.objects.append(o);
+			j.objects.append(o);
+		}
+	}
+	validateObjects(dir, added);
+	qint64 total = 0;
+	require(j.objects.size() <= 10000, "object count limit");
+	for (const auto &o : j.objects) {
+		require(o.size > 0 && o.size <= 134217728 && total <= 10000000000LL - o.size, "package size limit");
+		total += o.size;
+	}
+	j.stopIntent = j.stopIntent || stopIntent;
+	if (normalEnd) {
+		require(j.stopIntent, "normal end requires stop intent");
+		for (const auto *path : {"master.m3u8", "1080p/index.m3u8", "720p/index.m3u8", "480p/index.m3u8",
+					 "1080p/init.mp4", "720p/init.mp4", "480p/init.mp4"})
+			require(std::any_of(j.objects.begin(), j.objects.end(),
+					    [&](const auto &o) { return o.path == path; }),
+				"normal end requires all final playlists and init objects");
+		validateObjects(dir, j);
+		j.normalEnd = true;
+	}
+	const auto bytes = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
+	QSaveFile target(dir + "/journal.json");
+	target.setDirectWriteFallback(false);
+	require(target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() && target.commit(),
+		"atomic checkpoint failed");
 }
 bool SessionStore::mayCleanup(const CaptureJournal &j, QDateTime now) const
 {

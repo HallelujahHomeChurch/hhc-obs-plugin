@@ -6,7 +6,7 @@ Authority: hhc-web-api e77d63aef2a02f2ddc590e8f5278cf15765d793f, reachable on or
 
 - W0: actual machine/profile baseline and pinned native SDK build completed locally. Original OBS profiles, YouTube and recording settings are preserved.
 - W1: independent Program output, selected mixer 1–6, three NVENC H.264 renditions and HLS fMP4 implemented as a native prototype. Real OBS frontend F1 passed local QA. F1-L is running; concurrency qualification is pending. This is not W1 acceptance or P1 yet.
-- W2: account-bound atomic local journal and recovery primitives tested independently. They are not yet connected to the capture queue or an uploader. No HTTP, guessed wire schema, stop/seal/abort receipt mapping, or server publication exists.
+- W2: account-bound atomic local journal and recovery primitives tested independently. Capture now checkpoints into the account-bound journal when queue identity is supplied; no uploader is implemented. No HTTP, guessed wire schema, stop/seal/abort receipt mapping, or server publication exists.
 - W3: blocked on frozen C1, then V1 and S1. OAuth PKCE/callback validation and Windows Credential Manager are local primitives only; no network login or loopback listener.
 - W4: Qt mock states rendered at 100/150/200 percent and tested. Mock is not wired to the operator plugin. CI definition exists, but no remote or hosted run.
 - W5/P1: not reached. No signing certificate, tested installer/uninstaller, production candidate, end-to-end or deployment evidence.
@@ -50,7 +50,7 @@ F1-L producer is the same 3701e79, separate portable OBS PID 3128, capture start
 - Authorized Mac-accessible shared location and download/hash receipt: not provided. Local archives do not count as cross-host delivery.
 - Plugin remote and PR target: not provided; no PR or hosted CI can be claimed.
 - Frozen versioned C1, V1 for exact fixture, S1 test environment/accounts: missing. No real integration until received.
-- Production UI/controller, capture-to-journal integration, retry/resume/cleanup orchestration, fault matrix, concurrent-output runs, candidate install/remove and signing remain unfinished.
+- Production UI/controller, network retry/resume/cleanup orchestration, remaining fault matrix, concurrent-output runs, candidate install/remove and signing remain unfinished.
 - Staging and immutable queue currently duplicate media on disk. Runtime reserve/package checks exist; disk exhaustion and watchdog fault injection still need testing.
 - F1-L uses the older producer without the later watchdog/finalization fixes. Its eventual media result is evidence only for that producer, not the current build.
 
@@ -61,3 +61,15 @@ No merge, deployment, production plugin install, YouTube action or macOS work ha
 Current producer 7a677c74366a3aa585b03c81ad35b53da616c1e9 also passed a new 61-second actual OBS frontend run: normalEnd=true, 60.994267 seconds, aligned 30.03/30.03/0.934267 tails, all three full decodes and hashes passed. Visually checked elapsed timecode at 15 and 59 seconds; it advances correctly. OBS reported one remaining allocation at exit; origin is not isolated, so leak-free teardown is not claimed.
 
 Preferred F1 package: artifacts/F1-obs-03.zip, 40768717 bytes, SHA256 fcfe1ec4d209c9ec78e9e1d4d5a32f4bef82f3b650bdd7ac72c07b03f630011d. Native capture now emits master and canonical filenames. Packaging/QA tools 84baaa2. This supersedes F1-obs-02 for Mac validation; no cross-host receipt yet. The short test overlapped the long run at 20:44:54–20:45:55; preserve this qualification caveat.
+
+## Capture journal integration checkpoint (21:09 Taipei)
+
+CaptureConfig can now bind queueRoot/account/localId to its exact account-isolated media directory. A journal exists before encoder start. The worker checkpoints newly closed objects; only new bytes are hashed per checkpoint, while restart and successful finalization verify all hashes. Stop intent is atomically saved before requesting OBS stop. Session success is committed only after the final inventory file is durable. Standalone F1 fixture mode remains available without a queue binding; the running F1-L producer was not replaced.
+
+Recovery reads atomic rendition close receipts to bridge a crash between object closure and the next session checkpoint. It returns only hash-verified closed objects and never infers normalEnd or remote receipts. Receipt-less orphan files and partial staging files stay on disk for investigation; no automatic deletion or upload is attempted. Recovery does not rewrite journals. Single writer per session is required; CaptureOutput serializes journal access with its own mutex.
+
+Evidence: native build and 4/4 CTest passed. Real libobs normal capture-to-journal completed. At 21:05:36 the separately owned synthetic test process (PID 22260) was deliberately terminated after 6 closed objects were checkpointed; a new process recovered and hashed all 6 with normalEnd=false, stopIntent=false and no server receipts. This is controlled process termination, not Windows power-loss testing and not the OBS frontend. The original F1-L OBS PID 3128 and its monitor remained running.
+
+Additional RED -> GREEN checks cover a close receipt newer than its session journal, immutable checkpoint identity, incomplete finalization rejection, and Windows file-sharing denial of journal replacement (old journal remains valid). A real libobs final-inventory write fault first reproduced an incorrectly successful journal, then passed after correcting commit order. Unit tests for a locked file do not establish physical disk-full/power-cut durability. Network recovery still requires fixed C1 receipt semantics.
+
+Short harness GPU loads at approximately 21:02–21:08 overlapped F1-L; retain this caveat for resource interpretation. Existing F1/media/review ZIPs remain immutable and predate this source change.

@@ -33,6 +33,7 @@ target_link_libraries(hhc-obs-fixture PRIVATE hhc-capture OBS::obs-frontend-api 
 add_library(hhc-store STATIC src/session-store.cpp)
 target_link_libraries(hhc-store PUBLIC Qt6::Core)
 target_include_directories(hhc-store PUBLIC src)
+target_link_libraries(hhc-capture PUBLIC hhc-store)
 add_executable(upload-test tests/upload-test.cpp)
 target_link_libraries(upload-test PRIVATE hhc-store)
 add_test(NAME local-journal COMMAND upload-test)
