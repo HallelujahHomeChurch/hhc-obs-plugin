@@ -12,7 +12,7 @@ def verify(root, expected):
         base=root/f'{height}p'
         playlist=(base/'index.m3u8').read_text()
         assert '#EXT-X-ENDLIST' in playlist
-        segments=re.findall(r'^segment-\d{5}\.m4s$',playlist,re.M)
+        segments=re.findall(r'^(?:segment-\d{5}|seg-\d{6})\.m4s$',playlist,re.M)
         times=[float(x) for x in re.findall(r'#EXTINF:([0-9.]+)',playlist)]
         assert len(times)==len(segments)
         assert len(times)==3 if expected==61 else len(times)>0
@@ -39,4 +39,5 @@ if __name__=='__main__':
     result=verify(a.directory,a.seconds)
     (a.directory/'local-validation.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
     print(json.dumps({'passed':True,'renditions':[{'height':r['height'],'segments':r['segments'],'duration':r['total']} for r in result['renditions']]}))
+
 

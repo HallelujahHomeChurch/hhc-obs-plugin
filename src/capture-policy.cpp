@@ -10,9 +10,16 @@ std::string validateSource(const SourceFormat& s) {
 bool normalEnd(StopReason reason, const std::array<bool,3>& tails, bool failed) {
  return reason==StopReason::User && !failed && tails[0] && tails[1] && tails[2];
 }
+std::optional<StopReason> runtimeLimit(std::uint64_t free, std::uint64_t bytes, unsigned objects, double seconds){
+ if(free<2147483648ULL || bytes>=10000000000ULL-134217728ULL || objects>=9996 || seconds>=43200)
+  return StopReason::DiskLimit;
+ return {};
+}
 bool canStartOnDisk(std::uint64_t free, std::uint64_t queued) {
  constexpr std::uint64_t reserve=10000000000ULL+2147483648ULL;
  return free>=reserve && queued<=free-reserve;
 }
 }
+
+
 

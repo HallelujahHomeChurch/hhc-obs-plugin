@@ -24,5 +24,11 @@ int main() {
  check(!hhc::canStartOnDisk(needed-1,0),"reject low disk");
  check(!hhc::canStartOnDisk(needed,1),"account for previous queue");
  check(!hhc::canStartOnDisk(needed,std::numeric_limits<std::uint64_t>::max()),"disk overflow fails closed");
+ check(!hhc::runtimeLimit(3ULL*1024*1024*1024,1000000,10,61),"ordinary capture continues");
+ check(hhc::runtimeLimit(2147483647,0,0,1).has_value(),"runtime disk reserve stops capture");
+ check(hhc::runtimeLimit(3000000000,9900000000ULL,0,1).has_value(),"package headroom stops capture");
+ check(hhc::runtimeLimit(3000000000,0,10000,1).has_value(),"object count stops capture");
+ check(hhc::runtimeLimit(3000000000,0,0,43200).has_value(),"12 hour ceiling stops capture");
  return failures ? 1 : 0;
 }
+

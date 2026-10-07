@@ -1,0 +1,25 @@
+name: Windows x64
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .deps/deps.zip
+            .deps/qt.zip
+          key: obs-32.2.2-deps-2026-07-15-x64
+      - name: Build pinned SDK
+        shell: pwsh
+        run: ./scripts/bootstrap-windows.ps1
+      - run: cmake --build build --config RelWithDebInfo
+      - run: ctest --test-dir build -C RelWithDebInfo --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hhc-obs-windows-x64-unverified
+          path: build/RelWithDebInfo/hhc-obs-plugin.dll
+# Hosted agents have no qualified NVENC GPU. This job is NOT real OBS/G2/G3 evidence.

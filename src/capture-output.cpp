@@ -27,6 +27,7 @@ struct CaptureOutput::Impl {
  std::atomic<bool> failed{false},done{true},deactivated{false},stopRequested{false};
  std::atomic<StopReason> reason{StopReason::Shutdown};
  std::atomic<int64_t> firstVideoSys{0},cutoffPts{0};
+ std::atomic<int64_t> stopDeadline{0};
  std::atomic<unsigned> endedVideo{0};
  QString error;
  void fail(const char* message){failed=true;{std::lock_guard lock(mutex);error=QString::fromUtf8(message);}cv.notify_all();}
@@ -47,7 +48,7 @@ struct CaptureOutput::Impl {
   if(!obs_output_begin_data_capture(s.output,0)){s.fail("OBS begin capture failed");s.deactivated=true;s.cv.notify_all();return false;}
   return true;
  }
- static void end(void* data,uint64_t ts){auto& s=*static_cast<Impl*>(data);s.stopRequested=true;if(ts && s.firstVideoSys>0)s.cutoffPts=((static_cast<int64_t>(ts/1000)-s.firstVideoSys)*30000/(1000000LL*1001))*1001;else obs_output_end_data_capture(s.output);}
+ static void end(void* data,uint64_t ts){auto& s=*static_cast<Impl*>(data);s.stopRequested=true;s.stopDeadline=std::chrono::steady_clock::now().time_since_epoch().count();if(ts && s.firstVideoSys>0)s.cutoffPts=((static_cast<int64_t>(ts/1000)-s.firstVideoSys)*30000/(1000000LL*1001))*1001;else obs_output_end_data_capture(s.output);}
  static void deactivate(void* data,calldata_t*){auto& s=*static_cast<Impl*>(data);s.deactivated=true;s.cv.notify_all();}
  static void packet(void* data,encoder_packet* p){
   auto& s=*static_cast<Impl*>(data);
@@ -66,17 +67,33 @@ struct CaptureOutput::Impl {
  }
  void run(){
   bool stopping=false;
+  const auto began=std::chrono::steady_clock::now();
+  auto lastDiskCheck=began;
+  uint64_t encodedBytes=0;
   try{
-   while(!failed && seenVideo!=7 && !deactivated)std::this_thread::sleep_for(std::chrono::milliseconds(2));
+   while(!failed && seenVideo!=7 && !deactivated){
+    if(std::chrono::steady_clock::now()-began>std::chrono::seconds(10))throw std::runtime_error("NVENC produced no complete header set within 10 seconds");
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+   }
    if(seenVideo!=7)throw std::runtime_error("All three video headers required");
    for(unsigned i=0;i<3;++i)mux[i]=std::make_unique<HlsMuxer>(config.directory,i,video[i],audio);
    while(true){
+    const auto now=std::chrono::steady_clock::now();
+    if(stopDeadline>0 && now-std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(stopDeadline.load()))>std::chrono::seconds(5) && !deactivated)
+     throw std::runtime_error("Encoder stop timed out; capture incomplete");
+    if(!failed && now-lastDiskCheck>=std::chrono::seconds(1)){
+     lastDiskCheck=now;QStorageInfo disk(config.directory);unsigned count=0;
+     for(auto& m:mux)if(m)count+=static_cast<unsigned>(m->objects().size());
+     const auto limit=runtimeLimit(static_cast<uint64_t>(std::max<qint64>(0,disk.bytesAvailable())),encodedBytes,count,std::chrono::duration<double>(now-began).count());
+     if(limit){reason=*limit;fail("Local capture quota or disk reserve reached");}
+    }
     if(failed && !stopping){stopping=true;obs_output_signal_stop(output,OBS_OUTPUT_ERROR);}
     encoder_packet p{};
-    {std::unique_lock lock(mutex);cv.wait_for(lock,std::chrono::milliseconds(100),[&]{return !packets.empty()||deactivated||failed;});
+    {std::unique_lock lock(mutex);cv.wait_for(lock,std::chrono::milliseconds(100),[&]{return !packets.empty()||deactivated||(failed && !stopping);});
      if(packets.empty()){if(deactivated)break;continue;}
      p=packets.front();packets.pop_front();bytes-=p.size;
     }
+    encodedBytes+=p.size*(p.type==OBS_ENCODER_AUDIO?3:1);
     try{if(!failed){
      if(p.type==OBS_ENCODER_VIDEO){if(p.track_idx>=3)throw std::runtime_error("invalid video track");mux[p.track_idx]->write(p);}
      else for(auto& m:mux)m->write(p);
@@ -152,6 +169,7 @@ bool CaptureOutput::active() const{return !d->done && !d->failed;}
 bool CaptureOutput::wait(unsigned timeoutMs){std::unique_lock lock(d->mutex);return d->cv.wait_for(lock,std::chrono::milliseconds(timeoutMs),[&]{return d->done.load();}) && !d->failed;}
 QString CaptureOutput::error() const{std::lock_guard lock(d->mutex);return d->error;}
 }
+
 
 
 
