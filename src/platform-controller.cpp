@@ -385,6 +385,8 @@ void PlatformController::completed()
 			    {"captureId", remote.captureId},
 			    {"state", remote.state},
 			    {"liveState", remote.liveState},
+			    {"liveEnabled", remote.liveEnabled},
+			    {"pendingBytes", qint64(remote.pendingBytes)},
 			    {"autoPublish", remote.autoPublish},
 			    {"stopAccepted", remote.stopAccepted},
 			    {"sealAccepted", remote.sealAccepted},

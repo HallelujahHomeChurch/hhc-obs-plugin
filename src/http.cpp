@@ -114,9 +114,11 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 	if (result.status < 200 || result.status >= 300) {
 		const auto code = QJsonDocument::fromJson(result.body).object()["error"].toObject()["code"].toString();
 		static const QSet<QString> known{
-			"capture_invalid",      "capture_unauthorized",    "capture_forbidden", "capture_not_found",
-			"capture_conflict",     "capture_missing_objects", "capture_expired",   "capture_too_large",
-			"capture_rate_limited", "capture_unavailable",     "unauthorized",      "forbidden"};
+			"capture_invalid",        "capture_unauthorized", "capture_forbidden",
+			"capture_not_found",      "capture_conflict",     "capture_missing_objects",
+			"capture_expired",        "capture_too_large",    "capture_rate_limited",
+			"capture_unavailable",    "recording_conflict",   "invalid_recording",
+			"recordings_unavailable", "unauthorized",         "forbidden"};
 		throw RequestError(result.status, known.contains(code) ? code : QString("request_rejected"),
 				   result.retryAfter);
 	}

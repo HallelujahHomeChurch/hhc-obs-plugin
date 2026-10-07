@@ -9,12 +9,17 @@
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <QCoreApplication>
+#include <QApplication>
 #include <QFileInfo>
 #include <QDir>
 #include <QImage>
 #include <QPainter>
 #include <QTimer>
 #include <QJsonObject>
+#include <QJsonDocument>
+#include <QComboBox>
+#include <QMessageBox>
+#include <QFile>
 #include <QNetworkProxy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -147,6 +152,9 @@ void begin()
 			QElapsedTimer overall, recording;
 			bool requested = false, started = false, stopped = false, offline = false, restored = false;
 			int lastEvidence = -1;
+			bool closeRequested = false, cancelRequested = false;
+			int firstLiveMs = -1;
+			QJsonArray trace;
 			QTcpServer blackhole;
 			QNetworkProxy previous;
 		};
@@ -163,7 +171,27 @@ void begin()
 			auto *action = dock->findChild<QPushButton *>("action");
 			if (!status || !action)
 				return;
-			if (!run->requested && status->text() == QString::fromUtf8("準備收錄") && action->isEnabled()) {
+			auto recoverId = qEnvironmentVariable("HHC_FIXTURE_RECOVER_ID");
+			if (!recoverId.isEmpty() && !run->requested &&
+			    status->text() == QString::fromUtf8("準備收錄")) {
+				auto *sessions = dock->findChild<QComboBox *>("recoverSession");
+				auto index = sessions ? sessions->findData(recoverId) : -1;
+				if (index >= 0) {
+					sessions->setCurrentIndex(index);
+					run->requested = true;
+					run->stopped = true;
+					QTimer::singleShot(50, QCoreApplication::instance(), [] {
+						if (auto *box = qobject_cast<QMessageBox *>(
+							    QApplication::activeModalWidget())) {
+							if (box->text().contains(QString::fromUtf8("這場未正常完成")))
+								box->button(QMessageBox::Yes)->click();
+						}
+					});
+					dock->findChild<QPushButton *>("resumeSession")->click();
+				}
+			}
+			if (recoverId.isEmpty() && !run->requested && status->text() == QString::fromUtf8("準備收錄") &&
+			    action->isEnabled()) {
 				dock->findChild<QLineEdit *>("title")->setText(
 					QString("[HHC OBS SYNTHETIC TEST] %1 %2")
 						.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate),
@@ -189,6 +217,23 @@ void begin()
 				blog(LOG_INFO, "[HHC fixture] Native stop requested");
 			}
 			auto elapsed = run->started ? run->recording.elapsed() : 0;
+			auto closeAt = qEnvironmentVariableIntValue("HHC_FIXTURE_CLOSE_LIVE_AFTER_SECONDS"),
+			     cancelAt = qEnvironmentVariableIntValue("HHC_FIXTURE_CANCEL_PUBLISH_AFTER_SECONDS");
+			if (run->started && closeAt > 0 && !run->closeRequested && elapsed >= closeAt * 1000) {
+				auto *b = dock->findChild<QPushButton *>("closeLive");
+				if (b && b->isEnabled()) {
+					b->click();
+					run->closeRequested = true;
+				}
+			}
+			if (run->started && cancelAt > 0 && !run->cancelRequested && elapsed >= cancelAt * 1000) {
+				auto *b = dock->findChild<QPushButton *>("cancelPublish");
+				if (b && b->isEnabled()) {
+					b->click();
+					run->cancelRequested = true;
+				}
+			}
+
 			auto offlineAt = qEnvironmentVariableIntValue("HHC_FIXTURE_OFFLINE_AFTER_SECONDS"),
 			     offlineSeconds = qEnvironmentVariableIntValue("HHC_FIXTURE_OFFLINE_SECONDS");
 			if (run->started && offlineSeconds > 0 && !run->offline && elapsed >= offlineAt * 1000) {
@@ -215,6 +260,21 @@ void begin()
 			auto seconds = int(run->overall.elapsed() / 1000);
 			if (seconds != run->lastEvidence) {
 				run->lastEvidence = seconds;
+				auto platformPath =
+					QCoreApplication::applicationDirPath() +
+					"/../../config/obs-studio/plugin_config/hhc-obs-plugin/platform/integration-status.json";
+				QFile platform(platformPath);
+				QJsonObject snapshot;
+				if (platform.open(QIODevice::ReadOnly))
+					snapshot = QJsonDocument::fromJson(platform.readAll()).object();
+				if (run->started) {
+					snapshot["recordingMs"] = elapsed;
+					snapshot["issue"] = warning ? warning->text() : QString{};
+					run->trace.append(snapshot);
+					if (snapshot["liveState"] == "live" && run->firstLiveMs < 0)
+						run->firstLiveMs = int(elapsed);
+				}
+
 				hhc::atomicJson(destination + "/progress.json",
 						{{"status", status->text()},
 						 {"issue", warning ? warning->text() : QString{}},
@@ -223,9 +283,13 @@ void begin()
 						 {"offlineInjected", run->offline},
 						 {"transportRestored", run->restored}});
 			}
-			const bool complete = run->stopped &&
-					      (status->text().contains(QString::fromUtf8("草稿已就緒")) ||
-					       status->text().contains(QString::fromUtf8("會後影片已發布")));
+			const bool expectedAbort = !recoverId.isEmpty() &&
+						   qEnvironmentVariableIsSet("HHC_FIXTURE_EXPECT_ABORT") && warning &&
+						   warning->text().contains(QString::fromUtf8("伺服器狀態：aborted"));
+			const bool complete = expectedAbort ||
+					      run->stopped &&
+						      (status->text().contains(QString::fromUtf8("草稿已就緒")) ||
+						       status->text().contains(QString::fromUtf8("會後影片已發布")));
 			const bool rejected = warning &&
 					      ((warning->text().contains(QString::fromUtf8("伺服器狀態：aborted")) ||
 						warning->text().contains(QString::fromUtf8("伺服器狀態：failed")) ||
@@ -243,6 +307,12 @@ void begin()
 						 {"status", status->text()},
 						 {"issue", warning ? warning->text() : QString{}},
 						 {"elapsedMs", run->overall.elapsed()},
+						 {"trace", run->trace},
+						 {"firstLiveMs", run->firstLiveMs},
+						 {"closeLiveRequested", run->closeRequested},
+						 {"cancelPublishRequested", run->cancelRequested},
+						 {"recoveredLocalId", recoverId},
+						 {"expectedAbort", expectedAbort},
 						 {"liveIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_LIVE")},
 						 {"publishIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_PUBLISH")}});
 				dock->grab().save(destination + "/native-final.png");

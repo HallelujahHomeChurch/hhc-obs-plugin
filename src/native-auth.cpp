@@ -210,8 +210,11 @@ TokenSet NativeAuth::exchange(QJsonObject form, const QString &expectedAccount)
 	auto token = parseNativeToken(QJsonDocument::fromJson(response.body).object());
 	require(expectedAccount.isEmpty() || token.account == expectedAccount,
 		"Refresh principal changed; queue remains account-bound");
-	QJsonObject stored{{"refresh_token", QString::fromUtf8(token.refresh)}, {"principal", token.principal}};
-	CredentialVault::save(issuer, "native:" + token.account, QJsonDocument(stored).toJson(QJsonDocument::Compact));
+	QJsonObject stored{{"refresh_token", QString::fromUtf8(token.refresh)},
+			   {"principal", token.principal},
+			   {"device_id", deviceId_}};
+	CredentialVault::save(issuer, "native:" + deviceId_ + ":" + token.account,
+			      QJsonDocument(stored).toJson(QJsonDocument::Compact));
 	if (expectedAccount.isEmpty()) {
 		QSaveFile selected(root_ + "/active-account");
 		auto bytes = token.account.toUtf8();
@@ -262,32 +265,49 @@ QByteArray NativeAuth::bearer(bool force)
 		if (selected.open(QIODevice::ReadOnly) && selected.size() < 128)
 			account = QString::fromUtf8(selected.readAll()).trimmed();
 	}
+	bool missingSelection = false;
 	if (account.isEmpty()) {
 		auto legacy = CredentialVault::load(issuer, "native-active");
 		if (legacy) {
 			auto j = QJsonDocument::fromJson(*legacy).object();
 			account = j["principal"].toObject()["id"].toString();
-			require(!QUuid(account).isNull(), "Stored account invalid");
-			CredentialVault::save(issuer, "native:" + account, *legacy);
-			QSaveFile selected(root_ + "/active-account");
-			auto bytes = account.toUtf8();
-			require(selected.open(QIODevice::WriteOnly) && selected.write(bytes) == bytes.size() &&
-					selected.commit(),
-				"Cannot migrate account");
-			CredentialVault::erase(issuer, "native-active");
+			missingSelection = true;
 		}
 	}
+	if (account.isEmpty())
+		throw RequestError(401, "sign_in_required");
 	require(!QUuid(account).isNull(), "Stored account invalid");
-	auto stored = CredentialVault::load(issuer, "native:" + account);
+	auto stored = CredentialVault::load(issuer, "native:" + deviceId_ + ":" + account);
+	QString migratedTarget;
+	if (!stored) {
+		migratedTarget = "native:" + account;
+		stored = CredentialVault::load(issuer, migratedTarget);
+		if (!stored) {
+			migratedTarget = "native-active";
+			stored = CredentialVault::load(issuer, migratedTarget);
+		}
+	}
 	if (!stored)
 		throw RequestError(401, "sign_in_required");
 	auto j = QJsonDocument::fromJson(*stored).object();
 	require(j["principal"].toObject()["id"] == account, "Stored principal differs");
+	require(!j.contains("device_id") || j["device_id"] == deviceId_, "Stored device differs");
 	refresh = j["refresh_token"].toString().toUtf8();
 	require(!refresh.isEmpty(), "Stored native credential invalid");
 	auto fresh =
 		exchange({{"grant_type", "refresh_token"}, {"refresh_token", QString::fromUtf8(refresh)}}, account);
 	require(fresh.account == account, "Refresh principal changed; queue remains account-bound");
+	// Delete a legacy entry only after the issuer proves this device owns its refresh chain.
+	if (!migratedTarget.isEmpty())
+		CredentialVault::erase(issuer, migratedTarget);
+	if (missingSelection && expectedAccount_.isEmpty()) {
+		QSaveFile selected(root_ + "/active-account");
+		auto bytes = account.toUtf8();
+		require(selected.open(QIODevice::WriteOnly) && selected.write(bytes) == bytes.size() &&
+				selected.commit(),
+			"Cannot migrate account selection");
+	}
+
 	QMutexLocker lock(&mutex_);
 	token_ = std::move(fresh);
 	expiry_ = std::chrono::steady_clock::now() + std::chrono::seconds(token_.expiresIn);
@@ -301,7 +321,7 @@ void NativeAuth::logout()
 	attempt_.reset();
 	{
 		QMutexLocker lock(&mutex_);
-		CredentialVault::erase(issuer, "native:" + token_.account);
+		CredentialVault::erase(issuer, "native:" + deviceId_ + ":" + token_.account);
 		token_ = {};
 	}
 	if (onChanged)

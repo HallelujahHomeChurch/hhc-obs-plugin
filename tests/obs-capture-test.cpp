@@ -39,9 +39,11 @@ int main(int argc, char **argv)
 	hhc::SessionStore store(requested);
 	const QString out = journal ? store.mediaDirectory("synthetic-test-account", "capture-test") : requested;
 	if (argc > 3 && QString(argv[3]) == "--recover") {
-		const auto pending = store.loadPending("synthetic-test-account");
+		const auto account = argc > 4 ? QString::fromLocal8Bit(argv[4]) : QString("synthetic-test-account");
+		const auto pending = store.loadPending(account);
 		if (pending.size() != 1 || pending[0].objects.size() < 6 || pending[0].normalEnd ||
-		    pending[0].stopIntent || pending[0].sealAcknowledged || pending[0].confirmedReady)
+		    pending[0].stopIntent || pending[0].sealAcknowledged || pending[0].confirmedReady ||
+		    (argc > 5 && pending[0].localId != QString::fromLocal8Bit(argv[5])))
 			return 17;
 		std::cout << "Recovered interrupted capture: " << pending[0].objects.size()
 			  << " verified closed objects; not normal or published\n";

@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QFile>
+#include <QCryptographicHash>
 #include <iostream>
 int main(int argc, char **argv)
 {
@@ -17,7 +18,11 @@ int main(int argc, char **argv)
 	};
 	QFile f("tests/fixtures/c1.json");
 	check(f.open(QIODevice::ReadOnly), "read pinned fixtures");
-	for (const auto &v : QJsonDocument::fromJson(f.readAll()).array()) {
+	const auto fixtureBytes = f.readAll();
+	check(QCryptographicHash::hash(fixtureBytes, QCryptographicHash::Sha256).toHex() ==
+		      "a877807cb3559fb507520596118a6f1c0ddae4c1a87f086018acea3fde7efd9a",
+	      "immutable C1 fixture bytes retained on Windows checkout");
+	for (const auto &v : QJsonDocument::fromJson(fixtureBytes).array()) {
 		const auto o = v.toObject();
 		if (o["schema"].toString().contains("Capture") && !o["schema"].toString().contains("Error"))
 			check(hhc::validWire(o["schema"].toString(), o["value"]) == o["valid"].toBool(),

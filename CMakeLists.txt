@@ -129,7 +129,7 @@ add_test(NAME worker-error-propagation COMMAND async-test)
 set_tests_properties(worker-error-propagation PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;$ENV{PATH}")
 
 add_executable(production-status-test tests/production-status-test.cpp)
-target_link_libraries(production-status-test PRIVATE hhc-native-auth)
+target_link_libraries(production-status-test PRIVATE hhc-native-auth hhc-store)
 
 execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE HHC_SOURCE_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
 foreach(target hhc-obs-plugin hhc-upload-helper)
