@@ -46,6 +46,14 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	auto *account = new QLabel(QString::fromUtf8("帳號：測試狀態（尚未登入）"));
 	account->setWordWrap(true);
 	layout->addWidget(account);
+	account_ = account;
+	login_ = new QPushButton(QString::fromUtf8("登入 HHC"));
+	login_->setObjectName("login");
+	layout->addWidget(login_);
+	connect(login_, &QPushButton::clicked, this, [this] {
+		if (onLogin)
+			onLogin();
+	});
 	auto *titleLabel = new QLabel(QString::fromUtf8("本場標題"));
 	title_ = new QLineEdit;
 	title_->setObjectName("title");
@@ -70,6 +78,20 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	publish_ = new QCheckBox(QString::fromUtf8("完成後自動發布"));
 	publish_->setObjectName("publish");
 	layout->addWidget(publish_);
+	closeLive_ = new QPushButton(QString::fromUtf8("關閉會員直播，繼續錄影"));
+	closeLive_->setObjectName("closeLive");
+	layout->addWidget(closeLive_);
+	connect(closeLive_, &QPushButton::clicked, this, [this] {
+		if (onCloseLive)
+			onCloseLive();
+	});
+	cancelPublish_ = new QPushButton(QString::fromUtf8("取消會後自動發布"));
+	cancelPublish_->setObjectName("cancelPublish");
+	layout->addWidget(cancelPublish_);
+	connect(cancelPublish_, &QPushButton::clicked, this, [this] {
+		if (onCancelPublish)
+			onCancelPublish();
+	});
 	auto *hint = new QLabel(
 		QString::fromUtf8("請明確選擇發布意向。自動發布須等影片完整且驗證通過；直播與會後影片分開管理。"));
 	hint->setWordWrap(true);
@@ -105,6 +127,16 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	auto *folder = new QPushButton(QString::fromUtf8("開啟本機資料夾"));
 	folder->setObjectName("openFolder");
 	recentLayout->addWidget(folder);
+	sessions_ = new QComboBox;
+	sessions_->setObjectName("recoverSession");
+	recentLayout->addWidget(sessions_);
+	auto *recover = new QPushButton(QString::fromUtf8("繼續同步所選收錄"));
+	recover->setObjectName("resumeSession");
+	recentLayout->addWidget(recover);
+	connect(recover, &QPushButton::clicked, this, [this] {
+		if (onRecover && !sessions_->currentData().toString().isEmpty())
+			onRecover(sessions_->currentData().toString());
+	});
 	connect(refresh, &QPushButton::clicked, this, [this] {
 		if (onRefresh)
 			onRefresh();
@@ -131,10 +163,29 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 }
 void Dock::apply(const DockState &s)
 {
+	const bool idle = s.phase == Phase::Ready || s.phase == Phase::DraftReady || s.phase == Phase::Published ||
+			  s.phase == Phase::Failed || s.phase == Phase::Unavailable;
+	login_->setVisible(!s.localOnly);
+	login_->setEnabled(idle && !s.checkingLocal);
+	login_->setText(s.account.isEmpty() ? QString::fromUtf8("登入 HHC") : QString::fromUtf8("重新登入 HHC"));
+	account_->setText(s.account.isEmpty() ? QString::fromUtf8("尚未登入")
+					      : QString::fromUtf8("帳號：%1").arg(s.account));
+	closeLive_->setVisible(!s.localOnly && s.connected);
+	cancelPublish_->setVisible(!s.localOnly && s.connected);
+	closeLive_->setEnabled(s.liveEnabled && (s.phase == Phase::Capturing || s.phase == Phase::Uploading));
+	cancelPublish_->setEnabled(
+		s.autoPublish.value_or(false) &&
+		(s.phase == Phase::Capturing || s.phase == Phase::Uploading || s.phase == Phase::Validating));
+	sessions_->setVisible(!s.localOnly);
+	sessions_->setEnabled(idle && !s.checkingLocal);
+	if (s.connected)
+		hint_->setText(QString::fromUtf8(
+			"直播與會後發布各自獨立。只錄影請保持兩項關閉；停止後會繼續補傳並等待伺服器驗證。"));
 	if (s.localOnly)
 		hint_->setText(QString::fromUtf8("本機驗證不會建立平台影音，資料不會自動綁定未來登入的帳號。"));
 	note_->setText(s.localOnly ? QString::fromUtf8("本機驗證模式 · 不上傳、不開放直播、不發布。平台連線尚未設定。")
-				   : QString::fromUtf8("介面測試 · 未連接 HHC 服務"));
+		       : s.connected ? QString::fromUtf8("HHC 正式平台 · 29.97 fps")
+				     : QString::fromUtf8("尚未登入 HHC 正式平台"));
 	track_->setEnabled(s.phase == Phase::Ready || s.phase == Phase::LocalComplete || s.phase == Phase::Failed);
 	live_->setChecked(s.liveEnabled);
 	live_->setEnabled(!s.localOnly && s.canPublish && s.phase == Phase::Ready);
@@ -155,8 +206,13 @@ void Dock::apply(const DockState &s)
 	action_->setText(QString::fromUtf8("開始收錄"));
 	action_->setEnabled(false);
 	switch (s.phase) {
+	case Phase::Creating:
+		status_->setText(QString::fromUtf8("正在建立本場收錄，請稍候"));
+		action_->setText(QString::fromUtf8("建立收錄中"));
+		break;
 	case Phase::Unavailable:
-		status_->setText(QString::fromUtf8("尚未連接 HHC 服務"));
+		status_->setText(s.connected ? QString::fromUtf8("已登入，但尚無收錄權限")
+					     : QString::fromUtf8("尚未登入 HHC"));
 		break;
 	case Phase::Ready:
 		status_->setText(QString::fromUtf8("準備收錄"));
@@ -187,12 +243,12 @@ void Dock::apply(const DockState &s)
 		break;
 	case Phase::DraftReady:
 		status_->setText(QString::fromUtf8("草稿已就緒"));
-		action_->setText(QString::fromUtf8("發布影片"));
-		action_->setEnabled(s.canPublish);
+		action_->setText(QString::fromUtf8("開始另一場收錄"));
+		action_->setEnabled(s.connected);
 		break;
 	case Phase::Published:
 		status_->setText(QString::fromUtf8("會後影片已發布 · 會員可觀看"));
-		action_->setText(QString::fromUtf8("開啟影音專區"));
+		action_->setText(QString::fromUtf8("開始另一場收錄"));
 		action_->setEnabled(true);
 		break;
 	case Phase::Failed:
@@ -223,5 +279,26 @@ QString Dock::title() const
 void Dock::setRecoveryText(const QString &text)
 {
 	recent_->setText(text);
+}
+} // namespace hhc
+
+namespace hhc {
+bool Dock::selectedLive() const
+{
+	return live_->isChecked();
+}
+bool Dock::selectedPublish() const
+{
+	return publish_->isChecked();
+}
+void Dock::setRecoverySessions(const QStringList &ids)
+{
+	auto selected = sessions_->currentData();
+	sessions_->clear();
+	for (const auto &id : ids)
+		sessions_->addItem(id, id);
+	auto i = sessions_->findData(selected);
+	if (i >= 0)
+		sessions_->setCurrentIndex(i);
 }
 } // namespace hhc

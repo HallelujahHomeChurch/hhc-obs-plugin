@@ -139,6 +139,7 @@ void SessionStore::save(const CaptureJournal &j)
 			require(found != j.objects.end() && found->size == o.size && found->sha256 == o.sha256,
 				"immutable object identity changed");
 		}
+		previous.close();
 	}
 	// Serialize an allowlist of typed local fields, never arbitrary server JSON.
 	const auto data = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
@@ -274,6 +275,33 @@ void SessionStore::checkpointLocal(const QString &account, const QString &localI
 	target.setDirectWriteFallback(false);
 	require(target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() && target.commit(),
 		"atomic checkpoint failed");
+}
+bool SessionStore::isPrepared(const QString &account, const QString &id) const
+{
+	try {
+		auto dir = mediaDirectory(account, id);
+		require(!QFileInfo(root_).isSymLink() && !QFileInfo(QFileInfo(dir).absolutePath()).isSymLink() &&
+				!QFileInfo(dir).isSymLink(),
+			"Prepared directory is a link");
+		const QSet<QString> allowed{"journal.json", "remote-journal.json", "local-session.json"};
+		for (const auto &name :
+		     QDir(dir).entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System))
+			require(allowed.contains(name) && QFileInfo(dir + "/" + name).isFile() &&
+					!QFileInfo(dir + "/" + name).isSymLink(),
+				"Prepared directory contains media or unknown files");
+		QFile f(dir + "/journal.json");
+		require(f.size() <= 8 * 1024 * 1024 && f.open(QIODevice::ReadOnly), "Prepared journal unavailable");
+		QJsonParseError e;
+		auto doc = QJsonDocument::fromJson(f.readAll(), &e);
+		require(e.error == QJsonParseError::NoError && doc.isObject(), "Prepared journal corrupt");
+		auto j = parse(doc.object());
+		require(j.account == account && j.localId == id && j.objects.empty() && !j.stopIntent && !j.normalEnd &&
+				!j.sealAcknowledged && !j.confirmedReady,
+			"Prepared journal is not pristine");
+		return true;
+	} catch (...) {
+		return false;
+	}
 }
 bool SessionStore::mayCleanup(const CaptureJournal &j, QDateTime now) const
 {

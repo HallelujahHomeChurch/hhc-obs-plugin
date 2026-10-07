@@ -58,6 +58,8 @@ int main(int argc, char **argv)
 	active.account = "account-a";
 	active.localId = "active-002";
 	store.save(active);
+	check(store.isPrepared(active.account, active.localId),
+	      "account-bound empty journal can prepare capture before HTTP creation");
 	auto activePath = store.mediaDirectory(active.account, active.localId);
 	QDir().mkpath(activePath + "/1080p");
 	check(QFile::copy(path + "/1080p/init.mp4", activePath + "/1080p/init.mp4"), "copy closed test object");

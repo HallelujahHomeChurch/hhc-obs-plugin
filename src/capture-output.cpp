@@ -397,7 +397,11 @@ bool CaptureOutput::start(const CaptureConfig &config)
 		d->fail(invalid.c_str());
 		return false;
 	}
-	if (QFileInfo::exists(config.directory)) {
+	if (QFileInfo::exists(config.directory) &&
+	    (config.queueRoot.isEmpty() || config.account.isEmpty() || config.localId.isEmpty() ||
+	     SessionStore(config.queueRoot).mediaDirectory(config.account, config.localId) !=
+		     QFileInfo(config.directory).absoluteFilePath() ||
+	     !SessionStore(config.queueRoot).isPrepared(config.account, config.localId))) {
 		d->fail("Capture directory must be new");
 		return false;
 	}

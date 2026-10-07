@@ -1,26 +1,22 @@
-# Windows x64 本機驗證版
+# HHC OBS Windows x64 platform preview
 
-這是平台尚未就緒前的本機驗證版，不是完成端到端驗收的正式版。只支援已測試的 OBS 32.2.2 Windows x64。需要 NVIDIA NVENC；不會切換 CPU。不要安裝開發用的 hhc-obs-fixture.dll。
+Requires OBS 32.2.2 x64 / Qt 6.11.1. This unsigned preview implements C1 c1-2026-10-07.1 against the approved production platform. Local/CI results alone do not establish media readiness, member playback or operational acceptance.
 
-## 安裝（不需 CLI）
+## Install and operate through the GUI
 
-1. 結束 OBS。首次請使用獨立 portable OBS 測試副本。
-2. 解壓 ZIP，用檔案總管把 `obs-plugins` 資料夾合併到 OBS 安裝根目錄。根目錄內應已有 `bin`、`data`、`obs-plugins`。
-3. 若已有 `obs-plugins/64bit/hhc-obs-plugin.dll`，先備份該檔再替換；勿覆蓋 OBS 的 Qt、FFmpeg 或其他外掛 DLL。
-4. 開啟 OBS，在「停駐視窗 / Docks」中開啟「HHC 影音」。介面必須顯示「本機驗證模式」。
+1. Exit OBS. Unzip the package using Explorer. Copy both `obs-plugins` and `data` into the OBS installation folder, keeping the directories intact. The package contains the plugin DLL, background upload helper and matching native Windows Schannel TLS backend.
+2. Open OBS and enable the **HHC 影音** dock. Choose **登入 HHC**, then complete sign-in/authorization in the system browser. Passwords are never entered into OBS. Tokens and rotated refresh credentials stay in Windows Credential Manager.
+3. Set a title and audio track (1–6). Program must be 1920×1080 at 30000/1001 fps, NV12 limited BT.709, 48kHz stereo. NVENC failure is explicit; there is no CPU fallback.
+4. Select intent before starting. Both controls off means recording only. **同步開放會員直播** permits member live, independently of **完成後自動發布**. Either exposure requires the issuer's current publish scope. Server ready and server published remain distinct.
+5. Stop recording normally. The local stop intent is persisted before notifying the server. Closed backlog/tail uploads continue, then normal inventory is sealed. Wait for server media validation and the actual automatic-publication state. A blocked publication must be investigated in Admin; the plugin never calls manual publish as a fallback.
+6. **關閉會員直播，繼續錄影** closes live admission without cancelling publication. **取消會後自動發布** leaves live independent. Accepted controls do not reopen later.
+7. On disconnection the account-bound queue remains durable and retries are bounded. Use **重新檢查本機收錄**, select a session and **繼續同步所選收錄** when intervention is required. Interrupted encoders are explicitly aborted/incomplete; their retained media cannot be fabricated into normalEnd.
+8. On an accepted OBS exit, a normal encoder stop is attempted and the helper continues complete sessions without a terminal window. If the background helper cannot sign in or exhausts bounded retries, reopen OBS and resume the original queue. Physical crashes require explicit operator recovery; incomplete media remains preserved.
 
-## 操作
+The original YouTube stream and original OBS recording use their existing settings independently. Member playback and full-event DVR belong to the website. Synthetic production test exposure must be deliberately enabled by the authorized operator.
 
-Program 必須為 1920×1080、30000/1001（29.97 fps）、NV12／limited BT.709；音訊為 48 kHz stereo。設定不符會拒絕開始，不會自行改動 OBS。選擇音軌 1–6，按「開始本機驗證收錄」；停止時等待「本機收錄完成」。
+## Remove through Explorer
 
-直播與自動發布在此版本停用。本機驗證資料不會自動綁定未來登入的帳號，也不代表平台的「只錄影」工作流程已完成。此版不執行任何網路上傳。既有 YouTube 及 OBS 原錄影使用自己的控制。
+Exit OBS. Remove only `obs-plugins/64bit/hhc-obs-plugin.dll`, `obs-plugins/64bit/hhc-upload-helper.exe` and `data/obs-plugins/hhc-obs-plugin`. Keep the per-user plugin configuration and queue so pending media is not lost. Credential removal is available in Windows Credential Manager; never delete another application's credentials. Reinstalling uses the same device ID and account-bound queue.
 
-「重新檢查本機收錄」會在背景驗證 journal、封閉物件與 SHA-256，列出正常或待處理的收錄。「開啟本機資料夾」使用 Windows 檔案總管。異常結束的收錄保留為未完成，不会自動變成可發布影片。關閉 dock 只隱藏；退出 OBS 時若正在收錄會要求確認並保留未完成資料。
-
-## 移除（保留資料）
-
-結束 OBS，用檔案總管移走或刪除 **只有** `obs-plugins/64bit/hhc-obs-plugin.dll`，再啟動 OBS。不要刪除 OBS 設定資料夾：journal 和本機媒體位於 OBS 的 `plugin_config/hhc-obs-plugin/local-test-queue`，portable 模式則在該副本自己的 config 下。移除 DLL 不會刪除收錄，也不會回復或改動 YouTube 設定。
-
-## 待平台整合
-
-Mac 提供固定版 API 契約、連線位址、登入設定及就緒通知後，才驗證真正的錄製／上傳／會員直播／斷線恢復／直播轉錄影／自動發布。保留 29.97 fps；Mac 處理目前直播驗證器固定 30 fps 的落差。本機成功不表示端到端通過。
+Developer fixtures and fault injection are excluded. Hosted CI has no qualified NVENC GPU. This is a platform preview; see the repository's integration ledger for observed OAuth, recording/live/publication, recovery and current-build long-run results.

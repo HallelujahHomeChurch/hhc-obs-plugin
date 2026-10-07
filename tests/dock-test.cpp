@@ -87,5 +87,31 @@ int main(int argc, char **argv)
 	dock.apply(state);
 	check(status->text().contains("本機") && !status->text().contains("已發布"),
 	      "local completion is never platform publication");
+	state.localOnly = false;
+	state.connected = true;
+	state.account = "synthetic-user";
+	state.phase = hhc::Phase::Capturing;
+	state.liveEnabled = true;
+	state.autoPublish = true;
+	dock.apply(state);
+	auto *login = dock.findChild<QPushButton *>("login");
+	auto *closeLive = dock.findChild<QPushButton *>("closeLive");
+	auto *cancelPublish = dock.findChild<QPushButton *>("cancelPublish");
+	check(login && !login->isEnabled(), "cannot change account during active capture");
+	check(closeLive && closeLive->isEnabled() && cancelPublish && cancelPublish->isEnabled(),
+	      "independent live and publication controls");
+	int controls = 0;
+	dock.onCloseLive = [&] {
+		controls += 1;
+	};
+	dock.onCancelPublish = [&] {
+		controls += 10;
+	};
+	if (closeLive)
+		closeLive->click();
+	check(controls == 1, "close live leaves publication intent untouched");
+	if (cancelPublish)
+		cancelPublish->click();
+	check(controls == 11, "cancel publication is distinct callback");
 	return fails ? 1 : 0;
 }

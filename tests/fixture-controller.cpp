@@ -1,6 +1,10 @@
 #include "capture-output.hpp"
 #include "local-controller.hpp"
 #include <QPushButton>
+#include <QCheckBox>
+#include <QLineEdit>
+#include <QLabel>
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -11,6 +15,9 @@
 #include <QPainter>
 #include <QTimer>
 #include <QJsonObject>
+#include <QNetworkProxy>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -132,6 +139,126 @@ void begin()
 						      std::chrono::nanoseconds((frame + 1) * 1001000000ULL / 30));
 		}
 	});
+	if (qEnvironmentVariableIsSet("HHC_FIXTURE_NATIVEDRIVE")) {
+		QDir().mkpath(destination);
+		auto *watch = new QTimer(QCoreApplication::instance());
+		watch->setInterval(250);
+		struct Run {
+			QElapsedTimer overall, recording;
+			bool requested = false, started = false, stopped = false, offline = false, restored = false;
+			int lastEvidence = -1;
+			QTcpServer blackhole;
+			QNetworkProxy previous;
+		};
+		;
+		auto run = std::make_shared<Run>();
+		run->overall.start();
+		QObject::connect(watch, &QTimer::timeout, [watch, run] {
+			auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+			auto *dock = window->findChild<QWidget *>("hhcCaptureDock");
+			if (!dock)
+				return;
+			auto *status = dock->findChild<QLabel *>("status");
+			auto *warning = dock->findChild<QLabel *>("warning");
+			auto *action = dock->findChild<QPushButton *>("action");
+			if (!status || !action)
+				return;
+			if (!run->requested && status->text() == QString::fromUtf8("準備收錄") && action->isEnabled()) {
+				dock->findChild<QLineEdit *>("title")->setText(
+					QString("[HHC OBS SYNTHETIC TEST] %1 %2")
+						.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate),
+						     qEnvironmentVariable("HHC_FIXTURE_CASE", "recording")));
+				dock->findChild<QCheckBox *>("live")->setChecked(
+					qEnvironmentVariableIsSet("HHC_FIXTURE_LIVE"));
+				dock->findChild<QCheckBox *>("publish")->setChecked(
+					qEnvironmentVariableIsSet("HHC_FIXTURE_PUBLISH"));
+				action->click();
+				run->requested = true;
+				blog(LOG_INFO,
+				     "[HHC fixture] Native platform recording requested; explicit exposure flags applied");
+			}
+			if (run->requested && !run->started && status->text() == QString::fromUtf8("收錄中")) {
+				run->started = true;
+				run->recording.start();
+				dock->grab().save(destination + "/native-running.png");
+				blog(LOG_INFO, "[HHC fixture] Native platform recording started");
+			}
+			if (run->started && !run->stopped && run->recording.elapsed() >= duration * 1000) {
+				action->click();
+				run->stopped = true;
+				blog(LOG_INFO, "[HHC fixture] Native stop requested");
+			}
+			auto elapsed = run->started ? run->recording.elapsed() : 0;
+			auto offlineAt = qEnvironmentVariableIntValue("HHC_FIXTURE_OFFLINE_AFTER_SECONDS"),
+			     offlineSeconds = qEnvironmentVariableIntValue("HHC_FIXTURE_OFFLINE_SECONDS");
+			if (run->started && offlineSeconds > 0 && !run->offline && elapsed >= offlineAt * 1000) {
+				run->previous = QNetworkProxy::applicationProxy();
+				run->blackhole.listen(QHostAddress::LocalHost, 0);
+				QObject::connect(&run->blackhole, &QTcpServer::newConnection, [run] {
+					while (run->blackhole.hasPendingConnections()) {
+						auto *s = run->blackhole.nextPendingConnection();
+						s->abort();
+						s->deleteLater();
+					}
+				});
+				QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1",
+										 run->blackhole.serverPort()));
+				run->offline = true;
+				blog(LOG_INFO, "[HHC fixture] Developer Qt transport offline fault active");
+			}
+			if (run->offline && !run->restored && elapsed >= (offlineAt + offlineSeconds) * 1000) {
+				QNetworkProxy::setApplicationProxy(run->previous);
+				run->blackhole.close();
+				run->restored = true;
+				blog(LOG_INFO, "[HHC fixture] Developer transport restored");
+			}
+			auto seconds = int(run->overall.elapsed() / 1000);
+			if (seconds != run->lastEvidence) {
+				run->lastEvidence = seconds;
+				hhc::atomicJson(destination + "/progress.json",
+						{{"status", status->text()},
+						 {"issue", warning ? warning->text() : QString{}},
+						 {"recordingMs", elapsed},
+						 {"overallMs", run->overall.elapsed()},
+						 {"offlineInjected", run->offline},
+						 {"transportRestored", run->restored}});
+			}
+			const bool complete = run->stopped &&
+					      (status->text().contains(QString::fromUtf8("草稿已就緒")) ||
+					       status->text().contains(QString::fromUtf8("會後影片已發布")));
+			const bool rejected = warning &&
+					      ((warning->text().contains(QString::fromUtf8("伺服器狀態：aborted")) ||
+						warning->text().contains(QString::fromUtf8("伺服器狀態：failed")) ||
+						warning->text().contains(QString::fromUtf8("伺服器狀態：expired"))) ||
+					       warning->text().contains("HTTP 400") ||
+					       warning->text().contains("HTTP 403") ||
+					       warning->text().contains("malformed_success") ||
+					       warning->text().contains("account_mismatch"));
+			if (complete || rejected || run->overall.elapsed() > (duration + 900) * 1000LL) {
+				hhc::atomicJson(destination + "/native-dock-evidence.json",
+						{{"complete", complete},
+						 {"requested", run->requested},
+						 {"started", run->started},
+						 {"stopped", run->stopped},
+						 {"status", status->text()},
+						 {"issue", warning ? warning->text() : QString{}},
+						 {"elapsedMs", run->overall.elapsed()},
+						 {"liveIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_LIVE")},
+						 {"publishIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_PUBLISH")}});
+				dock->grab().save(destination + "/native-final.png");
+				blog(LOG_INFO, "[HHC fixture] Native platform test complete=%s",
+				     complete ? "true" : "false");
+				if (run->offline && !run->restored)
+					QNetworkProxy::setApplicationProxy(run->previous);
+				watch->stop();
+				watch->deleteLater();
+				finish();
+				QCoreApplication::quit();
+			}
+		});
+		watch->start();
+		return;
+	}
 	if (qEnvironmentVariableIsSet("HHC_FIXTURE_DOCK")) {
 		localController = std::make_unique<hhc::LocalController>(destination);
 		obs_frontend_add_dock_by_id("hhc.fixture.dock", "HHC 本機驗證", localController->view());

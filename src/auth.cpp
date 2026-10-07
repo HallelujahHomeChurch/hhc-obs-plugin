@@ -36,7 +36,7 @@ OAuthAttempt::OAuthAttempt(quint16 port)
 {
 	if (port == 0)
 		throw std::runtime_error("Loopback listener port must be bound first");
-	redirect_ = QUrl(QString("http://127.0.0.1:%1/callback").arg(port));
+	redirect_ = QUrl(QString("http://127.0.0.1:%1/oauth/callback").arg(port));
 }
 std::optional<QString> OAuthAttempt::consumeCallback(const QUrl &url)
 {

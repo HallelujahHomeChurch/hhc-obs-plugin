@@ -1,4 +1,5 @@
 #include "hls-muxer.hpp"
+#include "wire.hpp"
 #include <QDir>
 #include <QFile>
 #include <QSaveFile>
@@ -195,11 +196,42 @@ QJsonObject finalizeMaster(const QString &root)
 			reference = durations;
 		else
 			require(reference == durations, "rendition timelines differ");
-		master += QString("#EXT-X-STREAM-INF:BANDWIDTH=%1,RESOLUTION=%2x%3,FRAME-RATE=29.970\n%3p/index.m3u8\n")
-				  .arg((p.kbps + 128) * 1100)
-				  .arg(p.width)
-				  .arg(p.height)
-				  .toUtf8();
+		QVector<double> seconds;
+		QVector<qint64> bytes;
+		for (int i = 0; i < durations.size(); ++i) {
+			seconds.append(durations[i].toDouble());
+			const QFileInfo object(root + "/" + QString::number(p.height) + "p/seg-" +
+					       QString::number(i).rightJustified(6, '0') + ".m4s");
+			require(object.isFile() && object.size() > 0, "bandwidth object missing");
+			bytes.append(object.size());
+		}
+		const auto targetMatch = QRegularExpression("#EXT-X-TARGETDURATION:([0-9]+)").match(text);
+		require(targetMatch.hasMatch(), "target duration missing");
+		const auto bandwidth = measuredBandwidth(seconds, bytes, targetMatch.captured(1).toDouble());
+		AVFormatContext *init = nullptr;
+		AVDictionary *options = nullptr;
+		av_dict_set(&options, "protocol_whitelist", "file", 0);
+		const auto initPath = (root + "/" + QString::number(p.height) + "p/init.mp4").toUtf8();
+		const auto opened = avformat_open_input(&init, initPath.constData(), nullptr, &options);
+		av_dict_free(&options);
+		require(opened >= 0 && init, "Init codec probe failed");
+		QByteArray avcc, aac;
+		for (unsigned i = 0; i < init->nb_streams; ++i) {
+			const auto *par = init->streams[i]->codecpar;
+			if (par->codec_id == AV_CODEC_ID_H264)
+				avcc = QByteArray(reinterpret_cast<const char *>(par->extradata), par->extradata_size);
+			else if (par->codec_id == AV_CODEC_ID_AAC)
+				aac = QByteArray(reinterpret_cast<const char *>(par->extradata), par->extradata_size);
+		}
+		avformat_close_input(&init);
+		const auto codecs = initCodecTag(avcc, aac);
+		master +=
+			QString("#EXT-X-STREAM-INF:BANDWIDTH=%1,RESOLUTION=%2x%3,FRAME-RATE=29.970,CODECS=\"%4\"\n%3p/index.m3u8\n")
+				.arg(bandwidth)
+				.arg(p.width)
+				.arg(p.height)
+				.arg(codecs)
+				.toUtf8();
 	}
 	QSaveFile f(root + "/master.m3u8");
 	require(f.open(QIODevice::WriteOnly) && f.write(master) == master.size() && f.commit(),

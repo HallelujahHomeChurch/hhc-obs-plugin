@@ -11,6 +11,7 @@ class QComboBox;
 namespace hhc {
 enum class Phase {
 	Unavailable,
+	Creating,
 	Ready,
 	Capturing,
 	StopPending,
@@ -28,6 +29,8 @@ struct DockState {
 	quint64 pendingBytes = 0;
 	QString issue;
 	bool localOnly = false;
+	bool connected = false;
+	QString account;
 	bool checkingLocal = false;
 };
 class Dock : public QWidget {
@@ -36,8 +39,12 @@ public:
 	void apply(const DockState &);
 	unsigned audioTrack() const;
 	QString title() const;
+	bool selectedLive() const;
+	bool selectedPublish() const;
+	void setRecoverySessions(const QStringList &);
 	void setRecoveryText(const QString &);
-	std::function<void()> onAction, onRefresh, onOpenFolder;
+	std::function<void()> onAction, onRefresh, onOpenFolder, onLogin, onCloseLive, onCancelPublish;
+	std::function<void(QString)> onRecover;
 
 private:
 	QLabel *status_ = nullptr, *liveStatus_ = nullptr, *warning_ = nullptr, *pending_ = nullptr;
@@ -45,6 +52,8 @@ private:
 	QLineEdit *title_ = nullptr;
 	QPushButton *action_ = nullptr;
 	QLabel *note_ = nullptr, *recent_ = nullptr, *hint_ = nullptr;
-	QComboBox *track_ = nullptr;
+	QComboBox *track_ = nullptr, *sessions_ = nullptr;
+	QPushButton *login_ = nullptr, *closeLive_ = nullptr, *cancelPublish_ = nullptr;
+	QLabel *account_ = nullptr;
 };
 } // namespace hhc
