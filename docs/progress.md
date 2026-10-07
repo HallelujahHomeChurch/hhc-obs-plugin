@@ -73,3 +73,11 @@ Evidence: native build and 4/4 CTest passed. Real libobs normal capture-to-journ
 Additional RED -> GREEN checks cover a close receipt newer than its session journal, immutable checkpoint identity, incomplete finalization rejection, and Windows file-sharing denial of journal replacement (old journal remains valid). A real libobs final-inventory write fault first reproduced an incorrectly successful journal, then passed after correcting commit order. Unit tests for a locked file do not establish physical disk-full/power-cut durability. Network recovery still requires fixed C1 receipt semantics.
 
 Short harness GPU loads at approximately 21:02–21:08 overlapped F1-L; retain this caveat for resource interpretation. Existing F1/media/review ZIPs remain immutable and predate this source change.
+
+## F1-L completed and checked (2026-10-07 23:27 Taipei)
+
+Actual portable OBS capture ran 20:12:32–22:42:32 and exited. The helper completed local QA and packaging at 22:50. All three renditions have 300 segments and identical total duration 8999.991 seconds at 30000/1001. Local full decoding, stream-format checks and per-object hashes passed. Canonical handoff includes 907 media objects (900 segments, 3 init, 3 rendition playlists, master).
+
+Artifact: artifacts/F1-L-handoff-01.zip; 5982993822 bytes; SHA256 6ace26df4b0a3bb71e772d620889e481fb412ba544378559e49fbf4a4398acdb. Archive hash independently recomputed and matched at 23:27. Producer remains 3701e79639ef119eb93b90d0c5e76219174f95bb, not the newer journal implementation. This is a local real OBS HHC-only long-media pass, not concurrent YouTube/recording qualification, Mac V1, E2E, or P1 acceptance. OBS exit log again reports one remaining allocation; root cause is still open. No capture/monitor process remains running.
+
+Mac-accessible shared location and consumer receipt are still missing. No upload was made. Code implementation remains 2666739; background work only recorded, validated and packaged the older producer. The immutable archive was not rewritten when adding this ledger result.
