@@ -42,6 +42,7 @@ struct CaptureOutput::Impl {
 	std::condition_variable cv;
 	std::deque<encoder_packet> packets;
 	size_t bytes = 0;
+	std::atomic<uint64_t> encodedBytes{0};
 	std::atomic<unsigned> seenVideo{0};
 	std::atomic<bool> failed{false}, done{true}, deactivated{false}, stopRequested{false};
 	std::atomic<StopReason> reason{StopReason::Shutdown};
@@ -122,6 +123,11 @@ struct CaptureOutput::Impl {
 	static void packet(void *data, encoder_packet *p)
 	{
 		auto &s = *static_cast<Impl *>(data);
+#ifdef HHC_CAPTURE_TEST_FAULTS
+		const auto fault = qEnvironmentVariable("HHC_TEST_CAPTURE_FAULT");
+		if (fault == "--header-timeout" || (fault == "--stop-timeout" && s.cutoffPts > 0))
+			return;
+#endif
 		if (!p) {
 			s.fail("OBS encoder failed");
 			return;
@@ -158,7 +164,6 @@ struct CaptureOutput::Impl {
 		bool stopping = false;
 		const auto began = std::chrono::steady_clock::now();
 		auto lastDiskCheck = began;
-		uint64_t encodedBytes = 0;
 		try {
 			while (!failed && seenVideo != 7 && !deactivated) {
 				if (std::chrono::steady_clock::now() - began > std::chrono::seconds(10))
@@ -181,14 +186,19 @@ struct CaptureOutput::Impl {
 				if (!failed && now - lastDiskCheck >= std::chrono::seconds(1)) {
 					lastDiskCheck = now;
 					QStorageInfo disk(config.directory);
+					uint64_t available =
+						static_cast<uint64_t>(std::max<qint64>(0, disk.bytesAvailable()));
+#ifdef HHC_CAPTURE_TEST_FAULTS
+					if (qEnvironmentVariable("HHC_TEST_CAPTURE_FAULT") == "--low-disk")
+						available = 0;
+#endif
 					unsigned count = 0;
 					for (auto &m : mux)
 						if (m)
 							count += static_cast<unsigned>(m->objects().size());
-					const auto limit = runtimeLimit(
-						static_cast<uint64_t>(std::max<qint64>(0, disk.bytesAvailable())),
-						encodedBytes, count,
-						std::chrono::duration<double>(now - began).count());
+					const auto limit =
+						runtimeLimit(available, encodedBytes, count,
+							     std::chrono::duration<double>(now - began).count());
 					if (limit) {
 						reason = *limit;
 						fail("Local capture quota or disk reserve reached");
@@ -463,5 +473,9 @@ QString CaptureOutput::error() const
 {
 	std::lock_guard lock(d->mutex);
 	return d->error;
+}
+std::uint64_t CaptureOutput::encodedBytes() const
+{
+	return d->encodedBytes.load();
 }
 } // namespace hhc

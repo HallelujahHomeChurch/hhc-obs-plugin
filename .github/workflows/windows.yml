@@ -18,8 +18,13 @@ jobs:
         run: ./scripts/bootstrap-windows.ps1
       - run: cmake --build build --config RelWithDebInfo
       - run: ctest --test-dir build -C RelWithDebInfo --output-on-failure
+      - name: Package local preview (not E2E candidate)
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: hhc-obs-windows-x64-unverified
-          path: build/RelWithDebInfo/hhc-obs-plugin.dll
+          path: |
+            artifacts/packages/*.zip
+            artifacts/packages/*.sha256
 # Hosted agents have no qualified NVENC GPU. This job is NOT real OBS/G2/G3 evidence.

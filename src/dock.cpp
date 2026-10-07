@@ -8,10 +8,12 @@
 #include <QScrollArea>
 #include <QGroupBox>
 #include <QDate>
+#include <QComboBox>
 namespace hhc {
 Dock::Dock(QWidget *parent) : QWidget(parent)
 {
 	setMinimumWidth(320);
+	setObjectName("hhcCaptureDock");
 	resize(360, 620);
 	setWindowTitle(QString::fromUtf8("HHC 影音 — 介面測試"));
 	auto *outer = new QVBoxLayout(this);
@@ -20,6 +22,7 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	auto *note = new QLabel(QString::fromUtf8("介面測試 · 未連接 HHC 服務"));
 	note->setWordWrap(true);
 	outer->addWidget(note);
+	note_ = note;
 	auto *scroll = new QScrollArea;
 	scroll->setWidgetResizable(true);
 	scroll->setFrameShape(QFrame::NoFrame);
@@ -52,9 +55,15 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	titleLabel->setBuddy(title_);
 	layout->addWidget(titleLabel);
 	layout->addWidget(title_);
-	auto *source = new QLabel(QString::fromUtf8("Program · 音軌 1\n1080p／720p／480p · 29.97 fps"));
+	auto *source = new QLabel(QString::fromUtf8("Program · 1080p／720p／480p · 29.97 fps"));
 	source->setWordWrap(true);
 	layout->addWidget(source);
+	track_ = new QComboBox;
+	track_->setObjectName("audioTrack");
+	track_->setAccessibleName(QString::fromUtf8("收錄音軌"));
+	for (int i = 1; i <= 6; ++i)
+		track_->addItem(QString::fromUtf8("音軌 %1").arg(i), i);
+	layout->addWidget(track_);
 	live_ = new QCheckBox(QString::fromUtf8("同步開放會員直播"));
 	live_->setObjectName("live");
 	layout->addWidget(live_);
@@ -65,6 +74,7 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 		QString::fromUtf8("請明確選擇發布意向。自動發布須等影片完整且驗證通過；直播與會後影片分開管理。"));
 	hint->setWordWrap(true);
 	layout->addWidget(hint);
+	hint_ = hint;
 	status_ = new QLabel;
 	status_->setObjectName("status");
 	status_->setWordWrap(true);
@@ -86,6 +96,23 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	auto *empty = new QLabel(QString::fromUtf8("尚無已確認的收錄。\n未完成的本機資料會保留。"));
 	empty->setWordWrap(true);
 	recentLayout->addWidget(empty);
+	empty->setTextFormat(Qt::PlainText);
+	empty->setObjectName("recovery");
+	recent_ = empty;
+	auto *refresh = new QPushButton(QString::fromUtf8("重新檢查本機收錄"));
+	refresh->setObjectName("refreshRecovery");
+	recentLayout->addWidget(refresh);
+	auto *folder = new QPushButton(QString::fromUtf8("開啟本機資料夾"));
+	folder->setObjectName("openFolder");
+	recentLayout->addWidget(folder);
+	connect(refresh, &QPushButton::clicked, this, [this] {
+		if (onRefresh)
+			onRefresh();
+	});
+	connect(folder, &QPushButton::clicked, this, [this] {
+		if (onOpenFolder)
+			onOpenFolder();
+	});
 	layout->addWidget(recent);
 	layout->addStretch();
 	action_ = new QPushButton;
@@ -93,6 +120,10 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	action_->setAutoDefault(false);
 	action_->setDefault(false);
 	outer->addWidget(action_);
+	connect(action_, &QPushButton::clicked, this, [this] {
+		if (onAction)
+			onAction();
+	});
 	setTabOrder(title_, live_);
 	setTabOrder(live_, publish_);
 	setTabOrder(publish_, action_);
@@ -100,16 +131,25 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 }
 void Dock::apply(const DockState &s)
 {
+	if (s.localOnly)
+		hint_->setText(QString::fromUtf8("本機驗證不會建立平台影音，資料不會自動綁定未來登入的帳號。"));
+	note_->setText(s.localOnly ? QString::fromUtf8("本機驗證模式 · 不上傳、不開放直播、不發布。平台連線尚未設定。")
+				   : QString::fromUtf8("介面測試 · 未連接 HHC 服務"));
+	track_->setEnabled(s.phase == Phase::Ready || s.phase == Phase::LocalComplete || s.phase == Phase::Failed);
 	live_->setChecked(s.liveEnabled);
-	live_->setEnabled(s.canPublish && s.phase == Phase::Ready);
+	live_->setEnabled(!s.localOnly && s.canPublish && s.phase == Phase::Ready);
 	publish_->setTristate(!s.autoPublish.has_value());
 	publish_->setCheckState(s.autoPublish ? (*s.autoPublish ? Qt::Checked : Qt::Unchecked) : Qt::PartiallyChecked);
-	publish_->setEnabled(s.canPublish && s.phase == Phase::Ready);
-	title_->setEnabled(s.phase == Phase::Ready || s.phase == Phase::Unavailable);
+	publish_->setEnabled(!s.localOnly && s.canPublish && s.phase == Phase::Ready);
+	title_->setEnabled(s.phase == Phase::Ready || s.phase == Phase::Unavailable ||
+			   s.phase == Phase::LocalComplete || s.phase == Phase::Failed);
 	liveStatus_->setText(s.liveConfirmed ? QString::fromUtf8("會員直播中")
 			     : s.liveEnabled ? QString::fromUtf8("直播開放狀態待確認")
 					     : QString::fromUtf8("會員直播未開放"));
 	pending_->setText(QString::fromUtf8("待傳：%1 MB · 三畫質").arg(double(s.pendingBytes) / 1000000.0, 0, 'f', 1));
+	if (s.localOnly)
+		pending_->setText(QString::fromUtf8("本機編碼量：約 %1 MB · 三畫質")
+					  .arg(double(s.pendingBytes) / 1000000.0, 0, 'f', 1));
 	warning_->setText(s.cancelPending ? QString::fromUtf8("取消自動發布待伺服器確認") : s.issue);
 	warning_->setVisible(!warning_->text().isEmpty());
 	action_->setText(QString::fromUtf8("開始收錄"));
@@ -120,7 +160,9 @@ void Dock::apply(const DockState &s)
 		break;
 	case Phase::Ready:
 		status_->setText(QString::fromUtf8("準備收錄"));
-		action_->setEnabled(s.autoPublish.has_value());
+		action_->setEnabled(s.localOnly || s.autoPublish.has_value());
+		if (s.localOnly)
+			action_->setText(QString::fromUtf8("開始本機驗證收錄"));
 		break;
 	case Phase::Capturing:
 		status_->setText(QString::fromUtf8("收錄中"));
@@ -130,6 +172,10 @@ void Dock::apply(const DockState &s)
 	case Phase::StopPending:
 		status_->setText(QString::fromUtf8("已停止收錄，停止通知待同步"));
 		action_->setText(QString::fromUtf8("停止通知待同步"));
+		if (s.localOnly) {
+			status_->setText(QString::fromUtf8("正在完成本機尾段與驗證，請保持 OBS 開啟"));
+			action_->setText(QString::fromUtf8("本機收尾中"));
+		}
 		break;
 	case Phase::Uploading:
 		status_->setText(QString::fromUtf8("補傳中，請保持 OBS 開啟"));
@@ -152,7 +198,30 @@ void Dock::apply(const DockState &s)
 	case Phase::Failed:
 		status_->setText(QString::fromUtf8("收錄需要處理，本機資料已保留"));
 		action_->setText(QString::fromUtf8("查看未完成收錄"));
+		if (s.localOnly) {
+			action_->setText(QString::fromUtf8("開始另一場本機驗證"));
+			action_->setEnabled(true);
+		}
+		break;
+	case Phase::LocalComplete:
+		status_->setText(QString::fromUtf8("本機收錄完成 · 尚未上傳或發布"));
+		action_->setText(QString::fromUtf8("開始另一場本機驗證"));
+		action_->setEnabled(true);
 		break;
 	}
+	if (s.checkingLocal && s.phase != Phase::Capturing && s.phase != Phase::StopPending)
+		action_->setEnabled(false);
+}
+unsigned Dock::audioTrack() const
+{
+	return track_->currentData().toUInt();
+}
+QString Dock::title() const
+{
+	return title_->text();
+}
+void Dock::setRecoveryText(const QString &text)
+{
+	recent_->setText(text);
 }
 } // namespace hhc

@@ -23,6 +23,7 @@ public:
 	bool finished() const;
 	bool wait(unsigned timeoutMs);
 	QString error() const;
+	std::uint64_t encodedBytes() const;
 
 private:
 	struct Impl;

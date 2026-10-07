@@ -5,6 +5,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QDir>
+#include <QComboBox>
 #include <iostream>
 int main(int argc, char **argv)
 {
@@ -60,5 +61,31 @@ int main(int argc, char **argv)
 	dock.grab().save("artifacts/ui/dock-mock-" + qEnvironmentVariable("QT_SCALE_FACTOR", "1") + ".png");
 	dock.close();
 	check(!dock.isVisible(), "close hides mock dock");
+	state.localOnly = true;
+	state.phase = hhc::Phase::Ready;
+	state.autoPublish.reset();
+	dock.apply(state);
+	check(action->isEnabled() && action->text().contains("本機"),
+	      "local validation can start without platform login");
+	check(!live->isEnabled() && !publish->isEnabled(), "local validation cannot expose live or publication");
+	auto *track = dock.findChild<QComboBox *>("audioTrack");
+	check(track && track->count() == 6, "explicit audio mixer selection");
+	if (track) {
+		track->setCurrentIndex(2);
+		check(dock.audioTrack() == 3, "selected mixer is passed to capture");
+	}
+	int clicks = 0;
+	dock.onAction = [&] {
+		++clicks;
+	};
+	action->click();
+	check(clicks == 1, "dock action reaches controller");
+	state.phase = hhc::Phase::Capturing;
+	dock.apply(state);
+	check(track && !track->isEnabled(), "audio mixer locked during capture");
+	state.phase = hhc::Phase::LocalComplete;
+	dock.apply(state);
+	check(status->text().contains("本機") && !status->text().contains("已發布"),
+	      "local completion is never platform publication");
 	return fails ? 1 : 0;
 }

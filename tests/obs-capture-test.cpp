@@ -27,7 +27,11 @@ int main(int argc, char **argv)
 	if (seconds < 1 || seconds > 9000)
 		return 2;
 	const bool inventoryFailure = argc > 3 && QString(argv[3]) == "--journal-inventory-failure";
-	const bool journal = inventoryFailure ||
+	const QString fault = argc > 3 ? QString(argv[3]) : QString();
+	const bool runtimeFault = fault == "--low-disk" || fault == "--stop-timeout" || fault == "--header-timeout";
+	if (runtimeFault)
+		qputenv("HHC_TEST_CAPTURE_FAULT", fault.toUtf8());
+	const bool journal = runtimeFault || inventoryFailure ||
 			     (argc > 3 && (QString(argv[3]) == "--journal" || QString(argv[3]) == "--recover"));
 	const QString requested = QDir::cleanPath(QString::fromLocal8Bit(argv[1]));
 	hhc::SessionStore store(requested);
@@ -125,6 +129,23 @@ int main(int argc, char **argv)
 			} else {
 				std::cerr << "FAIL native output start: " << capture.error().toStdString() << '\n';
 				result = 6;
+			}
+		} else if (runtimeFault) {
+			std::this_thread::sleep_for(std::chrono::seconds(fault == "--header-timeout" ? 12 : 3));
+			capture.stop(hhc::StopReason::User);
+			const bool ok = capture.wait(15000);
+			const auto recovered = store.loadPending(config.account);
+			QFile inv(out + "/inventory.json");
+			if (ok || !capture.finished() || recovered.size() != 1 || recovered[0].normalEnd ||
+			    !inv.open(QIODevice::ReadOnly)) {
+				std::cerr << "FAIL runtime fault did not stop as incomplete\n";
+				result = 21;
+			} else {
+				const auto evidence = QJsonDocument::fromJson(inv.readAll()).object();
+				const auto expected = fault == "--low-disk" ? hhc::StopReason::DiskLimit
+									    : hhc::StopReason::EncoderFailure;
+				if (evidence["normalEnd"].toBool() || evidence["stopReason"].toInt() != int(expected))
+					result = 22;
 			}
 		} else if (inventoryFailure) {
 			if (!QDir().mkpath(out + "/inventory.json"))

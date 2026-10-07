@@ -1,4 +1,7 @@
 #include "capture-output.hpp"
+#include "local-controller.hpp"
+#include <QPushButton>
+#include <QMainWindow>
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <QCoreApplication>
@@ -17,6 +20,7 @@
 // Developer fixture target only. Never compiled into the candidate plugin.
 namespace {
 std::unique_ptr<hhc::CaptureOutput> capture;
+std::unique_ptr<hhc::LocalController> localController;
 std::thread producer;
 std::atomic<bool> running{false};
 obs_source_t *source = nullptr;
@@ -29,6 +33,7 @@ void finish()
 	if (producer.joinable())
 		producer.join();
 	capture.reset();
+	localController.reset();
 	obs_frontend_set_current_scene(nullptr);
 	if (scene) {
 		obs_scene_release(scene);
@@ -45,6 +50,17 @@ void begin()
 	if (!QFileInfo::exists(base + "portable_mode.txt") || obs_frontend_streaming_active() ||
 	    obs_frontend_recording_active()) {
 		blog(LOG_ERROR, "[HHC fixture] Refusing non-portable or already active OBS");
+		return;
+	}
+	if (qEnvironmentVariableIsSet("HHC_FIXTURE_NATIVE_SMOKE")) {
+		auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		auto *dock = window->findChild<QWidget *>("hhcCaptureDock");
+		const bool absent = qEnvironmentVariableIsSet("HHC_FIXTURE_EXPECT_ABSENT");
+		blog(LOG_INFO, "[HHC fixture] Native install smoke success=%s, dock=%s",
+		     bool(dock) != absent ? "true" : "false", dock ? "present" : "absent");
+		if (dock)
+			dock->grab().save(qEnvironmentVariable("HHC_FIXTURE_OUTPUT") + ".png");
+		QCoreApplication::quit();
 		return;
 	}
 	destination = qEnvironmentVariable("HHC_FIXTURE_OUTPUT");
@@ -116,7 +132,41 @@ void begin()
 						      std::chrono::nanoseconds((frame + 1) * 1001000000ULL / 30));
 		}
 	});
+	if (qEnvironmentVariableIsSet("HHC_FIXTURE_DOCK")) {
+		localController = std::make_unique<hhc::LocalController>(destination);
+		obs_frontend_add_dock_by_id("hhc.fixture.dock", "HHC 本機驗證", localController->view());
+	}
 	QTimer::singleShot(1500, QCoreApplication::instance(), [] {
+		if (localController) {
+			localController->view()->findChild<QPushButton *>("action")->click();
+			if (!localController->busy()) {
+				blog(LOG_ERROR, "[HHC fixture] Dock failed to start");
+				finish();
+				QCoreApplication::quit();
+				return;
+			}
+			blog(LOG_INFO, "[HHC fixture] Real dock capture started for %d seconds", duration);
+			localController->view()->grab().save(destination + "/dock-running.png");
+			QTimer::singleShot(duration * 1000, QCoreApplication::instance(), [] {
+				localController->view()->findChild<QPushButton *>("action")->click();
+				auto *timer = new QTimer(QCoreApplication::instance());
+				timer->setInterval(200);
+				QObject::connect(timer, &QTimer::timeout, [timer] {
+					if (localController->busy() ||
+					    localController->phase() == hhc::Phase::StopPending)
+						return;
+					blog(LOG_INFO, "[HHC fixture] Dock complete (success=%s)",
+					     localController->phase() == hhc::Phase::LocalComplete ? "true" : "false");
+					localController->view()->grab().save(destination + "/dock-complete.png");
+					timer->stop();
+					timer->deleteLater();
+					finish();
+					QCoreApplication::quit();
+				});
+				timer->start();
+			});
+			return;
+		}
 		capture = std::make_unique<hhc::CaptureOutput>();
 		if (!capture->start({destination, 1})) {
 			blog(LOG_ERROR, "[HHC fixture] %s", capture->error().toUtf8().constData());

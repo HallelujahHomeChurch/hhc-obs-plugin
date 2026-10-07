@@ -1,9 +1,19 @@
-param([Parameter(Mandatory)][int]$ObsPid,[Parameter(Mandatory)][string]$Output,[Parameter(Mandatory)][string]$ProducerCommit)
+param(
+ [Parameter(Mandatory)][int]$ObsPid,
+ [Parameter(Mandatory)][string]$Output,
+ [Parameter(Mandatory)][string]$ProducerCommit,
+ [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$RunName='F1-L',
+ [int]$Seconds=9000,
+ [switch]$QueueCapture,
+ [switch]$SkipPackage
+)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$report=Join-Path $root 'artifacts/F1-L-resource-samples.jsonl'
+$prefix=Join-Path $root "artifacts/$RunName"
+$report="$prefix-resource-samples.jsonl"
+if(Test-Path -LiteralPath $report){throw 'Run already exists; preserve evidence'}
 $started=Get-Date
-while((Get-Date)-$started -lt [TimeSpan]::FromHours(3)) {
+while((Get-Date)-$started -lt [TimeSpan]::FromSeconds($Seconds+1800)) {
  $process=Get-Process -Id $ObsPid -ErrorAction SilentlyContinue
  if(-not $process){break}
  $gpu=& nvidia-smi --query-gpu=utilization.gpu,utilization.encoder,memory.used,temperature.gpu --format=csv,noheader,nounits
@@ -11,10 +21,21 @@ while((Get-Date)-$started -lt [TimeSpan]::FromHours(3)) {
  $sample|ConvertTo-Json -Compress|Add-Content -LiteralPath $report
  Start-Sleep -Seconds 30
 }
-if(-not(Test-Path -LiteralPath (Join-Path $Output 'inventory.json'))){'FAILED: no final inventory; preserve files'|Set-Content (Join-Path $root 'artifacts/F1-L-status.txt');exit 1}
-& python (Join-Path $root 'scripts/verify-media.py') $Output --seconds 9000 *> (Join-Path $root 'artifacts/F1-L-validation.log')
-if($LASTEXITCODE -ne 0){'FAILED local validation; preserve files'|Set-Content (Join-Path $root 'artifacts/F1-L-status.txt');exit 1}
-$dest=Join-Path $root 'artifacts/F1-L-handoff-01'
-& python (Join-Path $root 'scripts/prepare-handoff.py') $Output $dest --seconds 9000 --commit $ProducerCommit *> (Join-Path $root 'artifacts/F1-L-package.log')
-if($LASTEXITCODE -ne 0){'FAILED packaging; preserve files'|Set-Content (Join-Path $root 'artifacts/F1-L-status.txt');exit 1}
-'LOCAL_QA_AND_PACKAGE_COMPLETE; shared access and Mac receipt pending'|Set-Content (Join-Path $root 'artifacts/F1-L-status.txt')
+$media=$Output
+if($QueueCapture){
+ $inventories=@(Get-ChildItem -LiteralPath $Output -Recurse -Filter inventory.json)
+ if($inventories.Count -ne 1){'FAILED: expected one finalized capture'|Set-Content "$prefix-status.txt";exit 1}
+ $media=$inventories[0].DirectoryName
+ $journal=Get-Content -LiteralPath (Join-Path $media journal.json) -Raw|ConvertFrom-Json
+ if(-not $journal.normalEnd -or -not $journal.stopIntent -or $journal.confirmedReady -or $journal.sealAcknowledged){'FAILED: incorrect local journal state'|Set-Content "$prefix-status.txt";exit 1}
+}
+if(-not(Test-Path -LiteralPath (Join-Path $media 'inventory.json'))){'FAILED: no final inventory; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+& python (Join-Path $root 'scripts/verify-media.py') $media --seconds $Seconds *> "$prefix-validation.log"
+if($LASTEXITCODE -ne 0){'FAILED local validation; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+if(-not $SkipPackage){
+ $dest=Join-Path $root "artifacts/$RunName-handoff-01"
+ & python (Join-Path $root 'scripts/prepare-handoff.py') $media $dest --seconds $Seconds --commit $ProducerCommit *> "$prefix-package.log"
+ if($LASTEXITCODE -ne 0){'FAILED packaging; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+}
+[ordered]@{producerCommit=$ProducerCommit;media=$media;seconds=$Seconds;evidence='local actual OBS only; not E2E';completed=(Get-Date).ToString('o')}|ConvertTo-Json|Set-Content "$prefix-result.json"
+'LOCAL_QA_COMPLETE; not E2E acceptance'|Set-Content "$prefix-status.txt"
