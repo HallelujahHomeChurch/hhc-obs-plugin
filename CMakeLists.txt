@@ -51,4 +51,3 @@ add_executable(dock-test tests/dock-test.cpp)
 target_link_libraries(dock-test PRIVATE hhc-dock)
 add_test(NAME mock-dock COMMAND dock-test)
 set_tests_properties(mock-dock PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;$ENV{PATH};QT_QPA_PLATFORM=windows;QT_PLUGIN_PATH=${CMAKE_SOURCE_DIR}/.deps/qt/plugins")
-

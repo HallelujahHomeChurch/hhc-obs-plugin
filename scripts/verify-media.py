@@ -6,6 +6,17 @@ def verify(root, expected):
     assert inventory['normalEnd'], 'not a normal end'
     assert inventory['fpsNum']==30000 and inventory['fpsDen']==1001
     objects={o['path']:o for o in inventory['objects']}
+    assert len(objects)==len(inventory['objects']), 'duplicate inventory object'
+    for key, meta in objects.items():
+        assert re.fullmatch(r'master\.m3u8|(?:1080p|720p|480p)/(?:init\.mp4|index\.m3u8|(?:segment-\d{5}|seg-\d{6})\.m4s)',key), 'unsafe media path'
+        path=root/key
+        assert path.stat().st_size==meta['size'], key
+        with path.open('rb') as stream:
+            assert hashlib.file_digest(stream,'sha256').hexdigest()==meta['sha256'], key
+    if (root/'master.m3u8').exists():
+        assert 'master.m3u8' in objects, 'untracked master playlist'
+        master=(root/'master.m3u8').read_text()
+        assert re.findall(r'^(\d+p/index\.m3u8)$',master,re.M)==['1080p/index.m3u8','720p/index.m3u8','480p/index.m3u8']
     results=[]
     timeline=None
     for height,width in [(1080,1920),(720,1280),(480,854)]:
@@ -20,9 +31,7 @@ def verify(root, expected):
         if timeline is None: timeline=times
         else: assert times==timeline,(height,'unaligned rendition',times,timeline)
         for filename in ['init.mp4','index.m3u8',*segments]:
-            path=base/filename;key=f'{height}p/{filename}';meta=objects[key]
-            assert path.stat().st_size==meta['size']
-            assert hashlib.sha256(path.read_bytes()).hexdigest()==meta['sha256']
+            assert f'{height}p/{filename}' in objects, 'untracked media object'
         probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(base/'index.m3u8')]))
         video=next(s for s in probe['streams'] if s['codec_type']=='video')
         audio=next(s for s in probe['streams'] if s['codec_type']=='audio')
