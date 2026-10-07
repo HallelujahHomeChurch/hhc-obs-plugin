@@ -138,5 +138,21 @@ int main(int argc, char **argv)
 	media.write("new content!");
 	media.close();
 	rejects([&] { store.save(altered); }, "saved object identity cannot be replaced even with matching new bytes");
+	// A corrupt session must stay visible without blocking unrelated valid captures.
+	QFile corrupt(activePath + "/journal.json");
+	check(corrupt.open(QIODevice::WriteOnly), "open corrupt journal fixture");
+	corrupt.write("{interrupted-json");
+	corrupt.close();
+	auto report = store.scanPending("account-a");
+	check(report.sessions.size() == 1 && report.sessions[0].localId == blocked.localId,
+	      "recover healthy session alongside corrupt journal and changed media");
+	check(report.issues.size() == 2, "report each damaged session without treating it as recoverable");
+	check(QFile::exists(activePath + "/1080p/seg-000000.m4s") && QFile::exists(path + "/1080p/init.mp4"),
+	      "damaged sessions retain media");
+	check(corrupt.open(QIODevice::ReadOnly) && corrupt.readAll() == "{interrupted-json",
+	      "scan never rewrites damaged journal");
+	check(store.scanPending("account-b").sessions.empty() && store.scanPending("account-b").issues.empty(),
+	      "recovery reports remain account isolated");
+	rejects([&] { store.loadPending("account-a"); }, "strict recovery cannot silently discard issues");
 	return failures ? 1 : 0;
 }

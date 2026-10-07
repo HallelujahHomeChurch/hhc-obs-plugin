@@ -2,7 +2,7 @@
 
 Independent Program capture using three NVIDIA NVENC H.264 encoders and one explicitly selected AAC audio mixer. Never mutates OBS global settings, streaming or original recording configuration. No CPU video fallback. Windows only; no CLI is required for the planned operator dock.
 
-**Prototype, not a release candidate.** W0/W1 real OBS short capture is available; long capture is running. HTTP/OAuth/server UI are gated on the frozen Mac C1, V1 and S1 handoffs. There is no plugin remote, PR, hosted CI or production deployment yet.
+**Prototype, not a release candidate.** Real OBS short and 2.5-hour synthetic captures passed local QA. Continue local development without cross-host fixture delivery or a file share. Direct HTTP/OAuth/platform tests await Mac readiness plus its fixed contract, connection addresses and login settings. Retain 29.97 fps; Mac owns the live validator contract mismatch. Local passing results are not E2E acceptance. There is no plugin remote, PR, hosted CI or production deployment yet.
 
 ## Build
 

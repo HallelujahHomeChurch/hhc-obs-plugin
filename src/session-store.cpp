@@ -149,61 +149,76 @@ void SessionStore::save(const CaptureJournal &j)
 }
 QVector<CaptureJournal> SessionStore::loadPending(const QString &account) const
 {
+	auto report = scanPending(account);
+	require(report.issues.empty(), "session recovery issues require attention; media retained");
+	return report.sessions;
+}
+RecoveryReport SessionStore::scanPending(const QString &account) const
+{
 	identifiers(account, "probe");
 	const auto accountDir = root_ + "/" + hash(account.toUtf8());
 	require(!QFileInfo(root_).isSymLink() && !QFileInfo(accountDir).isSymLink(), "account directory is a link");
-	QVector<CaptureJournal> result;
+	RecoveryReport result;
 	for (const auto &id : QDir(accountDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-		const auto dir = mediaDirectory(account, id);
-		require(!QFileInfo(dir).isSymLink(), "session directory is a link");
-		QFile f(dir + "/journal.json");
-		if (!f.exists())
-			continue;
-		require(f.size() <= 8 * 1024 * 1024 && f.open(QIODevice::ReadOnly), "journal unreadable or too large");
-		QJsonParseError error;
-		const auto doc = QJsonDocument::fromJson(f.readAll(), &error);
-		require(error.error == QJsonParseError::NoError && doc.isObject(),
-			"corrupt journal retained for manual recovery");
-		auto j = parse(doc.object());
-		require(j.account == account && j.localId == id, "journal account mismatch");
-		// A crash may occur after an atomic per-rendition close receipt but before
-		// the next session checkpoint. Recover only receipted bytes, never .tmp files
-		// or a normal-end inference. This read does not rewrite the saved journal.
-		if (!j.normalEnd) {
-			for (const auto *rendition : {"1080p", "720p", "480p"}) {
-				QFile receipt(dir + "/" + rendition + "/closed.json");
-				if (!receipt.exists())
-					continue;
-				require(!QFileInfo(receipt).isSymLink() && receipt.size() <= 8 * 1024 * 1024 &&
-						receipt.open(QIODevice::ReadOnly),
-					"close receipt unreadable");
-				QJsonParseError receiptError;
-				const auto closed = QJsonDocument::fromJson(receipt.readAll(), &receiptError);
-				require(receiptError.error == QJsonParseError::NoError && closed.isObject() &&
-						closed.object()["objects"].isArray(),
-					"corrupt close receipt retained");
-				for (const auto &value : closed.object()["objects"].toArray()) {
-					const auto o = value.toObject();
-					require(o.size() == 3 && o["size"].isDouble() &&
-							o["path"].toString().startsWith(QString(rendition) + "/"),
-						"invalid close receipt object");
-					ClosedObject recovered{o["path"].toString(), o["size"].toInteger(),
-							       o["sha256"].toString(), false};
-					auto found =
-						std::find_if(j.objects.begin(), j.objects.end(), [&](const auto &old) {
-							return old.path == recovered.path;
-						});
-					if (found == j.objects.end())
-						j.objects.append(recovered);
-					else
-						require(found->size == recovered.size &&
-								found->sha256 == recovered.sha256,
-							"conflicting close receipt retained");
+		try {
+			const auto dir = mediaDirectory(account, id);
+			require(!QFileInfo(dir).isSymLink(), "session directory is a link");
+			QFile f(dir + "/journal.json");
+			if (!f.exists())
+				continue;
+			require(f.size() <= 8 * 1024 * 1024 && f.open(QIODevice::ReadOnly),
+				"journal unreadable or too large");
+			QJsonParseError error;
+			const auto doc = QJsonDocument::fromJson(f.readAll(), &error);
+			require(error.error == QJsonParseError::NoError && doc.isObject(),
+				"corrupt journal retained for manual recovery");
+			auto j = parse(doc.object());
+			require(j.account == account && j.localId == id, "journal account mismatch");
+			// A crash may occur after an atomic per-rendition close receipt but before
+			// the next session checkpoint. Recover only receipted bytes, never .tmp files
+			// or a normal-end inference. This read does not rewrite the saved journal.
+			if (!j.normalEnd) {
+				for (const auto *rendition : {"1080p", "720p", "480p"}) {
+					QFile receipt(dir + "/" + rendition + "/closed.json");
+					if (!receipt.exists())
+						continue;
+					require(!QFileInfo(receipt).isSymLink() && receipt.size() <= 8 * 1024 * 1024 &&
+							receipt.open(QIODevice::ReadOnly),
+						"close receipt unreadable");
+					QJsonParseError receiptError;
+					const auto closed = QJsonDocument::fromJson(receipt.readAll(), &receiptError);
+					require(receiptError.error == QJsonParseError::NoError && closed.isObject() &&
+							closed.object()["objects"].isArray(),
+						"corrupt close receipt retained");
+					for (const auto &value : closed.object()["objects"].toArray()) {
+						const auto o = value.toObject();
+						require(o.size() == 3 && o["size"].isDouble() &&
+								o["path"].toString().startsWith(QString(rendition) +
+												"/"),
+							"invalid close receipt object");
+						ClosedObject recovered{o["path"].toString(), o["size"].toInteger(),
+								       o["sha256"].toString(), false};
+						auto found = std::find_if(j.objects.begin(), j.objects.end(),
+									  [&](const auto &old) {
+										  return old.path == recovered.path;
+									  });
+						if (found == j.objects.end())
+							j.objects.append(recovered);
+						else
+							require(found->size == recovered.size &&
+									found->sha256 == recovered.sha256,
+								"conflicting close receipt retained");
+					}
 				}
 			}
+			validateObjects(dir, j);
+			result.sessions.append(j);
+		} catch (const std::exception &) {
+			// Never include raw JSON, credentials or server responses in recovery UI.
+			const bool safeId = QRegularExpression("\\A[a-zA-Z0-9_-]{1,80}\\z").match(id).hasMatch();
+			result.issues.append({safeId ? id : QString("invalid-local-id"),
+					      "Local recovery validation failed; files retained for inspection"});
 		}
-		validateObjects(dir, j);
-		result.append(j);
 	}
 	return result;
 }

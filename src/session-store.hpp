@@ -16,6 +16,13 @@ struct CaptureJournal {
 	bool stopIntent = false, normalEnd = false, sealAcknowledged = false, confirmedReady = false;
 	QDateTime readyAt;
 };
+struct RecoveryIssue {
+	QString localId, message;
+};
+struct RecoveryReport {
+	QVector<CaptureJournal> sessions;
+	QVector<RecoveryIssue> issues;
+};
 class SessionStore {
 public:
 	explicit SessionStore(QString root);
@@ -25,6 +32,7 @@ public:
 	void checkpointLocal(const QString &account, const QString &localId, const QVector<ClosedObject> &closed,
 			     bool stopIntent, bool normalEnd);
 	QVector<CaptureJournal> loadPending(const QString &account) const;
+	RecoveryReport scanPending(const QString &account) const;
 	QString mediaDirectory(const QString &account, const QString &localId) const;
 	bool mayCleanup(const CaptureJournal &, QDateTime now) const;
 

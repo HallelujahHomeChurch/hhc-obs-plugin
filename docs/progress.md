@@ -2,12 +2,20 @@
 
 Authority: hhc-web-api e77d63aef2a02f2ddc590e8f5278cf15765d793f, reachable on origin/docs/obs-capture-plans. All four requested plans read. Platform working tree remains read-only. Local plugin branch: feat/windows-capture in .worktrees/windows-capture; no remote guessed.
 
+## Active integration direction — user update 2026-10-07
+
+This decision supersedes earlier requirements to deliver F1/F1-L across machines before integration. No separate file share is required or to be configured. Keep existing media, hashes and reports immutable; supply necessary excerpts only if compatibility diagnosis requires them.
+
+Continue local plugin/controller/recovery development now. Mac owns platform deployment and will provide a fixed API contract revision, service addresses, issuer/client/login settings and readiness notification. Once those arrive, test directly through the plugin: recording, upload, member live playback, offline recovery, transition from live to recording, and automatic publication. Do not require a separate V1 fixture receipt as an advance gate under this updated direction. Direct integration still must verify media compatibility and actual server states; local tests are not E2E acceptance.
+
+Retain Windows media at 30000/1001 (29.97), including exact EXTINF values and 60-frame GOP. Mac owns resolution of the live validator's currently fixed 30 fps contract mismatch. Do not alter OBS FPS or falsify media metadata to pass it. No inferred wire schema, production deployment, merge, or change to existing YouTube/recording is authorized.
+
 ## Current stage
 
 - W0: actual machine/profile baseline and pinned native SDK build completed locally. Original OBS profiles, YouTube and recording settings are preserved.
-- W1: independent Program output, selected mixer 1–6, three NVENC H.264 renditions and HLS fMP4 implemented as a native prototype. Real OBS frontend F1 passed local QA. F1-L is running; concurrency qualification is pending. This is not W1 acceptance or P1 yet.
+- W1: independent Program output, selected mixer 1–6, three NVENC H.264 renditions and HLS fMP4 implemented as a native prototype. Real OBS frontend F1 passed local QA. F1-L passed local QA; concurrency qualification is pending. This is not W1 acceptance or P1 yet.
 - W2: account-bound atomic local journal and recovery primitives tested independently. Capture now checkpoints into the account-bound journal when queue identity is supplied; no uploader is implemented. No HTTP, guessed wire schema, stop/seal/abort receipt mapping, or server publication exists.
-- W3: blocked on frozen C1, then V1 and S1. OAuth PKCE/callback validation and Windows Credential Manager are local primitives only; no network login or loopback listener.
+- W3: direct integration awaits Mac platform readiness, fixed contract, endpoints and login settings; separate cross-host fixture delivery is no longer a prerequisite. OAuth PKCE/callback validation and Windows Credential Manager are local primitives only; no network login or loopback listener.
 - W4: Qt mock states rendered at 100/150/200 percent and tested. Mock is not wired to the operator plugin. CI definition exists, but no remote or hosted run.
 - W5/P1: not reached. No signing certificate, tested installer/uninstaller, production candidate, end-to-end or deployment evidence.
 
@@ -32,7 +40,7 @@ VS2022 Build Tools 17.14.37, MSVC 19.44.35228; SDK 10.0.26100; CMake 3.31.6-msvc
 - 2026-10-07 20:44 Taipei: native build passed; CTest 4/4 (capture policy, local journal, local auth, mock dock). One known deprecated obs_add_data_path warning is confined to the developer harness.
 - Real libobs fault tests passed: missing NVENC returns failure and releases encoders/output; a blocked segment path cannot become normalEnd and failed capture reports completion.
 - Native master generation smoke passed with aligned three-rendition timelines. Finalization checks every referenced segment: FFmpeg trailer return value alone did not detect an injected segment-open failure.
-- Journal tests cover account separation, immutable object identity/hash, quotas and corrupt input; power-cut/process-kill matrix has not run. Corrupt session currently fails account recovery closed.
+- Journal tests cover account separation, immutable object identity/hash, quotas and corrupt input; power-cut/process-kill matrix has not run. Strict loadPending still fails closed on any issue; scanPending now reports damaged sessions separately while returning only other verified sessions.
 - Auth tests cover RFC7636 S256 vector, fresh state, exact loopback origin/path/port, replay/duplicate-state rejection, and a unique synthetic Credential Manager save/read/delete. No real credential was accessed.
 - Qt mock screenshots are in artifacts/ui. These demonstrate layout/state rendering, not production action wiring.
 - Read-only reviewer covered 7d2b1e9..ec866ea; no critical issue, three important issues fixed: failed fixture completion, source color validation, preserved failure reason. Standalone fixture cadence corrected to 30000/1001. Auth, dock and later master changes were outside that review range.
@@ -47,9 +55,9 @@ F1-L producer is the same 3701e79, separate portable OBS PID 3128, capture start
 
 ## Open dependencies and limitations
 
-- Authorized Mac-accessible shared location and download/hash receipt: not provided. Local archives do not count as cross-host delivery.
+- Cross-host F1/F1-L delivery and shared location: removed as prerequisites by the user; retain archives for optional compatibility diagnosis.
 - Plugin remote and PR target: not provided; no PR or hosted CI can be claimed.
-- Frozen versioned C1, V1 for exact fixture, S1 test environment/accounts: missing. No real integration until received.
+- Fixed contract revision, deployed connection addresses and login/test access: await Mac readiness notification before direct integration.
 - Production UI/controller, network retry/resume/cleanup orchestration, remaining fault matrix, concurrent-output runs, candidate install/remove and signing remain unfinished.
 - Staging and immutable queue currently duplicate media on disk. Runtime reserve/package checks exist; disk exhaustion and watchdog fault injection still need testing.
 - F1-L uses the older producer without the later watchdog/finalization fixes. Its eventual media result is evidence only for that producer, not the current build.
@@ -81,3 +89,9 @@ Actual portable OBS capture ran 20:12:32–22:42:32 and exited. The helper compl
 Artifact: artifacts/F1-L-handoff-01.zip; 5982993822 bytes; SHA256 6ace26df4b0a3bb71e772d620889e481fb412ba544378559e49fbf4a4398acdb. Archive hash independently recomputed and matched at 23:27. Producer remains 3701e79639ef119eb93b90d0c5e76219174f95bb, not the newer journal implementation. This is a local real OBS HHC-only long-media pass, not concurrent YouTube/recording qualification, Mac V1, E2E, or P1 acceptance. OBS exit log again reports one remaining allocation; root cause is still open. No capture/monitor process remains running.
 
 Mac-accessible shared location and consumer receipt are still missing. No upload was made. Code implementation remains 2666739; background work only recorded, validated and packaged the older producer. The immutable archive was not rewritten when adding this ledger result.
+
+## Local recovery isolation after integration-direction update
+
+Added RecoveryReport/scanPending for per-session recovery outcomes. A corrupt journal or changed media hash is reported as an issue without blocking other verified sessions in that same account; damaged files are neither rewritten nor deleted. Issues use fixed local text instead of copying journal/server data. The existing strict loadPending entry point still refuses partial results, so callers cannot silently ignore failures. Controller/UI use of the report remains to be wired.
+
+RED -> GREEN regression: one valid session alongside one corrupt journal and one modified media object yields exactly one recoverable session and two issues. Other accounts see neither those captures nor their issues. Corrupt bytes and failed media remain intact. Native build and all four CTest suites passed. This is local recovery evidence only; no HTTP, platform login, upload or publication occurred.
