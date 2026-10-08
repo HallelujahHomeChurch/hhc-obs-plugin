@@ -1,6 +1,6 @@
 # HHC OBS Windows x64 platform preview
 
-Requires OBS 32.2.2 x64 / Qt 6.11.1. This unsigned preview implements C1 c1-2026-10-08.2 against the approved production platform. Local/CI results alone do not establish media readiness, member playback or operational acceptance. Fixed contract acknowledgement: [C1 verification](reviews/c1-2026-10-08.2-acknowledgement.json).
+Requires OBS 32.2.2 x64 / Qt 6.11.1. This unsigned preview implements C1 c1-2026-10-08.2 against the approved production platform. Local/CI results alone do not establish media readiness, member playback or operational acceptance. Fixed contract acknowledgement: [C1 verification](https://github.com/HallelujahHomeChurch/hhc-obs-plugin/blob/148c8787fc2fef50908dc5b01c5d44716e0638ca/docs/reviews/c1-2026-10-08.2-acknowledgement.json).
 
 ## Install and operate through the GUI
 

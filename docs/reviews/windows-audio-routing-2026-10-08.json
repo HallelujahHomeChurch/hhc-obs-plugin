@@ -1,0 +1,258 @@
+{
+  "evidence": "actual local OBS selected/muted audio output; not native platform/player/E2E acceptance",
+  "recordedAt": "2026-10-08T11:06:05.969180+00:00",
+  "nativeCoreSourceCommit": "148c8787fc2fef50908dc5b01c5d44716e0638ca",
+  "fixtureSourceSha256": "301bbe4895e19b0aef008d57b6cbef34b590b80dfa794ba2d01d08935400c6fe",
+  "fixtureDllSha256": "75852b2ceafedeb2b2b6fe964c7bac00acf76822cddd287ad467bfd2d8133d1a",
+  "cases": [
+    {
+      "name": "track1",
+      "selectedTrack": 1,
+      "sourceTrack": 1,
+      "sourceToneHz": 440,
+      "sourceMuted": false,
+      "expectedToneHz": 440,
+      "obsExitCode": 0,
+      "rms": [
+        0.14139255377668308,
+        0.14139255377668308,
+        0.14139255377668308
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.19995917576141384,
+          "880": 1.0241899195224166e-07
+        },
+        {
+          "440": 0.19995917576141384,
+          "880": 1.0241899195224166e-07
+        },
+        {
+          "440": 0.19995917576141384,
+          "880": 1.0241899195224166e-07
+        }
+      ],
+      "duration": 5.005,
+      "inventorySha256": "3113bb4b39057dbd47e5600becfdbbbfb6fa6440f618ff59761201868860e4ce",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "track2",
+      "selectedTrack": 2,
+      "sourceTrack": 2,
+      "sourceToneHz": 440,
+      "sourceMuted": false,
+      "expectedToneHz": 440,
+      "obsExitCode": 0,
+      "rms": [
+        0.14136279580765512,
+        0.14136279580765512,
+        0.14136279580765512
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.19991704087281634,
+          "880": 1.456885473875643e-07
+        },
+        {
+          "440": 0.19991704087281634,
+          "880": 1.456885473875643e-07
+        },
+        {
+          "440": 0.19991704087281634,
+          "880": 1.456885473875643e-07
+        }
+      ],
+      "duration": 5.005,
+      "inventorySha256": "dbb41a1b8f0291d9f6bb61a209478b49bb92ec5f805f39f2103467320be8d98a",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "track3",
+      "selectedTrack": 3,
+      "sourceTrack": 3,
+      "sourceToneHz": 440,
+      "sourceMuted": false,
+      "expectedToneHz": 440,
+      "obsExitCode": 0,
+      "rms": [
+        0.14139072103529973,
+        0.14139072103529973,
+        0.14139072103529973
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.19995655254461875,
+          "880": 1.1300185129365733e-07
+        },
+        {
+          "440": 0.19995655254461875,
+          "880": 1.1300185129365733e-07
+        },
+        {
+          "440": 0.19995655254461875,
+          "880": 1.1300185129365733e-07
+        }
+      ],
+      "duration": 5.005,
+      "inventorySha256": "9efb62a3f33c96359c9e11429078b47790df9b8e6ea6c5d268b44676b31330a4",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "track4",
+      "selectedTrack": 4,
+      "sourceTrack": 4,
+      "sourceToneHz": 440,
+      "sourceMuted": false,
+      "expectedToneHz": 440,
+      "obsExitCode": 0,
+      "rms": [
+        0.14140631208422744,
+        0.14140631208422744,
+        0.14140631208422744
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.1999786613271167,
+          "880": 1.304105732386068e-07
+        },
+        {
+          "440": 0.1999786613271167,
+          "880": 1.304105732386068e-07
+        },
+        {
+          "440": 0.1999786613271167,
+          "880": 1.304105732386068e-07
+        }
+      ],
+      "duration": 4.971633,
+      "inventorySha256": "1771f995c43dbb1f4ee5c0f83c73ae730ec4e5325e74f2cfe1722cd31edcf1d7",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "track5",
+      "selectedTrack": 5,
+      "sourceTrack": 5,
+      "sourceToneHz": 440,
+      "sourceMuted": false,
+      "expectedToneHz": 440,
+      "obsExitCode": 0,
+      "rms": [
+        0.1413700967348565,
+        0.1413700967348565,
+        0.1413700967348565
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.199927412953067,
+          "880": 6.857272596712963e-08
+        },
+        {
+          "440": 0.199927412953067,
+          "880": 6.857272596712963e-08
+        },
+        {
+          "440": 0.199927412953067,
+          "880": 6.857272596712963e-08
+        }
+      ],
+      "duration": 5.005,
+      "inventorySha256": "799246a71b8b2ba9af2b1852b6010da978f574d833878908886e96e7d6018871",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "track6",
+      "selectedTrack": 6,
+      "sourceTrack": 6,
+      "sourceToneHz": 880,
+      "sourceMuted": false,
+      "expectedToneHz": 880,
+      "obsExitCode": 0,
+      "rms": [
+        0.1413952094275543,
+        0.1413952094275543,
+        0.1413952094275543
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 2.7871968557819536e-08,
+          "880": 0.19996293510727248
+        },
+        {
+          "440": 2.7871968557819536e-08,
+          "880": 0.19996293510727248
+        },
+        {
+          "440": 2.7871968557819536e-08,
+          "880": 0.19996293510727248
+        }
+      ],
+      "duration": 4.971633,
+      "inventorySha256": "7320ed3b62cb39a00fdfd317628a4d4f4e30431b10744c2b205eb197e5ec43df",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "isolation",
+      "selectedTrack": 6,
+      "sourceTrack": 1,
+      "sourceToneHz": 440,
+      "sourceMuted": false,
+      "expectedToneHz": 0,
+      "obsExitCode": 0,
+      "rms": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.0,
+          "880": 0.0
+        },
+        {
+          "440": 0.0,
+          "880": 0.0
+        },
+        {
+          "440": 0.0,
+          "880": 0.0
+        }
+      ],
+      "duration": 5.005,
+      "inventorySha256": "726756627998931ff68aeed9fd430bc514f41089f0f104b4cb5aec9cdaf2d46f",
+      "hashFormatFullDecode": "passed"
+    },
+    {
+      "name": "muted",
+      "selectedTrack": 6,
+      "sourceTrack": 6,
+      "sourceToneHz": 880,
+      "sourceMuted": true,
+      "expectedToneHz": 0,
+      "obsExitCode": 0,
+      "rms": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "leftChannelAmplitudes": [
+        {
+          "440": 0.0,
+          "880": 0.0
+        },
+        {
+          "440": 0.0,
+          "880": 0.0
+        },
+        {
+          "440": 0.0,
+          "880": 0.0
+        }
+      ],
+      "duration": 5.005,
+      "inventorySha256": "085fa3d06685ad5dabc5a083dfde2e17ceecd5d3a5f39f2cd18fc21d315300b5",
+      "hashFormatFullDecode": "passed"
+    }
+  ],
+  "scopeLimit": "eight short5s clips, physical audio devices and member playback not covered; OBS reported1 allocation at short-fixture exit, cause unproven"
+}

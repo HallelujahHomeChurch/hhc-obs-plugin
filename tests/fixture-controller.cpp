@@ -26,6 +26,8 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <cmath>
+#include <numbers>
 #include <util/platform.h>
 #include <util/bmem.h>
 #include "hls-muxer.hpp"
@@ -97,6 +99,18 @@ void begin()
 	duration = qEnvironmentVariableIntValue("HHC_FIXTURE_SECONDS");
 	if (destination.isEmpty() || QFileInfo::exists(destination) || duration < 1 || duration > 9000)
 		return;
+	const int audioTrack = qEnvironmentVariableIsSet("HHC_FIXTURE_AUDIO_TRACK")
+				       ? qEnvironmentVariableIntValue("HHC_FIXTURE_AUDIO_TRACK")
+				       : 1;
+	const int sourceTrack = qEnvironmentVariableIsSet("HHC_FIXTURE_SOURCE_TRACK")
+					? qEnvironmentVariableIntValue("HHC_FIXTURE_SOURCE_TRACK")
+					: 1;
+	const int toneHz = qEnvironmentVariableIntValue("HHC_FIXTURE_TONE_HZ");
+	if (audioTrack < 1 || audioTrack > 6 || sourceTrack < 1 || sourceTrack > 6 ||
+	    (toneHz != 0 && toneHz != 440 && toneHz != 880)) {
+		blog(LOG_ERROR, "[HHC fixture] Invalid audio fixture parameters");
+		return;
+	}
 	obs_source_info si{};
 	si.id = "hhc_fixture_synthetic";
 	si.type = OBS_SOURCE_TYPE_INPUT;
@@ -114,9 +128,10 @@ void begin()
 	scene = obs_scene_create_private("HHC synthetic scene");
 	obs_scene_add(scene, source);
 	obs_frontend_set_current_scene(obs_scene_get_source(scene));
-	obs_source_set_audio_mixers(source, 1);
+	obs_source_set_audio_mixers(source, 1U << (sourceTrack - 1));
+	obs_source_set_muted(source, qEnvironmentVariableIsSet("HHC_FIXTURE_SOURCE_MUTED"));
 	running = true;
-	producer = std::thread([] {
+	producer = std::thread([toneHz] {
 		QImage image(1920, 1080, QImage::Format_RGBA8888);
 		std::array<float, 1602> samples{};
 		const auto start = std::chrono::steady_clock::now();
@@ -148,6 +163,10 @@ void begin()
 			vf.timestamp = ns + frame * 1001000000ULL / 30;
 			obs_source_output_video(source, &vf);
 			const uint64_t nextAudio = (frame + 1) * 48000 * 1001 / 30000;
+			if (toneHz)
+				for (uint64_t i = 0; i < nextAudio - audioFrame; ++i)
+					samples[i] = float(0.2 * std::sin(2 * std::numbers::pi * toneHz *
+									  (audioFrame + i) / 48000));
 			obs_source_audio af{};
 			af.data[0] = reinterpret_cast<const uint8_t *>(samples.data());
 			af.data[1] = af.data[0];
@@ -179,7 +198,7 @@ void begin()
 		;
 		auto run = std::make_shared<Run>();
 		run->overall.start();
-		QObject::connect(watch, &QTimer::timeout, [watch, run] {
+		QObject::connect(watch, &QTimer::timeout, [watch, run, audioTrack] {
 			auto *window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 			auto *dock = window->findChild<QWidget *>("hhcCaptureDock");
 			if (!dock)
@@ -218,6 +237,7 @@ void begin()
 					qEnvironmentVariableIsSet("HHC_FIXTURE_LIVE"));
 				dock->findChild<QCheckBox *>("publish")->setChecked(
 					qEnvironmentVariableIsSet("HHC_FIXTURE_PUBLISH"));
+				dock->findChild<QComboBox *>("audioTrack")->setCurrentIndex(audioTrack - 1);
 				action->click();
 				run->requested = true;
 				blog(LOG_INFO,
@@ -364,6 +384,7 @@ void begin()
 	}
 	if (qEnvironmentVariableIsSet("HHC_FIXTURE_DOCK")) {
 		localController = std::make_unique<hhc::LocalController>(destination);
+		localController->view()->findChild<QComboBox *>("audioTrack")->setCurrentIndex(audioTrack - 1);
 		obs_frontend_add_dock_by_id("hhc.fixture.dock", "HHC 本機驗證", localController->view());
 		if (qEnvironmentVariableIsSet("HHC_FIXTURE_ORIGINAL_RECORDING")) {
 			QDir().mkpath(destination);
@@ -372,7 +393,7 @@ void begin()
 			obs_frontend_recording_start();
 		}
 	}
-	QTimer::singleShot(1500, QCoreApplication::instance(), [] {
+	QTimer::singleShot(1500, QCoreApplication::instance(), [audioTrack] {
 		if (localController) {
 			if (originalRequested && (!originalStarted || !obs_frontend_recording_active())) {
 				blog(LOG_ERROR,
@@ -437,7 +458,7 @@ void begin()
 			return;
 		}
 		capture = std::make_unique<hhc::CaptureOutput>();
-		if (!capture->start({destination, 1})) {
+		if (!capture->start({destination, unsigned(audioTrack)})) {
 			blog(LOG_ERROR, "[HHC fixture] %s", capture->error().toUtf8().constData());
 			finish();
 			return;
