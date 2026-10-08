@@ -157,7 +157,8 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 		if (onAction)
 			onAction();
 	});
-	setTabOrder(title_, live_);
+	setTabOrder(title_, track_);
+	setTabOrder(track_, live_);
 	setTabOrder(live_, publish_);
 	setTabOrder(publish_, action_);
 	apply({});

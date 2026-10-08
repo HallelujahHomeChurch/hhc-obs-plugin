@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QDir>
 #include <QComboBox>
+#include <QKeyEvent>
 #include <iostream>
 int main(int argc, char **argv)
 {
@@ -134,5 +135,25 @@ int main(int argc, char **argv)
 	if (cancelPublish)
 		cancelPublish->click();
 	check(controls == 11, "cancel publication is distinct callback");
+	state.phase = hhc::Phase::Ready;
+	state.canPublish = true;
+	state.liveEnabled = false;
+	state.autoPublish = false;
+	dock.apply(state);
+	dock.show();
+	QApplication::setActiveWindow(&dock);
+	title->setFocus();
+	app.processEvents();
+	for (auto *next : {static_cast<QWidget *>(track), static_cast<QWidget *>(live), static_cast<QWidget *>(publish),
+			   static_cast<QWidget *>(action)}) {
+		QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+		QApplication::sendEvent(QApplication::focusWidget(), &tab);
+		check(QApplication::focusWidget() == next, "keyboard follows title/track/live/publication/action");
+	}
+	title->setFocus();
+	const int beforeReturn = clicks;
+	QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+	QApplication::sendEvent(title, &enter);
+	check(clicks == beforeReturn, "enter in title does not start recording");
 	return fails ? 1 : 0;
 }
