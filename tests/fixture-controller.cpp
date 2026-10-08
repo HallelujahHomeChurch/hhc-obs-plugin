@@ -40,6 +40,11 @@ std::thread producer;
 std::atomic<bool> running{false};
 obs_source_t *source = nullptr;
 obs_scene_t *scene = nullptr;
+obs_scene_t *previewScene = nullptr;
+obs_source_t *previewColor = nullptr;
+bool studioRequested = false;
+QElapsedTimer studioClock;
+QJsonArray studioObservations;
 QString destination;
 int duration = 0;
 bool originalRequested = false, originalStarted = false, originalStopped = false;
@@ -48,6 +53,20 @@ QString originalFile;
 QElapsedTimer overlap;
 qint64 overlapMs = 0;
 QJsonObject recordingStats;
+void studioReceipt(const QString &stage)
+{
+	obs_source_t *program = obs_frontend_get_current_scene();
+	obs_source_t *preview = obs_frontend_get_current_preview_scene();
+	studioObservations.append(
+		QJsonObject{{"stage", stage},
+			    {"elapsedMs", studioClock.elapsed()},
+			    {"studioMode", obs_frontend_preview_program_mode_active()},
+			    {"program", QString::fromUtf8(program ? obs_source_get_name(program) : "")},
+			    {"preview", QString::fromUtf8(preview ? obs_source_get_name(preview) : "")}});
+	obs_source_release(program);
+	obs_source_release(preview);
+	hhc::atomicJson(destination + "/studio-program.json", {{"observations", studioObservations}});
+}
 void recordingReceipt()
 {
 	if (originalRequested)
@@ -66,8 +85,21 @@ void finish()
 		producer.join();
 	capture.reset();
 	localController.reset();
+	if (studioRequested && obs_frontend_preview_program_mode_active())
+		obs_frontend_set_preview_program_mode(false);
 	obs_frontend_set_current_scene(nullptr);
+	if (previewScene) {
+		obs_source_remove(obs_scene_get_source(previewScene));
+		obs_scene_release(previewScene);
+		previewScene = nullptr;
+	}
+	if (previewColor) {
+		obs_source_release(previewColor);
+		previewColor = nullptr;
+	}
 	if (scene) {
+		if (studioRequested)
+			obs_source_remove(obs_scene_get_source(scene));
 		obs_scene_release(scene);
 		scene = nullptr;
 	}
@@ -99,6 +131,10 @@ void begin()
 	duration = qEnvironmentVariableIntValue("HHC_FIXTURE_SECONDS");
 	if (destination.isEmpty() || QFileInfo::exists(destination) || duration < 1 || duration > 9000)
 		return;
+	studioRequested = qEnvironmentVariableIsSet("HHC_FIXTURE_STUDIO");
+	if (studioRequested && (duration != 12 || !qEnvironmentVariableIsSet("HHC_FIXTURE_DOCK") ||
+				qEnvironmentVariableIsSet("HHC_FIXTURE_NATIVEDRIVE")))
+		return;
 	const int audioTrack = qEnvironmentVariableIsSet("HHC_FIXTURE_AUDIO_TRACK")
 				       ? qEnvironmentVariableIntValue("HHC_FIXTURE_AUDIO_TRACK")
 				       : 1;
@@ -125,8 +161,23 @@ void begin()
 	};
 	obs_register_source(&si);
 	source = obs_source_create_private(si.id, "HHC synthetic Program", nullptr);
-	scene = obs_scene_create_private("HHC synthetic scene");
+	scene = studioRequested ? obs_scene_create("HHC studio A") : obs_scene_create_private("HHC synthetic scene");
 	obs_scene_add(scene, source);
+	if (studioRequested) {
+		auto *settings = obs_data_create();
+		obs_data_set_int(settings, "color", 0xff00ff00);
+		obs_data_set_int(settings, "width", 1920);
+		obs_data_set_int(settings, "height", 1080);
+		previewColor = obs_source_create_private("color_source_v3", "HHC studio green", settings);
+		obs_data_release(settings);
+		if (!previewColor) {
+			finish();
+			QCoreApplication::quit();
+			return;
+		}
+		previewScene = obs_scene_create("HHC studio B");
+		obs_scene_add(previewScene, previewColor);
+	}
 	obs_frontend_set_current_scene(obs_scene_get_source(scene));
 	obs_source_set_audio_mixers(source, 1U << (sourceTrack - 1));
 	obs_source_set_muted(source, qEnvironmentVariableIsSet("HHC_FIXTURE_SOURCE_MUTED"));
@@ -395,6 +446,10 @@ void begin()
 	}
 	QTimer::singleShot(1500, QCoreApplication::instance(), [audioTrack] {
 		if (localController) {
+			if (studioRequested) {
+				obs_frontend_set_current_scene(obs_scene_get_source(scene));
+				obs_frontend_set_preview_program_mode(true);
+			}
 			if (originalRequested && (!originalStarted || !obs_frontend_recording_active())) {
 				blog(LOG_ERROR,
 				     "[HHC fixture] Original recording failed to start; no encoder fallback");
@@ -412,6 +467,28 @@ void begin()
 				return;
 			}
 			blog(LOG_INFO, "[HHC fixture] Real dock capture started for %d seconds", duration);
+			if (studioRequested) {
+				studioClock.start();
+				studioReceipt("started");
+				QTimer::singleShot(1000, QCoreApplication::instance(), [] {
+					obs_frontend_set_current_preview_scene(obs_scene_get_source(previewScene));
+				});
+				QTimer::singleShot(1500, QCoreApplication::instance(),
+						   [] { studioReceipt("preview-b"); });
+				QTimer::singleShot(5000, QCoreApplication::instance(),
+						   [] { obs_frontend_preview_program_trigger_transition(); });
+				QTimer::singleShot(6000, QCoreApplication::instance(),
+						   [] { studioReceipt("transition-complete"); });
+				QTimer::singleShot(8000, QCoreApplication::instance(), [] {
+					obs_frontend_set_current_preview_scene(obs_scene_get_source(previewScene));
+				});
+				QTimer::singleShot(8500, QCoreApplication::instance(), [] {
+					studioReceipt("preview-b-after-transition");
+					obs_frontend_set_current_preview_scene(obs_scene_get_source(scene));
+				});
+				QTimer::singleShot(9000, QCoreApplication::instance(),
+						   [] { studioReceipt("preview-a-after-transition"); });
+			}
 			if (originalRequested)
 				overlap.start();
 			localController->view()->grab().save(destination + "/dock-running.png");

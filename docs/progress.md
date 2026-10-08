@@ -12,6 +12,8 @@ Retain Windows media at 30000/1001 (29.97), including exact EXTINF values and 60
 
 ## Current stage
 
+Latest2026-10-08 qualification is in [windows-e2e-2026-10-08.md](reviews/windows-e2e-2026-10-08.md), superseding the historical stage bullets below. C1c1-2026-10-08.2 is acknowledged with immutable byte hashes; current native candidate148c878 preserves original terminal captures without retrying seal. Corrected29.97-grid local9000s and selected audio tracks1–6/mute passed. Actual Studio Mode Program/Preview isolation and transition passed with three decoded renditions. Original recording plus HHC9000s is still running. Fresh positive production E2E awaits exact draft cleanup approval/quota; no current production-ready acceptance is claimed.
+
 - W0: actual machine/profile baseline and pinned native SDK build completed locally. Original OBS profiles, YouTube and recording settings are preserved.
 - W1: independent Program output, selected mixer 1–6, three NVENC H.264 renditions and HLS fMP4 implemented as a native prototype. Real OBS frontend F1 passed local QA. F1-L passed local QA; concurrency qualification is pending. This is not W1 acceptance or P1 yet.
 - W2: account-bound atomic local journal and recovery primitives tested independently. Capture now checkpoints into the account-bound journal when queue identity is supplied; no uploader is implemented. No HTTP, guessed wire schema, stop/seal/abort receipt mapping, or server publication exists.
