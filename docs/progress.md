@@ -1,5 +1,7 @@
 # Execution ledger — Windows plan 2026-10-07
 
+2026-10-08 23:20 Taipei: completion audit found the common Task6 stop-confirmation requirement was not connected to the actual dock. [Stop confirmation](reviews/windows-stop-confirmation-2026-10-08.md) is now verified RED→GREEN, all10 CTest cases pass, and actual OBS Cancel leaves encoding/stopIntent unchanged before confirmed normal completion. Three61.027633s renditions pass hashes/full decoding with no staging segment copies. This remaining plan implementation is outside the earlier reviewer range. Ruling: implement confirmation in the shared dock so both local and platform controllers receive only confirmed stops; stale confirmations cannot invoke a newer phase — cost: physical keyboard/DPI and fresh positive platform UI still require their separate acceptance.
+
 Latest whole-branch review and focused fix pass: [report](reviews/windows-final-branch-review-2026-10-08.md). Two Important findings fixed, all 10 local tests pass, actual 61-second OBS media and Windows sharing/ACL denial checks pass. Original 8-segment terminal capture is retained, not resealed; quota cleanup approval and fresh positive production/long-run acceptance remain open. Evidence distinguishes precommit working-tree checks from frozen package and hosted CI.
 
 Authority: hhc-web-api e77d63aef2a02f2ddc590e8f5278cf15765d793f, reachable on origin/docs/obs-capture-plans. All four requested plans read. Platform working tree remains read-only. Local plugin branch: feat/windows-capture in .worktrees/windows-capture; no remote guessed.

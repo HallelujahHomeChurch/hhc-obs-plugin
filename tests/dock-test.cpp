@@ -7,6 +7,8 @@
 #include <QDir>
 #include <QComboBox>
 #include <QKeyEvent>
+#include <QTimer>
+#include <QMessageBox>
 #include <iostream>
 int main(int argc, char **argv)
 {
@@ -86,6 +88,31 @@ int main(int argc, char **argv)
 	state.phase = hhc::Phase::Capturing;
 	dock.apply(state);
 	check(track && !track->isEnabled(), "audio mixer locked during capture");
+	auto answerStop = [&](QMessageBox::StandardButton answer) {
+		bool prompted = false;
+		QTimer::singleShot(0, &dock, [&] {
+			if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+				prompted = true;
+				box->button(answer)->click();
+			}
+		});
+		action->click();
+		app.processEvents();
+		return prompted;
+	};
+	check(answerStop(QMessageBox::Cancel) && clicks == 1, "cancel stop must leave capture controller untouched");
+	check(answerStop(QMessageBox::Yes) && clicks == 2, "confirmed stop reaches capture controller once");
+	QTimer::singleShot(0, &dock, [&] {
+		state.phase = hhc::Phase::Failed;
+		state.terminalFailure = true;
+		dock.apply(state);
+		if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+			box->button(QMessageBox::Yes)->click();
+	});
+	action->click();
+	app.processEvents();
+	check(clicks == 2, "obsolete stop confirmation cannot prepare or start another event");
+	state.terminalFailure = false;
 	state.phase = hhc::Phase::LocalComplete;
 	dock.apply(state);
 	check(status->text().contains("本機") && !status->text().contains("已發布"),
@@ -99,7 +126,7 @@ int main(int argc, char **argv)
 	dock.apply(state);
 	check(action->isEnabled(), "settled terminal failure permits preparing a replacement event");
 	action->click();
-	check(clicks == 2, "prepare replacement action reaches the controller");
+	check(clicks == 3, "prepare replacement action reaches the controller");
 	state.connected = false;
 	dock.apply(state);
 	check(!action->isEnabled(), "replacement requires a logged-in account");

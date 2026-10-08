@@ -104,6 +104,10 @@ int main(int argc, char **argv)
 			std::cerr << "FAIL OBS close veto disabled HHC capture (vetoes=" << window.vetoes << ")\n";
 			result = 7;
 		} else {
+			QTimer::singleShot(0, [] {
+				if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+					box->button(QMessageBox::Yes)->click();
+			});
 			action->click();
 			if (!until([&] {
 				    return !controller.busy() && controller.phase() == hhc::Phase::LocalComplete;

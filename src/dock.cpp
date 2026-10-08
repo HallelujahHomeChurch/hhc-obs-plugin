@@ -9,6 +9,8 @@
 #include <QGroupBox>
 #include <QDate>
 #include <QComboBox>
+#include <QMessageBox>
+#include <QPointer>
 namespace hhc {
 Dock::Dock(QWidget *parent) : QWidget(parent)
 {
@@ -164,6 +166,22 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	action_->setDefault(false);
 	outer->addWidget(action_);
 	connect(action_, &QPushButton::clicked, this, [this] {
+		if (capturing_) {
+			const QPointer<Dock> self(this);
+			const auto message =
+				localOnly_
+					? QString::fromUtf8(
+						  "停止這場 HHC 本機驗證收錄？完成後保留資料，不會上傳或發布。")
+					: QString::fromUtf8("停止這場 HHC 收錄？停止後會繼續補傳並等待影片驗證。\n") +
+						  (selectedPublish()
+							   ? QString::fromUtf8("本場驗證通過後會自動發布。")
+							   : QString::fromUtf8("本場保留為草稿，不會自動發布。"));
+			if (QMessageBox::question(this, QString::fromUtf8("停止 HHC 收錄"), message,
+						  QMessageBox::Yes | QMessageBox::Cancel,
+						  QMessageBox::Cancel) != QMessageBox::Yes ||
+			    !self || !self->capturing_)
+				return;
+		}
 		if (onAction)
 			onAction();
 	});
@@ -175,6 +193,8 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 }
 void Dock::apply(const DockState &s)
 {
+	capturing_ = s.phase == Phase::Capturing;
+	localOnly_ = s.localOnly;
 	const bool idle = s.phase == Phase::Ready || s.phase == Phase::DraftReady || s.phase == Phase::Published ||
 			  s.phase == Phase::Failed || s.phase == Phase::Unavailable;
 	login_->setVisible(!s.localOnly);

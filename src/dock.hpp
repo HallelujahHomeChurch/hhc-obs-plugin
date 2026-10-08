@@ -59,5 +59,6 @@ private:
 	QLabel *account_ = nullptr;
 	QPushButton *cleanup_ = nullptr;
 	bool allowCleanup_ = false;
+	bool capturing_ = false, localOnly_ = false;
 };
 } // namespace hhc

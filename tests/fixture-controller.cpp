@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <QDir>
+#include <QDirIterator>
 #include <QImage>
 #include <QPainter>
 #include <QTimer>
@@ -53,6 +54,14 @@ QString originalFile;
 QElapsedTimer overlap;
 qint64 overlapMs = 0;
 QJsonObject recordingStats;
+void answerStopForFixture(QMessageBox::StandardButton answer = QMessageBox::Yes)
+{
+	QTimer::singleShot(0, QCoreApplication::instance(), [answer] {
+		if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+			if (box->windowTitle() == QString::fromUtf8("停止 HHC 收錄"))
+				box->button(answer)->click();
+	});
+}
 void studioReceipt(const QString &stage)
 {
 	obs_source_t *program = obs_frontend_get_current_scene();
@@ -301,8 +310,9 @@ void begin()
 				blog(LOG_INFO, "[HHC fixture] Native platform recording started");
 			}
 			if (run->started && !run->stopped && run->recording.elapsed() >= duration * 1000) {
-				action->click();
 				run->stopped = true;
+				answerStopForFixture();
+				action->click();
 				blog(LOG_INFO, "[HHC fixture] Native stop requested");
 			}
 			auto elapsed = run->started ? run->recording.elapsed() : 0;
@@ -507,6 +517,23 @@ void begin()
 			QTimer::singleShot(duration * 1000, Qt::PreciseTimer, QCoreApplication::instance(), [] {
 				if (originalRequested && obs_frontend_recording_active())
 					overlapMs = overlap.elapsed();
+				if (qEnvironmentVariableIsSet("HHC_FIXTURE_CANCEL_STOP_ONCE")) {
+					answerStopForFixture(QMessageBox::Cancel);
+					localController->view()->findChild<QPushButton *>("action")->click();
+					QDirIterator journals(destination, {"journal.json"}, QDir::Files,
+							      QDirIterator::Subdirectories);
+					QFile journal(journals.hasNext() ? journals.next() : QString{});
+					const bool noStop = journal.open(QIODevice::ReadOnly) &&
+							    !QJsonDocument::fromJson(journal.readAll())
+								     .object()["stopIntent"]
+								     .toBool(true);
+					hhc::atomicJson(destination + "/stop-cancel.json",
+							{{"cancelKeptEncoding",
+							  localController->busy() &&
+								  localController->phase() == hhc::Phase::Capturing},
+							 {"stopIntentUnchanged", noStop}});
+				}
+				answerStopForFixture();
 				localController->view()->findChild<QPushButton *>("action")->click();
 				auto *timer = new QTimer(QCoreApplication::instance());
 				timer->setInterval(200);
