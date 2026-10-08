@@ -1,22 +1,58 @@
-# HHC OBS Windows x64 platform preview
+# HHC OBS Windows x64 候選版操作說明
 
-Requires OBS 32.2.2 x64 / Qt 6.11.1. This unsigned preview implements C1 c1-2026-10-08.2 against the approved production platform. Local/CI results alone do not establish media readiness, member playback or operational acceptance. Fixed contract acknowledgement: [C1 verification](https://github.com/HallelujahHomeChurch/hhc-obs-plugin/blob/148c8787fc2fef50908dc5b01c5d44716e0638ca/docs/reviews/c1-2026-10-08.2-acknowledgement.json).
+適用 OBS 32.2.2 x64／Qt 6.11.1。這是尚未簽章、尚未完成端到端驗收的候選版；請依核准的測試範圍使用。已接入正式平台與固定 C1 c1-2026-10-08.2：[契約核對紀錄](https://github.com/HallelujahHomeChurch/hhc-obs-plugin/blob/148c8787fc2fef50908dc5b01c5d44716e0638ca/docs/reviews/c1-2026-10-08.2-acknowledgement.json)。本機完成、上傳完成、伺服器就緒與正式發布是不同狀態。
 
-## Install and operate through the GUI
+## 安裝與登入
 
-1. Exit OBS. Unzip the package using Explorer. Copy both `obs-plugins` and `data` into the OBS installation folder, keeping the directories intact. The package contains the plugin DLL, background upload helper and matching native Windows Schannel TLS backend.
-2. Open OBS and enable the **HHC 影音** dock. Choose **登入 HHC**, then complete sign-in/authorization in the system browser. Passwords are never entered into OBS. Tokens and rotated refresh credentials stay in Windows Credential Manager.
-3. Set a title and audio track (1–6). Program must be 1920×1080 at 30000/1001 fps, NV12 limited BT.709, 48kHz stereo. NVENC failure is explicit; there is no CPU fallback.
-4. Select intent before starting. Both controls off means recording only. **同步開放會員直播** permits member live, independently of **完成後自動發布**. Either exposure requires the issuer's current publish scope. Server ready and server published remain distinct.
-5. Stop recording normally. The local stop intent is persisted before notifying the server. Closed backlog/tail uploads continue, then normal inventory is sealed. Wait for server media validation and the actual automatic-publication state. A blocked publication must be investigated in Admin; the plugin never calls manual publish as a fallback.
-6. **關閉會員直播，繼續錄影** closes live admission without cancelling publication. **取消會後自動發布** leaves live independent. Accepted controls do not reopen later.
-7. On disconnection the account-bound queue remains durable. Temporary network/service failures retry with capped backoff and jitter while the capture remains eligible; repeated failures do not silently discard the queue or create another recording. Permission, authentication, expiry and invalid-response errors require attention. Use **重新檢查本機收錄**, select a session and **繼續同步所選收錄** when intervention is required. Interrupted encoders are explicitly aborted/incomplete; their retained media cannot be fabricated into normalEnd.
-8. On an accepted OBS exit, a normal encoder stop is attempted and the helper continues complete sessions without a terminal window. The helper has a fixed24-hour lifetime and does not extend the server's upload deadline. If it needs sign-in or reaches that limit, reopen OBS to inspect/resume the original queue; an expired capture requires Admin handling. Physical crashes require explicit operator recovery; incomplete media remains preserved.
+1. 關閉 OBS，使用檔案總管解壓縮候選包，將其中的 `obs-plugins` 與 `data` 資料夾複製到 OBS 安裝資料夾，保留完整目錄結構。背景補傳程式與 Windows Schannel TLS 元件都必須一起安裝；不要另行替換 OBS 的 Qt 或 FFmpeg DLL。
+2. 開啟 OBS，在「停駐視窗」選單啟用 **HHC 影音**。按 **登入 HHC**，在系統瀏覽器完成網站登入與授權。密碼不在 OBS 輸入，token 與更新後的 refresh 憑證存於 Windows 認證管理員。
+3. 確認畫面顯示已登入帳號及 **準備收錄**。若顯示 **已登入，但尚無收錄權限**，請由平台管理員確認帳號權限。影音會員資格與外掛的收錄／發布權限分開管理。
 
-The original YouTube stream and original OBS recording use their existing settings independently. Member playback and full-event DVR belong to the website. Synthetic production test exposure must be deliberately enabled by the authorized operator.
+## 開始本場收錄
 
-## Remove through Explorer
+1. 先確認 OBS Program 輸出為 1920×1080、29.97 fps（30000/1001）、NV12、BT.709／有限範圍，音訊為 48 kHz 雙聲道。外掛不會替你修改 OBS 設定；條件不符或 NVENC 失敗會停止並顯示錯誤，不會改用 CPU 編碼。
+2. 輸入 **本場標題**，選擇 **音軌 1–6**，並確認來源在 OBS 進階音訊屬性中送到所選音軌。Studio Mode 收錄的是 Program；改 Preview 不會直接改變收錄畫面，正式轉場後才跟著 Program 更新。
+3. 依本場用途設定兩個獨立選項：
 
-Exit OBS. Remove only `obs-plugins/64bit/hhc-obs-plugin.dll`, `obs-plugins/64bit/hhc-upload-helper.exe` and `data/obs-plugins/hhc-obs-plugin`. Keep the per-user plugin configuration and queue so pending media is not lost. Credential removal is available in Windows Credential Manager; never delete another application's credentials. Reinstalling uses the same device ID and account-bound queue.
+| 同步開放會員直播 | 完成後自動發布 | 本場用途 |
+| --- | --- | --- |
+| 關閉 | 關閉 | 只錄影，伺服器驗證通過後保留草稿 |
+| 關閉 | 開啟 | 先錄影，驗證通過後由平台自動發布 |
+| 開啟 | 關閉 | 會員直播，會後影片保留草稿 |
+| 開啟 | 開啟 | 會員直播，驗證通過後自動發布會後影片 |
 
-Developer fixtures and fault injection are excluded. Hosted CI has no qualified NVENC GPU. This is a platform preview; see the repository's integration ledger for observed OAuth, recording/live/publication, recovery and current-build long-run results.
+直播與自動發布均須有平台授予的發布權限。選項不會影響既有 YouTube 或 OBS 本機錄影；若需要同時使用，請依原本流程操作。
+
+4. 按 **開始收錄**，確認狀態為 **收錄中**。會員直播是否可觀看，以外掛顯示的伺服器直播狀態及網站實際播放為準；開始本機編碼不代表直播已開放。
+5. 若只要結束會員直播而繼續錄影，按 **關閉會員直播，繼續錄影**。若只要取消會後發布，按 **取消會後自動發布**。兩者互不代替；請等待伺服器確認。已接受的關閉／取消操作不會因重新連線而自動恢復。
+
+## 停止與確認結果
+
+按 **停止收錄**。外掛先保存停止意向，再通知平台，完成尾段與補傳後提交完整影片驗證。正常分段是 900 幀／30.03 秒，最後短尾段保留實際時長。
+
+| 外掛狀態 | 操作與意義 |
+| --- | --- |
+| 已停止收錄，停止通知待同步 | 停止意向已保存，等待平台接受；尚未代表影片完成 |
+| 補傳中，請保持 OBS 開啟 | 保持 OBS 開啟，等待尾段及積欠物件上傳 |
+| 伺服器檢查影片中 | 等待平台完整影片驗證，不要將本機完成當成就緒 |
+| 草稿已就緒 | 平台已確認影片可用，尚未發布；依需要到 Admin 處理 |
+| 會後影片已發布 · 會員可觀看 | 平台已確認發布；仍需在影音專區確認實際播放 |
+| 收錄需要處理，本機資料已保留 | 查看錯誤及原收錄狀態，保留資料，不要建立另一場取代它 |
+
+自動發布被平台阻擋時，請在 Admin 調查原因；外掛不會偷偷改成手動發布。停止後直播回看、轉為會後影片與會員登入播放均由網站依共同契約處理。
+
+## 斷線、退出 OBS 與恢復
+
+網路或服務暫時失敗時，本機資料與原收錄識別會保留，在伺服器期限內持續重試。不要刪除 queue，也不要重建一場來補傳同一素材。
+
+需要介入時，按 **重新檢查本機收錄**，選取原場次，再按 **繼續同步所選收錄**。登入／權限／期限／回應格式錯誤須先處理原因；只會恢復目前登入帳號所屬的收錄。**開啟本機資料夾** 可查看保留的資料。
+
+收錄中正常退出 OBS 會要求確認，嘗試正常停止後由隱藏的背景程式補傳。背景程式最長執行 24 小時，並不延長平台上傳期限；若需重新登入或到達執行期限，請重開 OBS 查看並恢復原收錄。
+
+OBS 或程序突然中斷的素材會被標記為未完整收錄，須明確選擇原場次恢復／中止處理；外掛不會將缺少尾段的素材假稱為完整影片。伺服器已 aborted、failed 或 expired 的收錄保留本機資料，不會強行重新 seal 或發布。實際停電、一般單一 OBS 實例的崩潰重啟與完整長場正式平台驗收仍是分開的驗收項目。
+
+## 移除
+
+關閉 OBS，使用檔案總管只移除 `obs-plugins/64bit/hhc-obs-plugin.dll`、`obs-plugins/64bit/hhc-upload-helper.exe` 與 `data/obs-plugins/hhc-obs-plugin`。保留使用者設定、queue 與未完成素材；重新安裝會沿用裝置識別與帳號所屬 queue。需要移除憑證時使用 Windows 認證管理員，只處理本外掛的項目。
+
+候選包不包含開發用合成場景外掛或故障注入工具。操作人員不需要 CLI。[目前驗收狀態](https://github.com/HallelujahHomeChurch/hhc-obs-plugin/blob/feat/windows-capture/docs/windows-integration-next-gates.md) 區分本機、CI 與端到端；正式發布仍須完成剩餘驗收。

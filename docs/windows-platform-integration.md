@@ -1,6 +1,8 @@
 # Windows platform integration ledger — 2026-10-08
 
-Authority: user-approved direct production tests; immutable handoff ea906e45640bd36985684534f36ba4c489f5e6e1, C1 c1-2026-10-07.1, S1 s1-2026-10-08.1. Existing isolated worktree feat/windows-capture continues PR #1; platform repositories untouched.
+Current C1: c1-2026-10-08.2; see [acknowledgement](reviews/c1-2026-10-08.2-acknowledgement.json), [current gates](windows-integration-next-gates.md) and [latest evidence](reviews/windows-e2e-2026-10-08.md). The entries below preserve chronological integration history and their original source/version boundaries.
+
+Initial authority: user-approved direct production tests; immutable handoff ea906e45640bd36985684534f36ba4c489f5e6e1, C1 c1-2026-10-07.1, S1 s1-2026-10-08.1. Existing isolated worktree feat/windows-capture continues PR #1; platform repositories untouched.
 
 Verified bytes: CMS OpenAPI ebd1fde66d1f810510eb59484f5cdbc5f78446c1b20b2b85f39217b809589116; fixtures a877807cb3559fb507520596118a6f1c0ddae4c1a87f086018acea3fde7efd9a; Account OpenAPI 8d18660fda96ebcb8380df2e3daa2ccaf8cea3c4074264a9b737f3528b69948c. Consumer acknowledges these fixed schemas; issuer-confirmed principal is required beyond generic OAuth response schema.
 

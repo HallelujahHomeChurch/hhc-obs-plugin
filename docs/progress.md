@@ -14,12 +14,12 @@ Retain Windows media at 30000/1001 (29.97), including exact EXTINF values and 60
 
 Latest2026-10-08 qualification is in [windows-e2e-2026-10-08.md](reviews/windows-e2e-2026-10-08.md), superseding the historical stage bullets below. C1c1-2026-10-08.2 is acknowledged with immutable byte hashes; current native candidate148c878 preserves original terminal captures without retrying seal. Corrected29.97-grid local9000s and selected audio tracks1–6/mute passed. Actual Studio Mode Program/Preview isolation and transition passed with three decoded renditions. Original recording plus HHC9000s is still running. Fresh positive production E2E awaits exact draft cleanup approval/quota; no current production-ready acceptance is claimed.
 
-- W0: actual machine/profile baseline and pinned native SDK build completed locally. Original OBS profiles, YouTube and recording settings are preserved.
-- W1: independent Program output, selected mixer 1–6, three NVENC H.264 renditions and HLS fMP4 implemented as a native prototype. Real OBS frontend F1 passed local QA. F1-L passed local QA; concurrency qualification is pending. This is not W1 acceptance or P1 yet.
-- W2: account-bound atomic local journal and recovery primitives tested independently. Capture now checkpoints into the account-bound journal when queue identity is supplied; no uploader is implemented. No HTTP, guessed wire schema, stop/seal/abort receipt mapping, or server publication exists.
-- W3: direct integration awaits Mac platform readiness, fixed contract, endpoints and login settings; separate cross-host fixture delivery is no longer a prerequisite. OAuth PKCE/callback validation and Windows Credential Manager are local primitives only; no network login or loopback listener.
-- W4: native local-validation dock is wired to capture/recovery. Qt states tested; real OBS install/remove and 61-second dock capture passed. GitHub feature branch and hosted CI exist. Platform actions still await Mac integration.
-- W5/P1: not reached. Unsigned local-preview ZIP and Explorer install/remove smoke exist, but no production candidate, current-build long/concurrent qualification or E2E/deployment evidence.
+- W0: actual Windows/OBS/GPU/CPU/RAM/profile baseline and pinned SDK are recorded. Original encoding/profile hashes remain unchanged.
+- W1: independent Program/selected mixer1–6/three NVENC/fMP4 is implemented; corrected local9000s and Studio Mode/audio routing pass. Original-recording/HHC9000s is active; YouTube concurrency is unqualified.
+- W2: account-bound atomic journals, bounded immutable queue, recovery and fault handling are implemented with local, loopback and controlled actual OBS evidence. Physical failures remain separate.
+- W3: fixed C1c1-2026-10-08.2 bytes are acknowledged. Native PKCE/Credential Manager/refresh/HTTP/stop/seal/abort/live/publication mapping exists; earlier short positive production tests and current terminal recovery are recorded. New current-platform positive E2E needs lawful quota release.
+- W4: native GUI/Explorer installation/removal, keyboard focus simulation and actual Studio Mode/audio routing are tested. Physical keyboard/display-DPI/iPhone Safari and ordinary single-instance crash restart remain open.
+- W5/P1: incomplete. Unsigned candidate, draft PR#1 and hosted CI exist. Current long production tests, sustained outage/DVR/latency and operational/shared-platform acceptance still require evidence; no merge or release.
 
 ## Decisions
 
@@ -55,7 +55,7 @@ Canonical package artifacts/F1-obs-02.zip: 40678410 bytes; SHA256 1fbb8d260fdf44
 
 F1-L producer is the same 3701e79, separate portable OBS PID 3128, capture started approximately 20:12:32 Taipei. Requested 9000 seconds, expected finish approximately 22:42:32. Preserve loaded DLL while running. Hidden developer helper PID 14064 samples every 30 seconds, then validates and packages if capture completes. Status/logs under artifacts/F1-L-*. Resource figures include short overlapping harness tests (approximately 20:26–20:46); do not present these as isolated production performance qualification. No simultaneous original recording or YouTube test was performed.
 
-## Open dependencies and limitations
+## Historical dependencies at initial local-only stage
 
 - Cross-host F1/F1-L delivery and shared location: removed as prerequisites by the user; retain archives for optional compatibility diagnosis.
 - Plugin remote and PR target: not provided; no PR or hosted CI can be claimed.
