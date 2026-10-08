@@ -1,5 +1,5 @@
 """Local media QA only. Does not replace Mac V1 Asset validator."""
-import argparse, hashlib, json, pathlib, re, subprocess, sys
+import argparse, hashlib, json, pathlib, re, subprocess, sys, tempfile
 
 def local_path(root):
     if sys.platform=='win32' and not str(root).startswith(chr(92)*2+'?'+chr(92)):
@@ -11,6 +11,13 @@ def check_segment_grid(times):
     assert times and 0 < times[-1] <= regular + 0.000002, ('invalid tail', times[-1:] )
     bad = [(i, duration) for i, duration in enumerate(times[:-1]) if abs(duration - regular) > 0.000002]
     assert not bad, ('invalid interior frame grid', bad)
+
+def ffmpeg_path(path):
+    # HLS URI resolution rejects the extended prefix; Python file I/O still needs it.
+    name = str(path)
+    if name.startswith('\\\\?\\UNC\\'):
+        return '\\\\' + name[8:]
+    return name.removeprefix('\\\\?\\')
 
 def verify(root, expected):
     root=local_path(root)
@@ -45,13 +52,16 @@ def verify(root, expected):
         else: assert times==timeline,(height,'unaligned rendition',times,timeline)
         for filename in ['init.mp4','index.m3u8',*segments]:
             assert f'{height}p/{filename}' in objects, 'untracked media object'
-        probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json','index.m3u8'],cwd=base))
+        source=ffmpeg_path(base/'index.m3u8')
+        # Win32 CreateProcess rejects an extended working directory at MAX_PATH.
+        cwd=tempfile.gettempdir()
+        probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',source],cwd=cwd))
         video=next(s for s in probe['streams'] if s['codec_type']=='video')
         audio=next(s for s in probe['streams'] if s['codec_type']=='audio')
         assert (video['codec_name'],video['width'],video['height'],video['r_frame_rate'])==('h264',width,height,'30000/1001')
         assert (audio['codec_name'],audio['sample_rate'],audio['channels'])==('aac','48000',2)
         # Full decode catches corrupted/timestamp-invalid packets; not server validation.
-        decoded=subprocess.run(['ffmpeg','-v','error','-copyts','-i','index.m3u8','-f','null','-'],cwd=base,capture_output=True,check=True)
+        decoded=subprocess.run(['ffmpeg','-v','error','-copyts','-i',source,'-f','null','-'],cwd=cwd,capture_output=True,check=True)
         assert not decoded.stderr, decoded.stderr.decode(errors='replace')
         results.append({'height':height,'segments':len(times),'durations':times,'total':sum(times),'video':video,'audio':audio})
     return {'evidence':'local ffprobe/full decode/hash QA; not Mac V1','renditions':results}
