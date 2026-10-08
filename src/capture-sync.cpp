@@ -1,5 +1,6 @@
 #include "capture-sync.hpp"
 #include "session-store.hpp"
+#include "windows-path.hpp"
 #include "wire.hpp"
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -125,7 +126,7 @@ std::unique_ptr<QLockFile> CaptureSync::lock()
 {
 	require(QDir().mkpath(directory()) && !QFileInfo(directory()).isSymLink(),
 		"Session ownership directory unavailable");
-	auto owner = std::make_unique<QLockFile>(directory() + "/sync.lock");
+	auto owner = std::make_unique<QLockFile>(lockFilePath(directory() + "/sync.lock"));
 	owner->setStaleLockTime(0);
 	if (!owner->tryLock(0))
 		throw RequestError(409, "local_session_busy");

@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QSaveFile>
 #include <QLockFile>
+#include "windows-path.hpp"
 #include <QThread>
 #include <QCryptographicHash>
 #include <iostream>
@@ -55,7 +56,7 @@ int main(int argc, char **argv)
 			return 3;
 		auto identity = QString::fromLatin1(
 			QCryptographicHash::hash(account.toUtf8(), QCryptographicHash::Sha256).toHex());
-		QLockFile lock(root + "/queue/" + identity + "/background.lock");
+		QLockFile lock(hhc::lockFilePath(root + "/queue/" + identity + "/background.lock"));
 		lock.setStaleLockTime(0);
 		if (!lock.tryLock(0))
 			return 0;

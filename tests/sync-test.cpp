@@ -218,6 +218,17 @@ int main(int argc, char **argv)
 		}
 		check(excluded, "shared session lock excludes foreground/helper mutation");
 		ownership.unlock();
+		const auto longRoot = root.path() + "/" + QString(180, 'x');
+		hhc::SessionStore longStore(longRoot);
+		hhc::CaptureJournal longJournal;
+		longJournal.account = account;
+		longJournal.localId = id;
+		longStore.save(longJournal);
+		hhc::CaptureSync longSync(longRoot, account, id, api);
+		longSync.begin("SYNTHETIC", false, false);
+		check(!QFile::exists(longStore.mediaDirectory(account, id) + "/sync.lock"),
+		      "long Windows session lock is removed after a mutation");
+		longSync.begin("SYNTHETIC", false, false);
 		return errors ? 1 : 0;
 	} catch (const std::exception &e) {
 		std::cerr << "TEST EXCEPTION " << e.what() << "\n";

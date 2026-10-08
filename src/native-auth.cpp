@@ -2,6 +2,7 @@
 #include "native-auth.hpp"
 #include "http.hpp"
 #include "wire.hpp"
+#include "windows-path.hpp"
 #include <QJsonDocument>
 #include <QTcpSocket>
 #include <QUrlQuery>
@@ -120,7 +121,7 @@ NativeAuth::NativeAuth(QString root, QObject *parent, QString expectedAccount)
 					attempt_.reset();
 					launch([this, form] {
 						QMutexLocker own(&refreshMutex_);
-						QLockFile vaultLock(root_ + "/credentials.lock");
+						QLockFile vaultLock(lockFilePath(root_ + "/credentials.lock"));
 						vaultLock.setStaleLockTime(0);
 						for (int i = 0; !vaultLock.tryLock(0); ++i) {
 							if (i == 50)
@@ -251,7 +252,7 @@ QByteArray NativeAuth::bearer(bool force)
 		refresh = token_.refresh;
 		account = token_.account;
 	}
-	QLockFile vaultLock(root_ + "/credentials.lock");
+	QLockFile vaultLock(lockFilePath(root_ + "/credentials.lock"));
 	vaultLock.setStaleLockTime(0);
 	for (int i = 0; !vaultLock.tryLock(0); ++i) {
 		if (i == 50)
