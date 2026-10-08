@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QUuid>
 #include <QLockFile>
+#include <QThreadPool>
 #include "windows-path.hpp"
 #include <iostream>
 int main(int argc, char **argv)
@@ -87,6 +88,18 @@ int main(int argc, char **argv)
 		QFile selection(root.path() + "/active-account");
 		check(selection.open(QIODevice::ReadOnly) && selection.readAll().isEmpty(),
 		      "explicit signed-out selection prevents legacy account migration after restart");
+		selection.close();
+		auth.resume(); // Empty selection fails before any credential read or HTTP request.
+		check(QThreadPool::globalInstance()->waitForDone(5000), "isolated resume worker finishes");
+		bool pendingRejected = false;
+		try {
+			auth.logout();
+		} catch (...) {
+			pendingRejected = true;
+		}
+		check(pendingRejected, "logout cannot race a completed OAuth worker before its queued callback");
+		app.processEvents();
+		auth.logout();
 		check(hhc::CredentialVault::load(issuer, otherTarget) == QByteArray("synthetic-other"),
 		      "logout preserves other account credentials");
 		QFile media(root.path() + "/retained-media");

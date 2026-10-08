@@ -64,6 +64,7 @@ NativeAuth::NativeAuth(QString root, QObject *parent, QString expectedAccount)
 	}
 	require(!QUuid(deviceId_).isNull(), "Invalid device identifier");
 	connect(&future_, &QFutureWatcher<TokenSet>::finished, this, [this] {
+		awaitingResult_ = false;
 		try {
 			accept(workerResult(future_.future()));
 			if (onChanged)
@@ -147,8 +148,9 @@ NativeAuth::~NativeAuth()
 }
 void NativeAuth::launch(std::function<TokenSet()> function)
 {
-	if (future_.isRunning())
+	if (awaitingResult_ || future_.isRunning())
 		return;
+	awaitingResult_ = true;
 	future_.setFuture(QtConcurrent::run([this, function = std::move(function)] {
 		HttpCancellationScope cancellation(cancelled_);
 		return function();
@@ -156,7 +158,7 @@ void NativeAuth::launch(std::function<TokenSet()> function)
 }
 void NativeAuth::login()
 {
-	if (future_.isRunning())
+	if (awaitingResult_ || future_.isRunning())
 		throw RequestError(409, "local_auth_busy");
 	listener_.close();
 	listener_.setMaxPendingConnections(8);
@@ -323,7 +325,7 @@ QByteArray NativeAuth::bearer(bool force)
 }
 void NativeAuth::logout()
 {
-	if (future_.isRunning())
+	if (awaitingResult_ || future_.isRunning())
 		throw RequestError(409, "local_auth_busy");
 	QMutexLocker refreshLock(&refreshMutex_);
 	QLockFile vaultLock(lockFilePath(root_ + "/credentials.lock"));

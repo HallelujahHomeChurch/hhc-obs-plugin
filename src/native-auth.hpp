@@ -47,5 +47,6 @@ private:
 	QTcpServer listener_;
 	std::unique_ptr<OAuthAttempt> attempt_;
 	QFutureWatcher<TokenSet> future_;
+	bool awaitingResult_ = false;
 };
 } // namespace hhc
