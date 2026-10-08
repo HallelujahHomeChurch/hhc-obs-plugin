@@ -180,6 +180,7 @@ void PlatformController::action()
 	if (state_.phase == Phase::Published || state_.phase == Phase::DraftReady) {
 		state_.phase = Phase::Ready;
 		state_.liveEnabled = false;
+		state_.liveState.clear();
 		state_.autoPublish = false;
 		view_->apply(state_);
 		return;
@@ -205,6 +206,7 @@ void PlatformController::action()
 	state_.phase = Phase::Creating;
 	state_.issue.clear();
 	state_.liveEnabled = live_;
+	state_.liveState.clear();
 	state_.autoPublish = publish_;
 	view_->apply(state_);
 	submit();
@@ -230,8 +232,10 @@ void PlatformController::recover(QString id)
 	paused_ = false;
 	failures_ = 0;
 	state_.phase = Phase::Uploading;
+	state_.liveState.clear();
 	state_.issue.clear();
 	nextAttempt_ = {};
+	view_->apply(state_);
 	submit();
 }
 void PlatformController::submit()
@@ -332,7 +336,7 @@ void PlatformController::completed()
 		}
 		const auto &remote = result.sync;
 		state_.pendingBytes = remote.pendingBytes;
-		state_.liveConfirmed = remote.liveState == "live";
+		state_.liveState = remote.liveState;
 		state_.liveEnabled = remote.liveEnabled;
 		if (remote.autoPublish == "cancelled") {
 			state_.autoPublish = false;

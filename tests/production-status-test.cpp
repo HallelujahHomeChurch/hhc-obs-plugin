@@ -35,7 +35,8 @@ int main(int argc, char **argv)
 				{"4b410b08-892f-46a0-bfcf-6ff68844f756", "f0d763fbce234ea290e774d9c008811d"},
 				{"2a002691-2cd7-4dca-b8be-0b8b7e330375", "e5e5d5b869f638e10abbab83b2c02def"},
 				{"28a3c057-4885-4036-ac1c-0437c1495206", "5d68171bc2e63cd5f9cae36eef7032b7"},
-				{"def050ae-22a5-40c6-98a7-ea4d87d06dea", "fca9d0aa7491f6e6615b93ccc922f350"}};
+				{"def050ae-22a5-40c6-98a7-ea4d87d06dea", "fca9d0aa7491f6e6615b93ccc922f350"},
+				{"848b9fae-4245-4101-9748-2fbfc459527b", "cc7e138703e155cdddaa4293dc2b72c2"}};
 			if (!authorized.contains(id))
 				throw std::runtime_error("Recording outside explicit cleanup authorization");
 			auth.bearer();

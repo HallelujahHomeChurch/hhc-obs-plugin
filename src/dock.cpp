@@ -103,6 +103,7 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	status_->setFont(font);
 	layout->addWidget(status_);
 	liveStatus_ = new QLabel;
+	liveStatus_->setObjectName("liveStatus");
 	liveStatus_->setWordWrap(true);
 	layout->addWidget(liveStatus_);
 	pending_ = new QLabel;
@@ -194,9 +195,25 @@ void Dock::apply(const DockState &s)
 	publish_->setEnabled(!s.localOnly && s.canPublish && s.phase == Phase::Ready);
 	title_->setEnabled(s.phase == Phase::Ready || s.phase == Phase::Unavailable ||
 			   s.phase == Phase::LocalComplete || s.phase == Phase::Failed);
-	liveStatus_->setText(s.liveConfirmed ? QString::fromUtf8("會員直播中")
-			     : s.liveEnabled ? QString::fromUtf8("直播開放狀態待確認")
-					     : QString::fromUtf8("會員直播未開放"));
+	QString liveMessage = QString::fromUtf8("會員直播未開放");
+	if (!s.localOnly) {
+		if (s.liveEnabled)
+			liveMessage = QString::fromUtf8("直播開放狀態待確認");
+		for (const auto &[serverState, message] :
+		     {std::pair{"starting", "會員直播準備中"}, std::pair{"live", "會員直播中"},
+		      std::pair{"recovering", "會員直播補傳中"}, std::pair{"interrupted", "會員直播連線中斷"},
+		      std::pair{"ending", "會員直播收尾中"}, std::pair{"ended", "會員直播已結束"},
+		      std::pair{"failed", "會員直播失敗"}, std::pair{"expired", "會員直播已到期"},
+		      std::pair{"aborted", "會員直播已中止"}})
+			if (s.liveState == serverState) {
+				liveMessage = s.liveEnabled
+						      ? QString::fromUtf8(message) + QString::fromUtf8("（伺服器回報）")
+						      : QString::fromUtf8("會員直播未開放；伺服器回報：") +
+								QString::fromUtf8(message);
+				break;
+			}
+	}
+	liveStatus_->setText(liveMessage);
 	pending_->setText(QString::fromUtf8("待傳：%1 MB · 三畫質").arg(double(s.pendingBytes) / 1000000.0, 0, 'f', 1));
 	if (s.localOnly)
 		pending_->setText(QString::fromUtf8("本機編碼量：約 %1 MB · 三畫質")

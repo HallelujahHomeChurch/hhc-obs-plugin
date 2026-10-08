@@ -24,7 +24,8 @@ enum class Phase {
 };
 struct DockState {
 	Phase phase = Phase::Unavailable;
-	bool canPublish = false, liveEnabled = false, liveConfirmed = false, cancelPending = false;
+	bool canPublish = false, liveEnabled = false, cancelPending = false;
+	QString liveState;
 	std::optional<bool> autoPublish;
 	quint64 pendingBytes = 0;
 	QString issue;

@@ -100,6 +100,27 @@ int main(int argc, char **argv)
 	check(login && !login->isEnabled(), "cannot change account during active capture");
 	check(closeLive && closeLive->isEnabled() && cancelPublish && cancelPublish->isEnabled(),
 	      "independent live and publication controls");
+	for (const auto &[serverState, message] :
+	     {std::pair{"starting", "準備中"}, std::pair{"live", "直播中"}, std::pair{"recovering", "補傳中"},
+	      std::pair{"interrupted", "連線中斷"}, std::pair{"ending", "收尾中"}, std::pair{"ended", "已結束"},
+	      std::pair{"failed", "失敗"}, std::pair{"expired", "已到期"}, std::pair{"aborted", "已中止"}}) {
+		state.liveState = serverState;
+		dock.apply(state);
+		auto *liveStatus = dock.findChild<QLabel *>("liveStatus");
+		check(liveStatus && liveStatus->text().contains(QString::fromUtf8(message)), serverState);
+		check(action->isEnabled() && action->text().contains("停止"),
+		      "live status does not stop local recording");
+		check(state.autoPublish == true && cancelPublish->isEnabled(),
+		      "live status leaves publication independent");
+		state.liveEnabled = false;
+		dock.apply(state);
+		check(liveStatus && liveStatus->text().contains(QString::fromUtf8(message)) &&
+			      liveStatus->text().contains("未開放"),
+		      "server progress and viewer admission are independent");
+		check(!closeLive->isEnabled(), "disabled admission cannot be closed again");
+		state.liveEnabled = true;
+	}
+	dock.apply(state);
 	int controls = 0;
 	dock.onCloseLive = [&] {
 		controls += 1;
