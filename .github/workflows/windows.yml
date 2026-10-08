@@ -19,6 +19,7 @@ jobs:
       - run: cmake --build build --config RelWithDebInfo
       - run: ctest --test-dir build -C RelWithDebInfo --output-on-failure
       - run: python tests/media-grid-test.py
+      - run: powershell.exe -NoProfile -File tests/watcher-path-test.ps1
       - name: Package platform preview (E2E evidence separate)
         shell: pwsh
         run: ./scripts/package-windows.ps1

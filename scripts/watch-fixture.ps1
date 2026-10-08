@@ -8,7 +8,18 @@ param(
  [switch]$SkipPackage
 )
 $ErrorActionPreference='Stop'
+function Invoke-PythonCheck([string[]]$ScriptArguments,[string]$Log) {
+ $ErrorActionPreference='Continue'
+ $global:LASTEXITCODE=1
+ & python @ScriptArguments *> $Log
+ return $global:LASTEXITCODE
+}
 $root=Split-Path $PSScriptRoot -Parent
+$Output=[IO.Path]::GetFullPath($Output)
+if(-not $Output.StartsWith('\\?\')) {
+ if($Output.StartsWith('\\')) {$Output='\\?\UNC\'+$Output.Substring(2)}
+ else {$Output='\\?\'+$Output}
+}
 $prefix=Join-Path $root "artifacts/$RunName"
 $report="$prefix-resource-samples.jsonl"
 if(Test-Path -LiteralPath $report){throw 'Run already exists; preserve evidence'}
@@ -26,16 +37,14 @@ if($QueueCapture){
  $inventories=@(Get-ChildItem -LiteralPath $Output -Recurse -Filter inventory.json)
  if($inventories.Count -ne 1){'FAILED: expected one finalized capture'|Set-Content "$prefix-status.txt";exit 1}
  $media=$inventories[0].DirectoryName
- $journal=Get-Content -LiteralPath (Join-Path $media journal.json) -Raw|ConvertFrom-Json
+ $journal=Get-Content -LiteralPath ([IO.Path]::Combine($media,'journal.json')) -Raw|ConvertFrom-Json
  if(-not $journal.normalEnd -or -not $journal.stopIntent -or $journal.confirmedReady -or $journal.sealAcknowledged){'FAILED: incorrect local journal state'|Set-Content "$prefix-status.txt";exit 1}
 }
-if(-not(Test-Path -LiteralPath (Join-Path $media 'inventory.json'))){'FAILED: no final inventory; preserve files'|Set-Content "$prefix-status.txt";exit 1}
-& python (Join-Path $root 'scripts/verify-media.py') $media --seconds $Seconds *> "$prefix-validation.log"
-if($LASTEXITCODE -ne 0){'FAILED local validation; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+if(-not(Test-Path -LiteralPath ([IO.Path]::Combine($media,'inventory.json')))){'FAILED: no final inventory; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+if((Invoke-PythonCheck @((Join-Path $root 'scripts/verify-media.py'),$media,'--seconds',"$Seconds") "$prefix-validation.log") -ne 0){'FAILED local validation; preserve files'|Set-Content "$prefix-status.txt";exit 1}
 if(-not $SkipPackage){
  $dest=Join-Path $root "artifacts/$RunName-handoff-01"
- & python (Join-Path $root 'scripts/prepare-handoff.py') $media $dest --seconds $Seconds --commit $ProducerCommit *> "$prefix-package.log"
- if($LASTEXITCODE -ne 0){'FAILED packaging; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+ if((Invoke-PythonCheck @((Join-Path $root 'scripts/prepare-handoff.py'),$media,$dest,'--seconds',"$Seconds",'--commit',$ProducerCommit) "$prefix-package.log") -ne 0){'FAILED packaging; preserve files'|Set-Content "$prefix-status.txt";exit 1}
 }
 [ordered]@{producerCommit=$ProducerCommit;media=$media;seconds=$Seconds;evidence='local actual OBS only; not E2E';completed=(Get-Date).ToString('o')}|ConvertTo-Json|Set-Content "$prefix-result.json"
 'LOCAL_QA_COMPLETE; not E2E acceptance'|Set-Content "$prefix-status.txt"
