@@ -28,11 +28,14 @@ int main(int argc, char **argv)
 			std::cout << QJsonDocument(safe).toJson().toStdString();
 			return 0;
 		}
-		if (QString::fromLocal8Bit(argv[2]) == "--approved-delete-test") {
+		if (QString::fromLocal8Bit(argv[2]) == "--approved-delete-test" ||
+		    QString::fromLocal8Bit(argv[2]) == "--cleanup-check-test") {
 			const QString id = QString::fromLocal8Bit(argv[3]);
 			const QMap<QString, QString> authorized{
 				{"4b410b08-892f-46a0-bfcf-6ff68844f756", "f0d763fbce234ea290e774d9c008811d"},
-				{"2a002691-2cd7-4dca-b8be-0b8b7e330375", "e5e5d5b869f638e10abbab83b2c02def"}};
+				{"2a002691-2cd7-4dca-b8be-0b8b7e330375", "e5e5d5b869f638e10abbab83b2c02def"},
+				{"28a3c057-4885-4036-ac1c-0437c1495206", "5d68171bc2e63cd5f9cae36eef7032b7"},
+				{"def050ae-22a5-40c6-98a7-ea4d87d06dea", "fca9d0aa7491f6e6615b93ccc922f350"}};
 			if (!authorized.contains(id))
 				throw std::runtime_error("Recording outside explicit cleanup authorization");
 			auth.bearer();
@@ -44,13 +47,17 @@ int main(int argc, char **argv)
 					     "RecordingCaptureEnvelope")["data"]
 					 .toObject();
 			const auto eligible = [&](QJsonObject record, QJsonObject capture) {
+				const bool rejectedSeal =
+					id == "28a3c057-4885-4036-ac1c-0437c1495206" &&
+					capture["state"] == "uploading" && capture["liveEnabled"].isBool() &&
+					!capture["liveEnabled"].toBool() && capture["stopAcceptedAt"].isString();
 				return record["id"] == id && record["status"] == "draft" &&
 				       record["title"].toString().startsWith("[HHC OBS SYNTHETIC TEST] ") &&
 				       record.contains("uploadedAt") && record["uploadedAt"].isNull() &&
 				       record["version"].isDouble() && record["version"].toInteger() > 0 &&
 				       record["version"].toDouble() == record["version"].toInteger() &&
 				       capture["recordingId"] == id && capture["captureId"] == authorized[id] &&
-				       (capture["state"] == "failed" || capture["state"] == "aborted");
+				       (capture["state"] == "failed" || capture["state"] == "aborted" || rejectedSeal);
 			};
 			if (!eligible(r, c))
 				throw std::runtime_error("Cleanup preconditions changed; preserved recording");
@@ -65,10 +72,22 @@ int main(int argc, char **argv)
 			published["status"] = "published";
 			if (eligible(published, c))
 				throw std::runtime_error("Published cleanup guard failed");
+			if (c["state"] == "uploading") {
+				for (const auto *field : {"liveEnabled", "stopAcceptedAt"}) {
+					auto wrong = c;
+					wrong.remove(field);
+					if (eligible(r, wrong))
+						throw std::runtime_error("Stopped cleanup guard failed");
+				}
+			}
 			const auto version = QByteArray::number(r["version"].toInteger());
 			QJsonObject receipt{{"recordingId", id},          {"captureId", authorized[id]},
 					    {"title", r["title"]},        {"version", r["version"]},
 					    {"captureState", c["state"]}, {"deleteAccepted", false}};
+			if (QString::fromLocal8Bit(argv[2]) == "--cleanup-check-test") {
+				std::cout << QJsonDocument(receipt).toJson().toStdString();
+				return 0;
+			}
 			const auto save = [&] {
 				QSaveFile file("artifacts/approved-cleanup-" + id + ".json");
 				auto bytes = QJsonDocument(receipt).toJson();
