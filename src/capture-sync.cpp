@@ -335,6 +335,8 @@ SyncState CaptureSync::stepImpl(bool active)
 	auto capture = poll();
 	auto local = readJson(directory() + "/journal.json");
 	require(local["account"] == account_ && local["localId"] == id_, "Local session identity mismatch");
+	if (QStringList{"aborted", "expired", "failed"}.contains(state_.state))
+		return state_;
 	const QString notifyPath = "/admin/recordings/" + state_.recordingId + "/captures/" + state_.captureId;
 	if (local["stopIntent"].toBool() && QStringList{"creating", "uploading"}.contains(state_.state))
 		mutate("stop", "POST", notifyPath + "/stop", {}, "stop");

@@ -20,7 +20,7 @@ int main(int argc, char **argv)
 	check(f.open(QIODevice::ReadOnly), "read pinned fixtures");
 	const auto fixtureBytes = f.readAll();
 	check(QCryptographicHash::hash(fixtureBytes, QCryptographicHash::Sha256).toHex() ==
-		      "a877807cb3559fb507520596118a6f1c0ddae4c1a87f086018acea3fde7efd9a",
+		      "84d4074550e24f93a747a67b60e3ce3e49894fd2e409d23367a3e2d285c5f794",
 	      "immutable C1 fixture bytes retained on Windows checkout");
 	for (const auto &v : QJsonDocument::fromJson(fixtureBytes).array()) {
 		const auto o = v.toObject();

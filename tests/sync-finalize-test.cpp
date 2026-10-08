@@ -5,6 +5,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QFile>
+#include <QSaveFile>
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -28,6 +29,7 @@ int main(int argc, char **argv)
 		QMap<QString, QByteArray> media, uploaded;
 		QJsonObject sealBody;
 		bool publish = false;
+		QString terminalOverride;
 		QTemporaryDir root;
 		const QString account = "018f0c1f-18d0-7e81-9f6f-69c456db7003", id = "complete-test";
 		hhc::SessionStore store(root.path());
@@ -117,7 +119,12 @@ int main(int argc, char **argv)
 						    {"meta", QJsonObject{}},
 						    {"error", QJsonValue::Null}};
 				} else if (first.startsWith("GET ")) {
-					if (!sealBody.empty()) {
+					if (!terminalOverride.isEmpty()) {
+						capture["state"] = terminalOverride;
+						capture["liveState"] = terminalOverride;
+						capture["autoPublish"] = "cancelled";
+						capture["terminalReason"] = "recording_deleted";
+					} else if (!sealBody.empty()) {
 						capture["state"] = "ready";
 						capture["autoPublish"] = publish ? "published" : "pending";
 						capture["packageId"] = capture["captureId"];
@@ -218,6 +225,34 @@ int main(int argc, char **argv)
 		      "canonical inventory actual 29.97 fps");
 		check(ready.state == "ready" && ready.autoPublish == "pending" && published.autoPublish == "published",
 		      "server ready and automatic publication remain independent");
+		QFile savedFile(directory + "/remote-journal.json");
+		if (!savedFile.open(QIODevice::ReadOnly))
+			return 3;
+		auto pending = QJsonDocument::fromJson(savedFile.readAll()).object();
+		savedFile.close();
+		auto mutations = pending["mutations"].toObject();
+		auto savedSeal = mutations["seal"].toObject();
+		savedSeal["receipt"] = QJsonValue::Null;
+		mutations["seal"] = savedSeal;
+		pending["mutations"] = mutations;
+		for (const auto &terminal : QStringList{"aborted", "failed", "expired"}) {
+			QSaveFile file(directory + "/remote-journal.json");
+			auto bytes = QJsonDocument(pending).toJson();
+			if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
+				return 3;
+			terminalOverride = terminal;
+			hhc::CaptureSync recovery(root.path(), account, id, api);
+			const auto before = operations.size();
+			auto stopped = recovery.step(false);
+			check(stopped.state == terminal && operations.size() == before,
+			      "authoritative terminal capture prevents replay of rejected seal intent");
+			QFile afterFile(directory + "/remote-journal.json");
+			if (!afterFile.open(QIODevice::ReadOnly))
+				return 3;
+			auto after = QJsonDocument::fromJson(afterFile.readAll()).object();
+			check(after["mutations"].toObject()["seal"] == savedSeal,
+			      "terminal recovery preserves exact inventory and operation key without a receipt");
+		}
 		return failed ? 1 : 0;
 	} catch (const std::exception &e) {
 		std::cerr << "TEST EXCEPTION " << e.what() << '\n';

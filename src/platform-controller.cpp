@@ -347,7 +347,7 @@ void PlatformController::completed()
 			SessionStore store(root_ + "/queue");
 			auto path = store.mediaDirectory(owner_, id_);
 			atomicJson(path + "/local-session.json", {{"title", title_},
-								  {"wireRevision", "c1-2026-10-07.1"},
+								  {"wireRevision", "c1-2026-10-08.2"},
 								  {"autoPublish", publish_},
 								  {"liveEnabled", live_},
 								  {"audioTrack", int(track_)},

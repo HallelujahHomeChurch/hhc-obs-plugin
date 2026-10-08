@@ -142,7 +142,8 @@ int main(int argc, char **argv)
 				 .toObject();
 		QJsonObject safe;
 		for (const auto *key : {"captureId", "recordingId", "state", "liveState", "autoPublish",
-					"stopAcceptedAt", "packageId", "serverNow", "declaredObjects", "declaredBytes"})
+					"stopAcceptedAt", "packageId", "serverNow", "declaredObjects", "declaredBytes",
+					"expiresAt", "liveEnabled", "replayUntil", "recordingVersion"})
 			safe[key] = c[key];
 		auto reason = c["terminalReason"].toString();
 		safe["terminalReason"] = reason.isEmpty() ? QJsonValue::Null

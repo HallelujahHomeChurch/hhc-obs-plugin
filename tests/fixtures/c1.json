@@ -1441,5 +1441,208 @@
       "meta": {},
       "error": null
     }
+  },
+  {
+    "name": "seal_2997_eight_actual_segments",
+    "schema": "RecordingCaptureSealInput",
+    "valid": true,
+    "value": {
+      "operationKey": "seal-2997-eight",
+      "normalEnd": true,
+      "inventory": {
+        "schemaVersion": 1,
+        "presetVersion": "hhc-obs-v1",
+        "objects": [
+          {
+            "path": "1080p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000001.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000002.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000003.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000004.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000005.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000006.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "1080p/seg-000007.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000001.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000002.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000003.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000004.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000005.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000006.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "480p/seg-000007.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/index.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/init.mp4",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000000.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000001.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000002.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000003.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000004.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000005.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000006.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "720p/seg-000007.m4s",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "path": "master.m3u8",
+            "sizeBytes": 100,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "renditions": [
+          {
+            "name": "1080p",
+            "width": 1920,
+            "height": 1080,
+            "frameRate": 29.97002997002997,
+            "videoBitrate": 3000000,
+            "audioBitrate": 128000,
+            "durationSeconds": 240.206633,
+            "segmentCount": 8
+          },
+          {
+            "name": "480p",
+            "width": 854,
+            "height": 480,
+            "frameRate": 29.97002997002997,
+            "videoBitrate": 800000,
+            "audioBitrate": 128000,
+            "durationSeconds": 240.206633,
+            "segmentCount": 8
+          },
+          {
+            "name": "720p",
+            "width": 1280,
+            "height": 720,
+            "frameRate": 29.97002997002997,
+            "videoBitrate": 1500000,
+            "audioBitrate": 128000,
+            "durationSeconds": 240.206633,
+            "segmentCount": 8
+          }
+        ],
+        "inventoryDigest": "6888ef86061374a0f5fdb7b305e3b062d637fccab9175a55b8ee99f17ab5beda"
+      }
+    }
   }
 ]
