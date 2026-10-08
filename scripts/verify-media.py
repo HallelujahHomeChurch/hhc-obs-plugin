@@ -2,6 +2,8 @@
 import argparse, hashlib, json, pathlib, re, subprocess, sys
 
 def verify(root, expected):
+    if sys.platform=='win32' and not str(root).startswith(chr(92)*2+'?'+chr(92)):
+        root=pathlib.Path(chr(92)*2+'?'+chr(92)+str(root.resolve()))
     inventory=json.loads((root/'inventory.json').read_text(encoding='utf-8'))
     assert inventory['normalEnd'], 'not a normal end'
     assert inventory['fpsNum']==30000 and inventory['fpsDen']==1001
@@ -32,13 +34,13 @@ def verify(root, expected):
         else: assert times==timeline,(height,'unaligned rendition',times,timeline)
         for filename in ['init.mp4','index.m3u8',*segments]:
             assert f'{height}p/{filename}' in objects, 'untracked media object'
-        probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(base/'index.m3u8')]))
+        probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json','index.m3u8'],cwd=base))
         video=next(s for s in probe['streams'] if s['codec_type']=='video')
         audio=next(s for s in probe['streams'] if s['codec_type']=='audio')
         assert (video['codec_name'],video['width'],video['height'],video['r_frame_rate'])==('h264',width,height,'30000/1001')
         assert (audio['codec_name'],audio['sample_rate'],audio['channels'])==('aac','48000',2)
         # Full decode catches corrupted/timestamp-invalid packets; not server validation.
-        decoded=subprocess.run(['ffmpeg','-v','error','-copyts','-i',str(base/'index.m3u8'),'-f','null','-'],capture_output=True,check=True)
+        decoded=subprocess.run(['ffmpeg','-v','error','-copyts','-i','index.m3u8','-f','null','-'],cwd=base,capture_output=True,check=True)
         assert not decoded.stderr, decoded.stderr.decode(errors='replace')
         results.append({'height':height,'segments':len(times),'durations':times,'total':sum(times),'video':video,'audio':audio})
     return {'evidence':'local ffprobe/full decode/hash QA; not Mac V1','renditions':results}

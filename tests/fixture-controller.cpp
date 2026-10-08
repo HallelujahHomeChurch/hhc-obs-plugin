@@ -152,7 +152,7 @@ void begin()
 			QElapsedTimer overall, recording;
 			bool requested = false, started = false, stopped = false, offline = false, restored = false;
 			int lastEvidence = -1;
-			bool closeRequested = false, cancelRequested = false;
+			bool closeRequested = false, cancelRequested = false, exitRequested = false;
 			int firstLiveMs = -1;
 			QJsonArray trace;
 			QTcpServer blackhole;
@@ -217,6 +217,21 @@ void begin()
 				blog(LOG_INFO, "[HHC fixture] Native stop requested");
 			}
 			auto elapsed = run->started ? run->recording.elapsed() : 0;
+			auto exitAt = qEnvironmentVariableIntValue("HHC_FIXTURE_EXIT_AFTER_SECONDS");
+			if (run->started && exitAt > 0 && !run->exitRequested && elapsed >= exitAt * 1000) {
+				run->exitRequested = true;
+				hhc::atomicJson(destination + "/accepted-exit.json",
+						{{"recordingMs", elapsed},
+						 {"case", qEnvironmentVariable("HHC_FIXTURE_CASE")}});
+				QTimer::singleShot(50, QCoreApplication::instance(), [] {
+					if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+						if (box->text().contains(
+							    QString::fromUtf8("退出 OBS 會正常停止 HHC 收錄")))
+							box->button(QMessageBox::Yes)->click();
+				});
+				window->close();
+				return;
+			}
 			auto closeAt = qEnvironmentVariableIntValue("HHC_FIXTURE_CLOSE_LIVE_AFTER_SECONDS"),
 			     cancelAt = qEnvironmentVariableIntValue("HHC_FIXTURE_CANCEL_PUBLISH_AFTER_SECONDS");
 			if (run->started && closeAt > 0 && !run->closeRequested && elapsed >= closeAt * 1000) {
