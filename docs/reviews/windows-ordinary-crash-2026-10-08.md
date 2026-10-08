@@ -20,4 +20,4 @@ An explicit process identifier with the backslash executable path targeted the i
 
 The hidden crash prompt is absent from Computer Use's targetable window inventory. It must be exposed and observed before any dialog input. Do not replace this with forged window handles, injected Qt choices, sentinel manipulation or `--multi` and claim operator acceptance.
 
-Safe evidence is in the adjacent JSON and `artifacts/normal-single-instance-crash-28bcb5d`. The original-recording/HHC9000-second process13768 remains independent and active. Full ordinary restart UI, physical keyboard, production recovery and physical power failure remain open.
+Safe evidence is in the adjacent JSON and `artifacts/normal-single-instance-crash-28bcb5d`. The independent original-recording/HHC9000-second process13768 was active at this crash-test observation and subsequently [completed its local media checks](windows-original-concurrent-long-2026-10-08.md). Full ordinary restart UI, physical keyboard, production recovery and physical power failure remain open.
