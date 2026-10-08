@@ -141,3 +141,8 @@ Final: Ruling: review was source analysis, followed by actual fix regressions â€
 GitHub Actions run 37651614864 on c1c50c5 completed success: clean pinned SDK build, native compilation, four CTest suites, package and artifact upload. New fix commit needs its own CI result. Initial main contains only the repo bootstrap; all implementation is on feat/windows-capture, without merge.
 
 Attempt to start a new 9000-second OBS run plus monitoring helper was rejected by automatic command approval review with only 'blocked by policy'. Nothing in that rejected command executed; no new long capture is running. A bounded 61-second regression ran successfully afterward. Do not report the new long run as launched or passed. GitHub CLI token remains invalid; PR creation is waiting for the user's refreshed login, while SSH push and public CI reads work.
+# 2026-10-09 stop/account lifecycle follow-up
+
+- Independent review of `347d827..ca9e560` found two Important timing defects: completed encoding could turn a stale stop into a new event, and a completed platform worker's pending GUI callback could overwrite logout/account state. Both were reproduced, then fixed at the controller start/stop and shared job lifecycle boundaries.
+- New CPU-only real-controller/Qt regression joins the existing suite: native full build passes and all 11 CTest cases pass. See `reviews/windows-stop-logout-review-2026-10-09.md` for RED/GREEN evidence and scope.
+- The actual 9000-second original-recording/HHC run stays on frozen `ca29821`; later controller/authentication changes need their own runtime qualification. Production E2E, member-player defect and quota/physical/YouTube permission gates remain open.

@@ -14,6 +14,7 @@
 #include <QUuid>
 #include <windows.h>
 #include <QRandomGenerator>
+#include <QScopeGuard>
 namespace hhc {
 PlatformController::PlatformController(QString root, QObject *parent)
 	: QObject(parent),
@@ -35,7 +36,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		recover(id);
 	};
 	view_->onLogin = [this] {
-		if (closing_ || authenticating_ || busy() || job_.isRunning())
+		if (closing_ || authenticating_ || busy() || jobBusy())
 			return;
 		const bool previouslyPaused = paused_;
 		paused_ = true;
@@ -53,7 +54,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		view_->apply(state_);
 	};
 	view_->onLogout = [this] {
-		if (closing_ || authenticating_ || busy() || job_.isRunning())
+		if (closing_ || authenticating_ || busy() || jobBusy())
 			return;
 		try {
 			auth_.logout();
@@ -67,7 +68,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		QDesktopServices::openUrl(QUrl::fromLocalFile(root_ + "/queue"));
 	};
 	view_->onOpenCleanup = [this](QString id) {
-		if (closing_ || busy() || job_.isRunning() || auth_.account().isEmpty())
+		if (closing_ || authenticating_ || busy() || jobBusy() || auth_.account().isEmpty())
 			return;
 		SessionStore store(root_ + "/queue");
 		for (const auto &j : recoveryCache_.sessions) {
@@ -200,23 +201,29 @@ void PlatformController::helper()
 }
 void PlatformController::refresh()
 {
-	if (closing_ || authenticating_ || job_.isRunning() || busy() || auth_.account().isEmpty())
+	if (closing_ || authenticating_ || jobBusy() || busy() || auth_.account().isEmpty())
 		return;
 	state_.checkingLocal = true;
 	view_->apply(state_);
 	auto account = auth_.account();
-	job_.setFuture(QtConcurrent::run([this, root = root_, account] {
+	launch([this, root = root_, account] {
 		PlatformJob result;
 		result.scan = true;
 		result.recovery = SessionStore(root + "/queue").scanPending(account, &cancelled_);
 		return result;
-	}));
+	});
 }
 void PlatformController::action()
 {
 	if (closing_ || authenticating_ || !view_)
 		return;
+	if (capture_ && capture_->finished()) {
+		poll();
+		return;
+	}
 	if (busy()) {
+		if (state_.phase != Phase::Capturing)
+			return;
 		stopping_ = true;
 		capture_->stop(StopReason::User);
 		state_.phase = Phase::StopPending;
@@ -224,7 +231,7 @@ void PlatformController::action()
 		nextAttempt_ = {};
 		return;
 	}
-	if (job_.isRunning() || auth_.account().isEmpty() || !auth_.permitted("cms:recordings:write"))
+	if (jobBusy() || auth_.account().isEmpty() || !auth_.permitted("cms:recordings:write"))
 		return;
 	if (state_.phase == Phase::Published || state_.phase == Phase::DraftReady ||
 	    (state_.phase == Phase::Failed && state_.terminalFailure)) {
@@ -239,6 +246,8 @@ void PlatformController::action()
 		view_->apply(state_);
 		return;
 	}
+	if (state_.phase != Phase::Ready)
+		return;
 	if (!id_.isEmpty())
 		helper();
 	capture_.reset();
@@ -268,7 +277,7 @@ void PlatformController::action()
 }
 void PlatformController::recover(QString id)
 {
-	if (closing_ || authenticating_ || busy() || job_.isRunning() || auth_.account().isEmpty())
+	if (closing_ || authenticating_ || busy() || jobBusy() || auth_.account().isEmpty())
 		return;
 	const auto &report = recoveryCache_;
 	auto found = std::find_if(report.sessions.begin(), report.sessions.end(),
@@ -296,12 +305,12 @@ void PlatformController::recover(QString id)
 }
 void PlatformController::submit()
 {
-	if (closing_ || paused_ || job_.isRunning() || id_.isEmpty())
+	if (closing_ || authenticating_ || paused_ || jobBusy() || id_.isEmpty())
 		return;
 	bool active = busy(), create = creating_;
 	auto account = owner_, id = id_, title = title_;
 	bool publish = publish_, live = live_;
-	job_.setFuture(QtConcurrent::run([this, account, id, title, publish, live, active, create] {
+	launch([this, account, id, title, publish, live, active, create] {
 		HttpCancellationScope cancellation(cancelled_);
 		if (auth_.account() != account)
 			throw RequestError(403, "account_mismatch");
@@ -324,11 +333,23 @@ void PlatformController::submit()
 		} else
 			result.sync = sync.step(active);
 		return result;
-	}));
+	});
+}
+void PlatformController::launch(std::function<PlatformJob()> work)
+{
+	if (jobBusy())
+		return;
+	awaitingResult_ = true;
+	try {
+		job_.setFuture(QtConcurrent::run(std::move(work)));
+	} catch (...) {
+		awaitingResult_ = false;
+		throw;
+	}
 }
 void PlatformController::control(bool closeLive)
 {
-	if (closing_ || id_.isEmpty())
+	if (closing_ || authenticating_ || id_.isEmpty())
 		return;
 	try {
 		CaptureSync::persistControl(root_ + "/queue", owner_, id_, closeLive);
@@ -358,11 +379,13 @@ void PlatformController::poll()
 		nextAttempt_ = {};
 		view_->apply(state_);
 	}
-	if (!id_.isEmpty() && !paused_ && !job_.isRunning() && std::chrono::steady_clock::now() >= nextAttempt_)
+	if (!authenticating_ && !id_.isEmpty() && !paused_ && !jobBusy() &&
+	    std::chrono::steady_clock::now() >= nextAttempt_)
 		submit();
 }
 void PlatformController::completed()
 {
+	const auto consumed = qScopeGuard([this] { awaitingResult_ = false; });
 	if (closing_ || !view_)
 		return;
 	state_.checkingLocal = false;

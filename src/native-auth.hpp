@@ -35,6 +35,7 @@ public:
 	std::function<void(QString)> onChanged;
 
 private:
+	friend struct ControllerLifecycleTest;
 	TokenSet exchange(QJsonObject form, const QString &expectedAccount = {});
 	void accept(TokenSet);
 	void launch(std::function<TokenSet()>);

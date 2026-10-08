@@ -98,7 +98,7 @@ bool LocalController::eventFilter(QObject *, QEvent *event)
 }
 void LocalController::refresh()
 {
-	if (!view_ || closing_ || recovery_.isRunning())
+	if (!view_ || closing_ || state_.checkingLocal || recovery_.isRunning())
 		return;
 	if (busy()) {
 		view_->setRecoveryText(QString::fromUtf8("目前正在收錄；結束後自動檢查本機資料。"));
@@ -114,6 +114,10 @@ void LocalController::action()
 {
 	if (!view_ || closing_)
 		return;
+	if (capture_ && capture_->finished()) {
+		poll();
+		return;
+	}
 	if (busy()) {
 		if (state_.phase != Phase::Capturing)
 			return;
@@ -123,7 +127,8 @@ void LocalController::action()
 		return;
 	}
 	// Avoid a recovery read racing startup or claiming a partially written object.
-	if (recovery_.isRunning())
+	if (state_.checkingLocal || recovery_.isRunning() ||
+	    (state_.phase != Phase::Ready && state_.phase != Phase::LocalComplete && state_.phase != Phase::Failed))
 		return;
 	capture_ = std::make_unique<CaptureOutput>();
 	const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);

@@ -22,6 +22,7 @@ protected:
 	bool eventFilter(QObject *, QEvent *) override;
 
 private:
+	friend struct ControllerLifecycleTest;
 	void action();
 	void poll();
 	QPointer<Dock> view_;
