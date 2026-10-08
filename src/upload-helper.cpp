@@ -11,6 +11,7 @@
 #include <QLockFile>
 #include "windows-path.hpp"
 #include <QThread>
+#include <QRandomGenerator>
 #include <QCryptographicHash>
 #include <iostream>
 int main(int argc, char **argv)
@@ -33,16 +34,17 @@ int main(int argc, char **argv)
 		return 2;
 	try {
 		hhc::NativeAuth auth(root, nullptr, expected);
-		for (unsigned retry = 0;; ++retry) {
+		auto cutoff = std::chrono::steady_clock::now() + std::chrono::hours(24);
+		unsigned authFailures = 0;
+		for (;;) {
 			try {
 				auth.bearer();
 				break;
 			} catch (const hhc::RequestError &e) {
-				if (retry >= 6 ||
-				    !(e.status == 0 || e.code == "local_session_busy" ||
-				      e.code == "local_credentials_busy" || e.status == 429 || e.status >= 500))
+				auto delay = e.retryDelay(authFailures);
+				if (!delay || std::chrono::steady_clock::now() >= cutoff)
 					throw;
-				QThread::sleep(std::max(e.retryAfter, int(std::min(60u, 1u << retry))));
+				QThread::msleep(1000 * *delay + QRandomGenerator::global()->bounded(1000));
 			}
 		}
 		auto account = auth.account();
@@ -74,9 +76,8 @@ int main(int argc, char **argv)
 			return ids;
 		};
 		auto known = completedIds();
-		int attempts = 0;
+		unsigned attempts = 0;
 		auto report = hhc::SessionStore(root + "/queue").scanPending(account);
-		auto cutoff = std::chrono::steady_clock::now() + std::chrono::hours(24);
 		while (std::chrono::steady_clock::now() < cutoff) {
 			try {
 				auto current = completedIds();
@@ -121,13 +122,10 @@ int main(int argc, char **argv)
 				attempts = 0;
 				QThread::sleep(5);
 			} catch (const hhc::RequestError &e) {
-				bool retry = e.status == 0 || e.code == "local_session_busy" ||
-					     e.code == "local_credentials_busy" || e.status == 429 || e.status >= 500 ||
-					     e.status == 409 && e.code == "capture_missing_objects";
-				if (!retry || ++attempts > 6)
+				auto delay = e.retryDelay(attempts);
+				if (!delay)
 					throw;
-				QThread::sleep(std::max(e.retryAfter,
-							int(std::min(60u, 1u << std::min(unsigned(attempts), 6u)))));
+				QThread::msleep(1000 * *delay + QRandomGenerator::global()->bounded(1000));
 			}
 		}
 		return 5;

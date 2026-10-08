@@ -52,6 +52,29 @@ int main(int argc, char **argv)
 			++failed;
 		}
 	};
+	for (const auto &error :
+	     {hhc::RequestError(0, "transport_unavailable"), hhc::RequestError(429, "capture_rate_limited"),
+	      hhc::RequestError(503, "capture_unavailable"), hhc::RequestError(409, "local_credentials_busy"),
+	      hhc::RequestError(409, "local_session_busy"), hhc::RequestError(409, "capture_missing_objects"),
+	      hhc::RequestError(409, "oauth_temporarily_unavailable")}) {
+		unsigned failures = 0;
+		for (int attempt = 0; attempt < 20; ++attempt) {
+			auto delay = error.retryDelay(failures);
+			check(delay && *delay >= 2 && *delay <= 60 && failures <= 6,
+			      "transient outage keeps retrying after six failures with capped backoff");
+		}
+	}
+	for (const auto &error :
+	     {hhc::RequestError(401, "sign_in_required"), hhc::RequestError(403, "forbidden"),
+	      hhc::RequestError(410, "capture_expired"), hhc::RequestError(409, "capture_conflict"),
+	      hhc::RequestError(409, "oauth_unavailable"), hhc::RequestError(0, "transport_cancelled"),
+	      hhc::RequestError(0, "invalid_transport_origin")}) {
+		unsigned failures = 0;
+		check(!error.retryDelay(failures) && failures == 0, "terminal/cancelled requests pause safely");
+	}
+	unsigned failures = 6;
+	check(hhc::RequestError(429, "capture_rate_limited", 300).retryDelay(failures) == 300,
+	      "Retry-After survives capped exponential backoff");
 	hhc::ApiClient api(QUrl(QString("http://127.0.0.1:%1/api").arg(server.serverPort())), [&](bool refresh) {
 		refreshes += refresh;
 		return QByteArray("synthetic-token");

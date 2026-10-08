@@ -399,13 +399,10 @@ void PlatformController::completed()
 		nextAttempt_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
 	} catch (const RequestError &e) {
 		state_.issue = QString::fromUtf8(e.what());
-		bool transient = e.status == 0 || e.code == "local_session_busy" ||
-				 e.code == "local_credentials_busy" || e.status == 429 || e.status >= 500 ||
-				 e.status == 409 && e.code == "capture_missing_objects";
-		if (!transient || ++failures_ > 6)
+		auto delay = e.retryDelay(failures_);
+		if (!delay)
 			paused_ = true;
-		auto delay = std::max(e.retryAfter, int(std::min(60u, 1u << std::min(failures_, 6u))));
-		nextAttempt_ = std::chrono::steady_clock::now() + std::chrono::seconds(delay) +
+		nextAttempt_ = std::chrono::steady_clock::now() + std::chrono::seconds(delay.value_or(0)) +
 			       std::chrono::milliseconds(QRandomGenerator::global()->bounded(1000));
 		if (!busy())
 			state_.phase = Phase::Failed;

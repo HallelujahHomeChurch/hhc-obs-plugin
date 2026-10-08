@@ -206,6 +206,8 @@ TokenSet NativeAuth::exchange(QJsonObject form, const QString &expectedAccount)
 		auto code = QJsonDocument::fromJson(response.body).object()["error"].toString();
 		if (code == "invalid_grant")
 			throw RequestError(response.status, "sign_in_required");
+		if (response.status == 409 && code == "temporarily_unavailable")
+			throw RequestError(409, "oauth_temporarily_unavailable", response.retryAfter);
 		throw RequestError(response.status, "oauth_unavailable", response.retryAfter);
 	}
 	auto token = parseNativeToken(QJsonDocument::fromJson(response.body).object());

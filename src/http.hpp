@@ -7,6 +7,8 @@
 #include <functional>
 #include <stdexcept>
 #include <atomic>
+#include <algorithm>
+#include <optional>
 namespace hhc {
 class HttpCancellationScope {
 public:
@@ -34,6 +36,15 @@ public:
 	int status;
 	QString code;
 	int retryAfter;
+	std::optional<int> retryDelay(unsigned &failures) const
+	{
+		if (!(status == 0 && code == "transport_unavailable" || status == 429 || status >= 500 ||
+		      status == 409 && (code == "local_session_busy" || code == "local_credentials_busy" ||
+					code == "capture_missing_objects" || code == "oauth_temporarily_unavailable")))
+			return std::nullopt;
+		failures = std::min(failures, 5u) + 1;
+		return std::max(retryAfter, int(std::min(60u, 1u << failures)));
+	}
 };
 HttpResponse httpRequest(const QByteArray &method, const QUrl &, const QByteArray &body = {},
 			 const QMap<QByteArray, QByteArray> &headers = {});
