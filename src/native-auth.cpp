@@ -157,7 +157,7 @@ void NativeAuth::launch(std::function<TokenSet()> function)
 void NativeAuth::login()
 {
 	if (future_.isRunning())
-		return;
+		throw RequestError(409, "local_auth_busy");
 	listener_.close();
 	listener_.setMaxPendingConnections(8);
 	require(listener_.listen(QHostAddress::LocalHost, 0), "Loopback listener unavailable");
@@ -265,8 +265,13 @@ QByteArray NativeAuth::bearer(bool force)
 		account = expectedAccount_;
 	if (account.isEmpty()) {
 		QFile selected(root_ + "/active-account");
-		if (selected.open(QIODevice::ReadOnly) && selected.size() < 128)
+		if (selected.exists()) {
+			require(selected.open(QIODevice::ReadOnly) && selected.size() < 128,
+				"Cannot read account selection");
 			account = QString::fromUtf8(selected.readAll()).trimmed();
+			if (account.isEmpty())
+				throw RequestError(401, "sign_in_required");
+		}
 	}
 	bool missingSelection = false;
 	if (account.isEmpty()) {
@@ -319,12 +324,35 @@ QByteArray NativeAuth::bearer(bool force)
 void NativeAuth::logout()
 {
 	if (future_.isRunning())
-		return;
+		throw RequestError(409, "local_auth_busy");
+	QMutexLocker refreshLock(&refreshMutex_);
+	QLockFile vaultLock(lockFilePath(root_ + "/credentials.lock"));
+	vaultLock.setStaleLockTime(0);
+	if (!vaultLock.tryLock(0))
+		throw RequestError(409, "local_credentials_busy");
+	QString account;
+	{
+		QMutexLocker lock(&mutex_);
+		account = token_.account;
+	}
+	if (account.isEmpty()) {
+		QFile selected(root_ + "/active-account");
+		if (selected.exists()) {
+			require(selected.open(QIODevice::ReadOnly) && selected.size() < 128,
+				"Cannot read account selection");
+			account = QString::fromUtf8(selected.readAll()).trimmed();
+		}
+	}
+	if (!account.isEmpty()) {
+		require(!QUuid(account).isNull(), "Stored account invalid");
+		CredentialVault::erase(issuer, "native:" + deviceId_ + ":" + account);
+	}
+	QSaveFile selected(root_ + "/active-account");
+	require(selected.open(QIODevice::WriteOnly) && selected.commit(), "Cannot clear account selection");
 	listener_.close();
 	attempt_.reset();
 	{
 		QMutexLocker lock(&mutex_);
-		CredentialVault::erase(issuer, "native:" + deviceId_ + ":" + token_.account);
 		token_ = {};
 	}
 	if (onChanged)

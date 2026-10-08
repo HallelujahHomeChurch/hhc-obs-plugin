@@ -1,0 +1,17 @@
+# Native logout and account isolation
+
+Accepted common plan Task 5 requires logout/account switching with isolated queues and preferences. Audit found an unused NativeAuth::logout and a disabled settings placeholder, while the existing method left the active-account selection behind. This is a remaining plan requirement outside the earlier final review range; it is not represented as fresh reviewer approval.
+
+The native dock now offers Logout while idle and connected. Capture, synchronization, local scanning and sign-in guards keep account changes away from in-flight work. Signing in pauses the controller's old synchronization. On an actual principal change, the controller drops only its current references/cache and exposure choices; the view resets title/audio and recovery selections. Durable account-owned media/journals remain intact. Existing SessionStore/CaptureSync account guards still enforce ownership.
+
+Logout uses the existing refresh mutex and cross-process credential lock, erases only the selected device/account credential, and atomically writes an empty active-account selection. The empty selection explicitly requires sign-in, preventing a restart from falling through to legacy account migration. Unreadable/oversized selections fail closed. Other account credentials and media are untouched. This is local credential removal, not a guessed OAuth revocation endpoint or website logout.
+
+Evidence on the fix working tree with parent ca298214c1cbb8f35fc67d300d5c2b80bf04a483:
+
+- RED: native-oauth and mock-dock fail because the logout entry, selected-credential removal, selection clearing, lock rejection and view isolation are absent. `artifacts/logout-red-ctest.log`.
+- Additional RED: removing selection entirely is insufficient to suppress legacy account migration after restart; explicit signed-out selection check fails. `artifacts/logout-selection-red-ctest.log`.
+- GREEN: isolated random device/account UUIDs in temporary storage use real Windows Credential Manager. A held credential lock refuses logout and preserves selection/credential; successful logout removes only the selected device credential and preserves the other synthetic credential and retained media. All synthetic vault entries are removed after the check. No real user credential is read, deleted or logged; no browser or HTTP request runs in these tests.
+- Qt checks cover the idle callback, blocked callback during local scanning, disabled sign-out during capture and cleared prior title/audio/recovery selection on account change. These are automated Qt tests, not real OBS/operator keyboard or real-account switching E2E.
+- Native plugin/helper build succeeds and all 10 CTest cases pass in 2.51 seconds. `artifacts/logout-final-{build,ctest}.log`.
+
+The already-running OBS 34836 / watcher 33832 retain the frozen ca29821 fixture and 9000-second local original-recording/HHC run. Neither loaded DLL nor profile is replaced. Its eventual evidence qualifies that exact producer, not this subsequent authentication change. CPU-only compilation/tests overlap the run; resource observations must retain that qualification. Fresh positive platform captures, real-account logout/relogin, member player quality/seek, sustained live/outage/DVR and production long-run acceptance remain open. No merge, deployment, YouTube operation or draft deletion occurred.

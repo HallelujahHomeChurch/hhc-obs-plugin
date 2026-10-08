@@ -141,9 +141,11 @@ int main(int argc, char **argv)
 	state.autoPublish = true;
 	dock.apply(state);
 	auto *login = dock.findChild<QPushButton *>("login");
+	auto *logout = dock.findChild<QPushButton *>("logout");
 	auto *closeLive = dock.findChild<QPushButton *>("closeLive");
 	auto *cancelPublish = dock.findChild<QPushButton *>("cancelPublish");
 	check(login && !login->isEnabled(), "cannot change account during active capture");
+	check(logout && !logout->isEnabled(), "cannot sign out during active capture");
 	check(closeLive && closeLive->isEnabled() && cancelPublish && cancelPublish->isEnabled(),
 	      "independent live and publication controls");
 	for (const auto &[serverState, message] :
@@ -215,6 +217,30 @@ int main(int argc, char **argv)
 		dock.apply(state);
 		check(!cleanup->isEnabled(), "refresh removes prior account cleanup selection");
 	}
+	check(logout && logout->isEnabled(), "signed-in idle operator has a logout entry");
+	if (logout) {
+		int signOuts = 0;
+		dock.onLogout = [&] {
+			++signOuts;
+		};
+		logout->click();
+		check(signOuts == 1, "idle sign out reaches controller once");
+		state.checkingLocal = true;
+		dock.apply(state);
+		check(!logout->isEnabled(), "local scan must finish before sign out");
+		logout->click();
+		check(signOuts == 1, "pending scan cannot invoke sign out");
+		state.checkingLocal = false;
+		dock.apply(state);
+	}
+	title->setText("Previous account title");
+	track->setCurrentIndex(4);
+	dock.setRecoverySessions({"previous-account-session"});
+	state.account = "another-synthetic-account";
+	dock.apply(state);
+	check(title->text() != "Previous account title" && dock.audioTrack() == 1 &&
+		      dock.findChild<QComboBox *>("recoverSession")->count() == 0,
+	      "account change clears previous title audio preference and recovery selection");
 	dock.show();
 	QApplication::setActiveWindow(&dock);
 	title->setFocus();

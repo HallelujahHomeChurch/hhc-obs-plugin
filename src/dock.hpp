@@ -45,7 +45,7 @@ public:
 	bool selectedPublish() const;
 	void setRecoverySessions(const QStringList &, const QStringList &cleanupIds = {});
 	void setRecoveryText(const QString &);
-	std::function<void()> onAction, onRefresh, onOpenFolder, onLogin, onCloseLive, onCancelPublish;
+	std::function<void()> onAction, onRefresh, onOpenFolder, onLogin, onLogout, onCloseLive, onCancelPublish;
 	std::function<void(QString)> onRecover, onOpenCleanup;
 
 private:
@@ -55,10 +55,11 @@ private:
 	QPushButton *action_ = nullptr;
 	QLabel *note_ = nullptr, *recent_ = nullptr, *hint_ = nullptr;
 	QComboBox *track_ = nullptr, *sessions_ = nullptr;
-	QPushButton *login_ = nullptr, *closeLive_ = nullptr, *cancelPublish_ = nullptr;
+	QPushButton *login_ = nullptr, *logout_ = nullptr, *closeLive_ = nullptr, *cancelPublish_ = nullptr;
 	QLabel *account_ = nullptr;
 	QPushButton *cleanup_ = nullptr;
 	bool allowCleanup_ = false;
 	bool capturing_ = false, localOnly_ = false;
+	QString accountId_;
 };
 } // namespace hhc

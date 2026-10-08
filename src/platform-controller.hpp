@@ -38,6 +38,7 @@ private:
 	RecoveryReport recoveryCache_;
 	bool stopping_ = false;
 	bool publish_ = false, live_ = false, creating_ = false, closing_ = false, paused_ = false;
+	bool authenticating_ = false;
 	unsigned failures_ = 0;
 	std::chrono::steady_clock::time_point nextAttempt_{};
 	std::atomic<bool> cancelled_{false};

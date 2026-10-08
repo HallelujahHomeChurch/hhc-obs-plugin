@@ -35,15 +35,32 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		recover(id);
 	};
 	view_->onLogin = [this] {
-		if (busy() || job_.isRunning())
+		if (closing_ || authenticating_ || busy() || job_.isRunning())
 			return;
+		const bool previouslyPaused = paused_;
+		paused_ = true;
+		authenticating_ = true;
+		state_.checkingLocal = true;
 		try {
 			auth_.login();
 			state_.issue = QString::fromUtf8("請在系統瀏覽器完成登入。 ");
 		} catch (...) {
+			authenticating_ = false;
+			state_.checkingLocal = false;
+			paused_ = previouslyPaused;
 			state_.issue = QString::fromUtf8("無法啟動登入，請重試。 ");
 		}
 		view_->apply(state_);
+	};
+	view_->onLogout = [this] {
+		if (closing_ || authenticating_ || busy() || job_.isRunning())
+			return;
+		try {
+			auth_.logout();
+		} catch (...) {
+			state_.issue = QString::fromUtf8("登出尚未完成，請稍後重試。本機收錄資料保留。");
+			view_->apply(state_);
+		}
 	};
 	view_->onOpenFolder = [this] {
 		QDir().mkpath(root_ + "/queue");
@@ -75,6 +92,21 @@ PlatformController::PlatformController(QString root, QObject *parent)
 	auth_.onChanged = [this](QString error) {
 		if (closing_ || !view_)
 			return;
+		authenticating_ = false;
+		state_.checkingLocal = false;
+		if (state_.account != auth_.account()) {
+			capture_.reset();
+			id_.clear();
+			owner_.clear();
+			title_.clear();
+			recoveryCache_ = {};
+			publish_ = live_ = creating_ = stopping_ = false;
+			paused_ = true;
+			failures_ = 0;
+			nextAttempt_ = {};
+			state_ = {};
+			state_.autoPublish = false;
+		}
 		state_.account = auth_.account();
 		state_.connected = !state_.account.isEmpty();
 		state_.canPublish = auth_.permitted("cms:recordings:publish");
@@ -168,7 +200,7 @@ void PlatformController::helper()
 }
 void PlatformController::refresh()
 {
-	if (closing_ || job_.isRunning() || busy() || auth_.account().isEmpty())
+	if (closing_ || authenticating_ || job_.isRunning() || busy() || auth_.account().isEmpty())
 		return;
 	state_.checkingLocal = true;
 	view_->apply(state_);
@@ -182,7 +214,7 @@ void PlatformController::refresh()
 }
 void PlatformController::action()
 {
-	if (closing_ || !view_)
+	if (closing_ || authenticating_ || !view_)
 		return;
 	if (busy()) {
 		stopping_ = true;
@@ -236,7 +268,7 @@ void PlatformController::action()
 }
 void PlatformController::recover(QString id)
 {
-	if (closing_ || busy() || job_.isRunning() || auth_.account().isEmpty())
+	if (closing_ || authenticating_ || busy() || job_.isRunning() || auth_.account().isEmpty())
 		return;
 	const auto &report = recoveryCache_;
 	auto found = std::find_if(report.sessions.begin(), report.sessions.end(),

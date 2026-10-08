@@ -41,9 +41,13 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	heading->setFont(font);
 	top->addWidget(heading);
 	top->addStretch();
-	auto *settings = new QPushButton(QString::fromUtf8("設定"));
-	settings->setEnabled(false);
-	top->addWidget(settings);
+	logout_ = new QPushButton(QString::fromUtf8("登出"));
+	logout_->setObjectName("logout");
+	top->addWidget(logout_);
+	connect(logout_, &QPushButton::clicked, this, [this] {
+		if (onLogout)
+			onLogout();
+	});
 	layout->addLayout(top);
 	auto *account = new QLabel(QString::fromUtf8("帳號：測試狀態（尚未登入）"));
 	account->setWordWrap(true);
@@ -193,12 +197,21 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 }
 void Dock::apply(const DockState &s)
 {
+	if (!s.localOnly && accountId_ != s.account) {
+		accountId_ = s.account;
+		title_->setText(QDate::currentDate().toString("yyyy-MM-dd") + QString::fromUtf8(" 聚會"));
+		track_->setCurrentIndex(0);
+		setRecoverySessions({});
+		setRecoveryText(QString::fromUtf8("尚無此帳號的本機收錄。"));
+	}
 	capturing_ = s.phase == Phase::Capturing;
 	localOnly_ = s.localOnly;
 	const bool idle = s.phase == Phase::Ready || s.phase == Phase::DraftReady || s.phase == Phase::Published ||
 			  s.phase == Phase::Failed || s.phase == Phase::Unavailable;
 	login_->setVisible(!s.localOnly);
 	login_->setEnabled(idle && !s.checkingLocal);
+	logout_->setVisible(!s.localOnly && s.connected);
+	logout_->setEnabled(s.connected && idle && !s.checkingLocal);
 	login_->setText(s.account.isEmpty() ? QString::fromUtf8("登入 HHC") : QString::fromUtf8("重新登入 HHC"));
 	account_->setText(s.account.isEmpty() ? QString::fromUtf8("尚未登入")
 					      : QString::fromUtf8("帳號：%1").arg(s.account));
