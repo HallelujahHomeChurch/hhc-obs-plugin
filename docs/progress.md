@@ -21,6 +21,8 @@ Latest2026-10-08 qualification is in [windows-e2e-2026-10-08.md](reviews/windows
 - W4: native GUI/Explorer installation/removal, keyboard focus simulation and actual Studio Mode/audio routing are tested. Physical keyboard/display-DPI/iPhone Safari and ordinary single-instance crash restart remain open.
 - W5/P1: incomplete. Unsigned candidate, draft PR#1 and hosted CI exist. Current long production tests, sustained outage/DVR/latency and operational/shared-platform acceptance still require evidence; no merge or release.
 
+2026-10-08 20:21 Taipei: two actual local OBS/NVENC queue-commit sharing-denial runs passed the expected-failure checks. User stop persisted, normalEnd/ready/seal remained false, six closed hashes were retained and the denied placeholder was excluded. Retained three-rendition media passed full decode/format checks. Developer runnable check: tests/capture-file-sharing-test.ps1; [evidence](reviews/windows-file-sharing-2026-10-08.md). Ruling: use the complete portable OBS runtime after the standalone setup failed before encoding — only the actual portable runs qualify this fault. This does not close physical disk/ACL/power/GPU or production recovery gates. The original-recording/HHC9000-second process remains active.
+
 ## Decisions
 
 - User corrected the approved media rate to **30000/1001 (29.97)**. Preserve this actual OBS rate. A 60-frame GOP yields 30.03-second normal segments; retain actual EXTINF rather than rewriting to 30. Global mismatches (including non-NV12/non-limited BT709) reject without changing OBS.
