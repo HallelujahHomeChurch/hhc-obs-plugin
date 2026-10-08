@@ -25,6 +25,8 @@ int main(int argc, char **argv)
 	auto *status = dock.findChild<QLabel *>("status");
 	auto *title = dock.findChild<QLineEdit *>("title");
 	auto *action = dock.findChild<QPushButton *>("action");
+	auto *cleanup = dock.findChild<QPushButton *>("openCleanupFolder");
+	check(cleanup && !cleanup->isEnabled(), "cleanup entry cannot open unqualified media by default");
 	check(live && publish && status && title && action, "required native dock controls");
 	if (!live || !publish || !status || !title || !action)
 		return 1;
@@ -140,6 +142,36 @@ int main(int argc, char **argv)
 	state.liveEnabled = false;
 	state.autoPublish = false;
 	dock.apply(state);
+	if (cleanup) {
+		auto *sessions = dock.findChild<QComboBox *>("recoverSession");
+		QString opened;
+		dock.onOpenCleanup = [&](QString id) {
+			opened = id;
+		};
+		dock.setRecoverySessions({"failed", "ready-aged"}, {"ready-aged"});
+		check(!cleanup->isEnabled(), "failed session cannot be offered for cleanup");
+		sessions->setCurrentIndex(1);
+		check(cleanup->isEnabled(), "eligible selected success can be inspected");
+		cleanup->click();
+		check(opened == "ready-aged", "cleanup targets only the qualified selected session");
+		for (const auto phase : {hhc::Phase::Capturing, hhc::Phase::Uploading, hhc::Phase::Validating}) {
+			state.phase = phase;
+			dock.apply(state);
+			check(!cleanup->isEnabled(), "active work cannot offer cleanup");
+		}
+		state.phase = hhc::Phase::Ready;
+		state.checkingLocal = true;
+		dock.apply(state);
+		check(!cleanup->isEnabled(), "verification in progress cannot offer cleanup");
+		state.checkingLocal = false;
+		state.connected = false;
+		dock.apply(state);
+		check(!cleanup->isEnabled(), "disconnected account cannot offer cleanup");
+		state.connected = true;
+		dock.setRecoverySessions({"another-account"});
+		dock.apply(state);
+		check(!cleanup->isEnabled(), "refresh removes prior account cleanup selection");
+	}
 	dock.show();
 	QApplication::setActiveWindow(&dock);
 	title->setFocus();

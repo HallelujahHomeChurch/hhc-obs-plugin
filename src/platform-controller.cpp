@@ -49,6 +49,23 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		QDir().mkpath(root_ + "/queue");
 		QDesktopServices::openUrl(QUrl::fromLocalFile(root_ + "/queue"));
 	};
+	view_->onOpenCleanup = [this](QString id) {
+		if (closing_ || busy() || job_.isRunning() || auth_.account().isEmpty())
+			return;
+		SessionStore store(root_ + "/queue");
+		for (const auto &j : recoveryCache_.sessions) {
+			if (j.localId != id || j.account != auth_.account() ||
+			    !store.mayCleanup(j, QDateTime::currentDateTimeUtc()))
+				continue;
+			const QFileInfo dir(store.mediaDirectory(j.account, j.localId));
+			if (!QFileInfo(root_ + "/queue").isSymLink() && !dir.isSymLink() && dir.isDir() &&
+			    !QFileInfo(dir.absolutePath()).isSymLink() &&
+			    dir.canonicalFilePath().startsWith(QFileInfo(root_ + "/queue").canonicalFilePath() + "/",
+							       Qt::CaseInsensitive))
+				QDesktopServices::openUrl(QUrl::fromLocalFile(dir.absoluteFilePath()));
+			return;
+		}
+	};
 	view_->onCloseLive = [this] {
 		control(true);
 	};
@@ -316,21 +333,28 @@ void PlatformController::completed()
 		state_.issue.clear();
 		if (result.scan) {
 			recoveryCache_ = result.recovery;
-			QStringList rows, ids;
+			QStringList rows, ids, cleanupIds;
 			for (const auto &j : result.recovery.sessions) {
 				if (QFileInfo::exists(
 					    SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
 					    "/remote-journal.json")) {
 					ids << j.localId;
-					rows << j.localId + QString::fromUtf8(j.normalEnd ? " · 本機完整，可繼續同步"
-											  : " · 未正常完成，資料保留");
+					const bool cleanup = SessionStore(root_ + "/queue")
+								     .mayCleanup(j, QDateTime::currentDateTimeUtc());
+					if (cleanup)
+						cleanupIds << j.localId;
+					rows << j.localId + QString::fromUtf8(
+								    cleanup ? " · 已確認就緒滿七日，可查看暫存"
+								    : j.confirmedReady ? " · 已確認就緒，七日內保留"
+								    : j.normalEnd      ? " · 本機完整，可繼續同步"
+										       : " · 未正常完成，資料保留");
 				}
 			}
 			for (const auto &issue : result.recovery.issues)
 				rows << issue.localId + QString::fromUtf8(" · 本機驗證失敗，資料保留");
 			view_->setRecoveryText(rows.empty() ? QString::fromUtf8("尚無此帳號的本機收錄。")
 							    : rows.join('\n'));
-			view_->setRecoverySessions(ids);
+			view_->setRecoverySessions(ids, cleanupIds);
 			view_->apply(state_);
 			return;
 		}

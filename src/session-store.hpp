@@ -32,6 +32,9 @@ public:
 	// recovery and successful finalization revalidate all immutable objects.
 	void checkpointLocal(const QString &account, const QString &localId, const QVector<ClosedObject> &closed,
 			     bool stopIntent, bool normalEnd);
+	// Called only after a validated seal receipt and authoritative ready response.
+	void confirmReady(const QString &account, const QString &localId, const QString &captureId,
+			  const QString &packageId, QDateTime observedAt);
 	QVector<CaptureJournal> loadPending(const QString &account) const;
 	RecoveryReport scanPending(const QString &account, const std::atomic<bool> *cancelled = nullptr) const;
 	QString mediaDirectory(const QString &account, const QString &localId) const;

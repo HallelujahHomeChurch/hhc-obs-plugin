@@ -31,6 +31,8 @@ Latest2026-10-08 gates and evidence are in [windows-integration-next-gates.md](w
 
 ## Decisions
 
+2026-10-08 22:19 Taipei: [ready retention/GUI inspection](reviews/windows-ready-retention-2026-10-08.md) fixes the uncalled cleanup predicate and missing production ready metadata. Accepted seal plus authoritative matching-package ready now persist typed local evidence and a stable first-observation clock; recovery hashes remain mandatory before offering eligible owned-session inspection. All10 local unit/mock/loopback tests pass after two observed RED checks. Ruling: explicit Explorer inspection only, no automatic deletion — design treats seven-day deletion as a proposal — cost: operators confirm remote availability before deciding any removal. Fresh C1 all11 byte hashes match; actual original capture readback remains aborted/recording_deleted, so no seal is forced. Current candidate rebuilding and new CI remain separate from these local results.
+
 - User corrected the approved media rate to **30000/1001 (29.97)**. Preserve this actual OBS rate. A 60-frame GOP yields 30.03-second normal segments; retain actual EXTINF rather than rewriting to 30. Global mismatches (including non-NV12/non-limited BT709) reject without changing OBS.
 - Native worktree creation returned Not a git repository for parent Projects. Created a new local repo and isolated ignored git worktree manually. Existing repositories and files preserved.
 - W1 -> W2: only closed immutable objects enter queue. normalEnd requires explicit user stop, all three successful tails, and matching timelines; it never means server ready/published.

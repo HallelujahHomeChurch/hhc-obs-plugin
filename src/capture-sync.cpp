@@ -183,6 +183,9 @@ void CaptureSync::save()
 }
 void CaptureSync::apply(const QJsonObject &capture)
 {
+	const auto package = journal_["lastCapture"].toObject()["packageId"].toString();
+	if (capture["state"] == "ready" && !package.isEmpty())
+		require(capture["packageId"] == package, "Ready package differs from sealed package");
 	require(state_.recordingId.isEmpty() || capture["recordingId"] == state_.recordingId,
 		"Remote recording identity mismatch");
 	require(state_.captureId.isEmpty() || capture["captureId"] == state_.captureId,
@@ -315,6 +318,10 @@ QJsonObject CaptureSync::poll()
 	} while (!cursor.isEmpty());
 	capture["objects"] = objects;
 	save();
+	if (state_.state == "ready" && state_.sealAccepted)
+		SessionStore(root_).confirmReady(account_, id_, state_.captureId, capture["packageId"].toString(),
+						 QDateTime::fromString(capture["serverNow"].toString(),
+								       Qt::ISODateWithMs));
 	return capture;
 }
 SyncState CaptureSync::controlImpl(bool closeLive)

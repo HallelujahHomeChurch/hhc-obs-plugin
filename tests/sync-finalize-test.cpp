@@ -29,6 +29,7 @@ int main(int argc, char **argv)
 		QMap<QString, QByteArray> media, uploaded;
 		QJsonObject sealBody;
 		bool publish = false;
+		QString readyPackage = capture["captureId"].toString();
 		QString terminalOverride;
 		QTemporaryDir root;
 		const QString account = "018f0c1f-18d0-7e81-9f6f-69c456db7003", id = "complete-test";
@@ -127,7 +128,9 @@ int main(int argc, char **argv)
 					} else if (!sealBody.empty()) {
 						capture["state"] = "ready";
 						capture["autoPublish"] = publish ? "published" : "pending";
-						capture["packageId"] = capture["captureId"];
+						capture["packageId"] = readyPackage.isEmpty()
+									       ? QJsonValue(QJsonValue::Null)
+									       : QJsonValue(readyPackage);
 					}
 					capture["objects"] = remoteObjects;
 					response = {{"data", capture},
@@ -200,6 +203,7 @@ int main(int argc, char **argv)
 		auto sealed = queued;
 		for (int n = 0; n < 20 && !sealed.sealAccepted; ++n)
 			sealed = sync.step(false);
+		const auto beforeReady = store.loadPending(account).first();
 		auto ready = sync.step(false);
 		publish = true;
 		auto published = sync.step(false);
@@ -215,6 +219,9 @@ int main(int argc, char **argv)
 			      operations.count("declare") == 10 && operations.count("confirm") == 10,
 		      "stop is accepted before tail confirmation and seal");
 		check(queued.state != "ready" && !queued.sealAccepted, "202 verification queue is not ready");
+		check(!beforeReady.confirmedReady && !beforeReady.readyAt.isValid() &&
+			      !store.mayCleanup(beforeReady, QDateTime::currentDateTimeUtc().addYears(1)),
+		      "freezing and accepted seal never qualify media for cleanup");
 		check(sealed.sealAccepted && sealBody["normalEnd"].toBool(), "only normal complete inventory seals");
 		check(sealBody["inventory"].toObject()["objects"].toArray().size() == 10 &&
 			      sealBody["inventory"]
@@ -225,6 +232,34 @@ int main(int argc, char **argv)
 		      "canonical inventory actual 29.97 fps");
 		check(ready.state == "ready" && ready.autoPublish == "pending" && published.autoPublish == "published",
 		      "server ready and automatic publication remain independent");
+		const auto confirmed = store.loadPending(account).first();
+		check(confirmed.confirmedReady && confirmed.sealAcknowledged &&
+			      confirmed.remoteCapture == capture["captureId"] && confirmed.packageId == readyPackage &&
+			      confirmed.readyPackage == readyPackage && confirmed.readyAt.isValid(),
+		      "accepted seal and server ready persist matching package evidence for retention");
+		check(!store.mayCleanup(confirmed, confirmed.readyAt.addDays(7).addMSecs(-1)) &&
+			      store.mayCleanup(confirmed, confirmed.readyAt.addDays(7)),
+		      "successful capture keeps the complete seven day recovery window");
+		const auto firstReadyAt = confirmed.readyAt;
+		sync.step(false);
+		check(store.loadPending(account).first().readyAt == firstReadyAt,
+		      "repeated ready polls do not reset retention clock");
+		for (const auto &wrong : QStringList{QString(32, 'f'), QString{}}) {
+			readyPackage = wrong;
+			bool rejected = false;
+			const auto before = operations.size();
+			try {
+				sync.step(false);
+			} catch (const std::exception &) {
+				rejected = true;
+			}
+			const auto retained = store.loadPending(account).first();
+			check(rejected && retained.packageId == confirmed.packageId &&
+				      retained.readyAt == firstReadyAt && retained.objects.size() == 10 &&
+				      operations.size() == before,
+			      "changed or absent ready package preserves local evidence and media without mutations");
+		}
+		readyPackage = confirmed.packageId;
 		QFile savedFile(directory + "/remote-journal.json");
 		if (!savedFile.open(QIODevice::ReadOnly))
 			return 3;

@@ -293,6 +293,47 @@ void SessionStore::checkpointLocal(const QString &account, const QString &localI
 	require(target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() && target.commit(),
 		"atomic checkpoint failed");
 }
+void SessionStore::confirmReady(const QString &account, const QString &id, const QString &captureId,
+				const QString &packageId, QDateTime observedAt)
+{
+	const auto dir = mediaDirectory(account, id);
+	require(!QFileInfo(root_).isSymLink() && !QFileInfo(QFileInfo(dir).absolutePath()).isSymLink() &&
+			!QFileInfo(dir).isSymLink(),
+		"Ready session ancestor is a link");
+	QFile file(dir + "/journal.json");
+	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && file.open(QIODevice::ReadOnly),
+		"Ready journal unavailable; media retained");
+	QJsonParseError error;
+	const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
+	require(error.error == QJsonParseError::NoError && doc.isObject(), "Ready journal corrupt; media retained");
+	file.close();
+	auto j = parse(doc.object());
+	require(j.account == account && j.localId == id && j.normalEnd && j.stopIntent,
+		"Ready requires matching complete stopped session");
+	const QRegularExpression remoteId("\\A[a-f0-9]{32}\\z");
+	require(remoteId.match(captureId).hasMatch() && remoteId.match(packageId).hasMatch() && observedAt.isValid(),
+		"Ready package evidence invalid");
+	require((j.remoteCapture.isEmpty() || j.remoteCapture == captureId) &&
+			(j.packageId.isEmpty() || j.packageId == packageId) &&
+			(j.readyPackage.isEmpty() || j.readyPackage == packageId),
+		"Ready package identity changed; media retained");
+	if (j.confirmedReady) {
+		require(j.sealAcknowledged && j.remoteCapture == captureId && j.packageId == packageId &&
+				j.readyPackage == packageId && j.readyAt.isValid(),
+			"Prior ready evidence incomplete; media retained");
+		return;
+	}
+	j.remoteCapture = captureId;
+	j.packageId = j.readyPackage = packageId;
+	j.sealAcknowledged = j.confirmedReady = true;
+	j.readyAt = observedAt.toUTC();
+	// Metadata checkpoint only. Recovery verifies every media hash before offering cleanup.
+	const auto bytes = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
+	QSaveFile target(dir + "/journal.json");
+	target.setDirectWriteFallback(false);
+	require(target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() && target.commit(),
+		"Ready evidence commit failed; media retained");
+}
 bool SessionStore::isPrepared(const QString &account, const QString &id) const
 {
 	try {

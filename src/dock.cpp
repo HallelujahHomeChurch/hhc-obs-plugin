@@ -134,6 +134,16 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	auto *recover = new QPushButton(QString::fromUtf8("繼續同步所選收錄"));
 	recover->setObjectName("resumeSession");
 	recentLayout->addWidget(recover);
+	cleanup_ = new QPushButton(QString::fromUtf8("查看可清理暫存"));
+	cleanup_->setObjectName("openCleanupFolder");
+	cleanup_->setToolTip(QString::fromUtf8("限已確認套件相符且滿七日的收錄。只開啟所選資料夾，不會刪除資料。"));
+	recentLayout->addWidget(cleanup_);
+	connect(cleanup_, &QPushButton::clicked, this, [this] {
+		if (onOpenCleanup && sessions_->currentData(Qt::UserRole + 1).toBool())
+			onOpenCleanup(sessions_->currentData().toString());
+	});
+	connect(sessions_, &QComboBox::currentIndexChanged, this,
+		[this] { cleanup_->setEnabled(allowCleanup_ && sessions_->currentData(Qt::UserRole + 1).toBool()); });
 	connect(recover, &QPushButton::clicked, this, [this] {
 		if (onRecover && !sessions_->currentData().toString().isEmpty())
 			onRecover(sessions_->currentData().toString());
@@ -180,6 +190,9 @@ void Dock::apply(const DockState &s)
 		(s.phase == Phase::Capturing || s.phase == Phase::Uploading || s.phase == Phase::Validating));
 	sessions_->setVisible(!s.localOnly);
 	sessions_->setEnabled(idle && !s.checkingLocal);
+	allowCleanup_ = !s.localOnly && s.connected && idle && !s.checkingLocal;
+	cleanup_->setVisible(!s.localOnly);
+	cleanup_->setEnabled(allowCleanup_ && sessions_->currentData(Qt::UserRole + 1).toBool());
 	if (s.connected)
 		hint_->setText(QString::fromUtf8(
 			"直播與會後發布各自獨立。只錄影請保持兩項關閉；停止後會繼續補傳並等待伺服器驗證。"));
@@ -309,14 +322,17 @@ bool Dock::selectedPublish() const
 {
 	return publish_->isChecked();
 }
-void Dock::setRecoverySessions(const QStringList &ids)
+void Dock::setRecoverySessions(const QStringList &ids, const QStringList &cleanupIds)
 {
 	auto selected = sessions_->currentData();
 	sessions_->clear();
-	for (const auto &id : ids)
+	for (const auto &id : ids) {
 		sessions_->addItem(id, id);
+		sessions_->setItemData(sessions_->count() - 1, cleanupIds.contains(id), Qt::UserRole + 1);
+	}
 	auto i = sessions_->findData(selected);
 	if (i >= 0)
 		sessions_->setCurrentIndex(i);
+	cleanup_->setEnabled(allowCleanup_ && sessions_->currentData(Qt::UserRole + 1).toBool());
 }
 } // namespace hhc
