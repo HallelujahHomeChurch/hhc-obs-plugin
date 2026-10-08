@@ -86,7 +86,9 @@ HlsMuxer::HlsMuxer(const QString &root, unsigned r, obs_encoder_t *video, obs_en
 		p->extradata_size = static_cast<int>(size);
 	}
 	AVDictionary *options = nullptr;
-	av_dict_set(&options, "hls_time", "30", 0);
+	// HLS cuts on a cumulative grid: 900 frames at 30000/1001 must stay 30.03s,
+	// otherwise the 60-frame GOP produces a 28.028s interior fragment after ~33 minutes.
+	av_dict_set(&options, "hls_time", "30.03", 0);
 	av_dict_set(&options, "hls_segment_type", "fmp4", 0);
 	av_dict_set(&options, "hls_playlist_type", "vod", 0);
 	av_dict_set(&options, "hls_flags", "temp_file+independent_segments", 0);
