@@ -27,6 +27,7 @@
 #include <thread>
 #include <chrono>
 #include <util/platform.h>
+#include <util/bmem.h>
 #include "hls-muxer.hpp"
 
 // Developer fixture target only. Never compiled into the candidate plugin.
@@ -39,6 +40,23 @@ obs_source_t *source = nullptr;
 obs_scene_t *scene = nullptr;
 QString destination;
 int duration = 0;
+bool originalRequested = false, originalStarted = false, originalStopped = false;
+bool originalStopRequested = false, hhcComplete = false;
+QString originalFile;
+QElapsedTimer overlap;
+qint64 overlapMs = 0;
+QJsonObject recordingStats;
+void recordingReceipt()
+{
+	if (originalRequested)
+		hhc::atomicJson(destination + "/original-recording.json", {{"started", originalStarted},
+									   {"stopped", originalStopped},
+									   {"stopRequested", originalStopRequested},
+									   {"hhcComplete", hhcComplete},
+									   {"overlapMs", overlapMs},
+									   {"file", originalFile},
+									   {"stats", recordingStats}});
+}
 void finish()
 {
 	running = false;
@@ -347,19 +365,38 @@ void begin()
 	if (qEnvironmentVariableIsSet("HHC_FIXTURE_DOCK")) {
 		localController = std::make_unique<hhc::LocalController>(destination);
 		obs_frontend_add_dock_by_id("hhc.fixture.dock", "HHC 本機驗證", localController->view());
+		if (qEnvironmentVariableIsSet("HHC_FIXTURE_ORIGINAL_RECORDING")) {
+			QDir().mkpath(destination);
+			originalRequested = true;
+			recordingReceipt();
+			obs_frontend_recording_start();
+		}
 	}
 	QTimer::singleShot(1500, QCoreApplication::instance(), [] {
 		if (localController) {
+			if (originalRequested && (!originalStarted || !obs_frontend_recording_active())) {
+				blog(LOG_ERROR,
+				     "[HHC fixture] Original recording failed to start; no encoder fallback");
+				finish();
+				QCoreApplication::quit();
+				return;
+			}
 			localController->view()->findChild<QPushButton *>("action")->click();
 			if (!localController->busy()) {
 				blog(LOG_ERROR, "[HHC fixture] Dock failed to start");
+				if (originalRequested)
+					obs_frontend_recording_stop();
 				finish();
 				QCoreApplication::quit();
 				return;
 			}
 			blog(LOG_INFO, "[HHC fixture] Real dock capture started for %d seconds", duration);
+			if (originalRequested)
+				overlap.start();
 			localController->view()->grab().save(destination + "/dock-running.png");
-			QTimer::singleShot(duration * 1000, QCoreApplication::instance(), [] {
+			QTimer::singleShot(duration * 1000, Qt::PreciseTimer, QCoreApplication::instance(), [] {
+				if (originalRequested && obs_frontend_recording_active())
+					overlapMs = overlap.elapsed();
 				localController->view()->findChild<QPushButton *>("action")->click();
 				auto *timer = new QTimer(QCoreApplication::instance());
 				timer->setInterval(200);
@@ -367,6 +404,26 @@ void begin()
 					if (localController->busy() ||
 					    localController->phase() == hhc::Phase::StopPending)
 						return;
+					hhcComplete = localController->phase() == hhc::Phase::LocalComplete;
+					if (originalRequested && !originalStopRequested && !originalStopped) {
+						originalStopRequested = true;
+						auto *output = obs_frontend_get_recording_output();
+						if (output) {
+							recordingStats = {
+								{"totalFrames",
+								 int(obs_output_get_total_frames(output))},
+								{"encodingSkippedFrames",
+								 int(video_output_get_skipped_frames(obs_get_video()))},
+								{"renderTotalFrames", int(obs_get_total_frames())},
+								{"renderLaggedFrames", int(obs_get_lagged_frames())}};
+							obs_output_release(output);
+						}
+						recordingReceipt();
+						obs_frontend_recording_stop();
+					}
+					if (originalRequested && !originalStopped)
+						return;
+					recordingReceipt();
 					blog(LOG_INFO, "[HHC fixture] Dock complete (success=%s)",
 					     localController->phase() == hhc::Phase::LocalComplete ? "true" : "false");
 					localController->view()->grab().save(destination + "/dock-complete.png");
@@ -409,6 +466,17 @@ void begin()
 }
 void event(obs_frontend_event e, void *)
 {
+	if (originalRequested && e == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
+		originalStarted = true;
+		recordingReceipt();
+	}
+	if (originalRequested && e == OBS_FRONTEND_EVENT_RECORDING_STOPPED) {
+		originalStopped = true;
+		char *file = obs_frontend_get_last_recording();
+		originalFile = QString::fromUtf8(file ? file : "");
+		bfree(file);
+		recordingReceipt();
+	}
 	if (e == OBS_FRONTEND_EVENT_FINISHED_LOADING && qEnvironmentVariableIsSet("HHC_FIXTURE_OUTPUT"))
 		QTimer::singleShot(1500, QCoreApplication::instance(), begin);
 	if (e == OBS_FRONTEND_EVENT_EXIT) {

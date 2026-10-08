@@ -5,6 +5,7 @@ param(
  [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$RunName='F1-L',
  [int]$Seconds=9000,
  [switch]$QueueCapture,
+ [switch]$OriginalRecording,
  [switch]$SkipPackage
 )
 $ErrorActionPreference='Stop'
@@ -42,6 +43,7 @@ if($QueueCapture){
 }
 if(-not(Test-Path -LiteralPath ([IO.Path]::Combine($media,'inventory.json')))){'FAILED: no final inventory; preserve files'|Set-Content "$prefix-status.txt";exit 1}
 if((Invoke-PythonCheck @((Join-Path $root 'scripts/verify-media.py'),$media,'--seconds',"$Seconds") "$prefix-validation.log") -ne 0){'FAILED local validation; preserve files'|Set-Content "$prefix-status.txt";exit 1}
+if($OriginalRecording -and (Invoke-PythonCheck @((Join-Path $root 'scripts/verify-original-recording.py'),$Output,'--seconds',"$Seconds") "$prefix-original-recording.log") -ne 0){'FAILED original recording validation; preserve files'|Set-Content "$prefix-status.txt";exit 1}
 if(-not $SkipPackage){
  $dest=Join-Path $root "artifacts/$RunName-handoff-01"
  if((Invoke-PythonCheck @((Join-Path $root 'scripts/prepare-handoff.py'),$media,$dest,'--seconds',"$Seconds",'--commit',$ProducerCommit) "$prefix-package.log") -ne 0){'FAILED packaging; preserve files'|Set-Content "$prefix-status.txt";exit 1}
