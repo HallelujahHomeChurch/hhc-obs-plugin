@@ -9,6 +9,8 @@
 #include <QJsonArray>
 #include <windows.h>
 #include <iostream>
+#include <future>
+#include <thread>
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -53,6 +55,51 @@ int main(int argc, char **argv)
 		check(loaded[0].objects[0].sha256 == j.objects[0].sha256, "immutable object identity survives restart");
 	}
 	check(store.loadPending("account-b").empty(), "different account cannot resume queue");
+	std::atomic<bool> cancelled{true};
+	const auto cancelledScan = [&] {
+		try {
+			store.scanPending(j.account, &cancelled);
+			return false;
+		} catch (const std::runtime_error &e) {
+			return QString::fromUtf8(e.what()) == "Local recovery cancelled; files retained";
+		}
+	};
+	check(cancelledScan(), "cancelled recovery does not continue hashing or return partial results");
+	cancelled = false;
+	check(store.scanPending(j.account, &cancelled).sessions.size() == 1,
+	      "uncancelled recovery still validates complete immutable media");
+	// Cancel a live hash, not only a scan that was already cancelled before entry.
+	hhc::CaptureJournal large;
+	large.account = "cancel-account";
+	large.localId = "large-scan";
+	auto largePath = store.mediaDirectory(large.account, large.localId);
+	QDir().mkpath(largePath + "/1080p");
+	const QByteArray payload(64 * 1024 * 1024, 'x');
+	QFile largeMedia(largePath + "/1080p/init.mp4");
+	check(largeMedia.open(QIODevice::WriteOnly) && largeMedia.write(payload) == payload.size(),
+	      "create large recovery media");
+	largeMedia.close();
+	large.objects.append(
+		{"1080p/init.mp4", payload.size(),
+		 QString::fromLatin1(QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex()), false});
+	store.save(large);
+	std::promise<void> started;
+	auto scan = std::async(std::launch::async, [&] {
+		started.set_value();
+		try {
+			store.scanPending(large.account, &cancelled);
+			return false;
+		} catch (const std::runtime_error &e) {
+			return QString::fromUtf8(e.what()) == "Local recovery cancelled; files retained";
+		}
+	});
+	started.get_future().wait();
+	std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	cancelled = true;
+	check(scan.get(), "in-flight recovery hash observes cancellation");
+	cancelled = false;
+	check(store.scanPending(large.account, &cancelled).sessions.size() == 1,
+	      "cancelled scan retains unchanged media and journal for subsequent full verification");
 	// A capture checkpoint appends closed media without inventing remote receipts.
 	hhc::CaptureJournal active;
 	active.account = "account-a";

@@ -156,10 +156,10 @@ void PlatformController::refresh()
 	state_.checkingLocal = true;
 	view_->apply(state_);
 	auto account = auth_.account();
-	job_.setFuture(QtConcurrent::run([root = root_, account] {
+	job_.setFuture(QtConcurrent::run([this, root = root_, account] {
 		PlatformJob result;
 		result.scan = true;
-		result.recovery = SessionStore(root + "/queue").scanPending(account);
+		result.recovery = SessionStore(root + "/queue").scanPending(account, &cancelled_);
 		return result;
 	}));
 }

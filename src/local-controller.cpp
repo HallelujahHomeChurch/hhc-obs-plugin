@@ -69,6 +69,7 @@ LocalController::~LocalController()
 void LocalController::shutdown()
 {
 	closing_ = true;
+	cancelled_ = true;
 	timer_.stop();
 	if (capture_)
 		capture_->stop(StopReason::Shutdown);
@@ -106,7 +107,8 @@ void LocalController::refresh()
 	view_->setRecoveryText(QString::fromUtf8("正在檢查本機收錄與 SHA-256…"));
 	state_.checkingLocal = true;
 	view_->apply(state_);
-	recovery_.setFuture(QtConcurrent::run([root = root_] { return SessionStore(root).scanPending(localAccount); }));
+	recovery_.setFuture(QtConcurrent::run(
+		[this, root = root_] { return SessionStore(root).scanPending(localAccount, &cancelled_); }));
 }
 void LocalController::action()
 {

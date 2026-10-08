@@ -2,6 +2,7 @@
 #include <QString>
 #include <QVector>
 #include <QDateTime>
+#include <atomic>
 #include "capture-policy.hpp"
 namespace hhc {
 struct ClosedObject {
@@ -32,7 +33,7 @@ public:
 	void checkpointLocal(const QString &account, const QString &localId, const QVector<ClosedObject> &closed,
 			     bool stopIntent, bool normalEnd);
 	QVector<CaptureJournal> loadPending(const QString &account) const;
-	RecoveryReport scanPending(const QString &account) const;
+	RecoveryReport scanPending(const QString &account, const std::atomic<bool> *cancelled = nullptr) const;
 	QString mediaDirectory(const QString &account, const QString &localId) const;
 	bool isPrepared(const QString &account, const QString &localId) const;
 	bool mayCleanup(const CaptureJournal &, QDateTime now) const;

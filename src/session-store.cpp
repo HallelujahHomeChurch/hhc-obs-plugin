@@ -21,6 +21,11 @@ QString hash(const QByteArray &b)
 {
 	return QString::fromLatin1(QCryptographicHash::hash(b, QCryptographicHash::Sha256).toHex());
 }
+void checkCancellation(const std::atomic<bool> *cancelled)
+{
+	if (cancelled && cancelled->load())
+		throw std::runtime_error("Local recovery cancelled; files retained");
+}
 void identifiers(const QString &account, const QString &id)
 {
 	require(!account.isEmpty() && account.size() <= 256, "invalid account identity");
@@ -78,13 +83,14 @@ CaptureJournal parse(const QJsonObject &o)
 	}
 	return j;
 }
-void validateObjects(const QString &root, const CaptureJournal &j)
+void validateObjects(const QString &root, const CaptureJournal &j, const std::atomic<bool> *cancelled = nullptr)
 {
 	require(j.objects.size() <= 10000, "object count limit");
 	QSet<QString> paths;
 	qint64 total = 0;
 	const auto canonicalRoot = QFileInfo(root).canonicalFilePath() + "/";
 	for (const auto &o : j.objects) {
+		checkCancellation(cancelled);
 		require(QRegularExpression(
 				"\\A(?:master\\.m3u8|(?:1080p|720p|480p)/(?:init\\.mp4|index\\.m3u8|segment-[0-9]{5}\\.m4s|seg-[0-9]{6}\\.m4s))\\z")
 				.match(o.path)
@@ -103,7 +109,14 @@ void validateObjects(const QString &root, const CaptureJournal &j)
 		QFile f(info.filePath());
 		require(f.open(QIODevice::ReadOnly), "closed object missing");
 		QCryptographicHash digest(QCryptographicHash::Sha256);
-		require(digest.addData(&f), "closed object unreadable");
+		while (!f.atEnd()) {
+			checkCancellation(cancelled);
+			const auto bytes = f.read(1024 * 1024);
+			require(!bytes.isEmpty() && f.error() == QFileDevice::NoError, "closed object unreadable");
+			digest.addData(bytes);
+		}
+		checkCancellation(cancelled);
+		require(f.error() == QFileDevice::NoError && f.pos() == o.size, "closed object unreadable");
 		require(QString::fromLatin1(digest.result().toHex()) == o.sha256, "closed object hash changed");
 	}
 }
@@ -154,13 +167,15 @@ QVector<CaptureJournal> SessionStore::loadPending(const QString &account) const
 	require(report.issues.empty(), "session recovery issues require attention; media retained");
 	return report.sessions;
 }
-RecoveryReport SessionStore::scanPending(const QString &account) const
+RecoveryReport SessionStore::scanPending(const QString &account, const std::atomic<bool> *cancelled) const
 {
 	identifiers(account, "probe");
+	checkCancellation(cancelled);
 	const auto accountDir = root_ + "/" + hash(account.toUtf8());
 	require(!QFileInfo(root_).isSymLink() && !QFileInfo(accountDir).isSymLink(), "account directory is a link");
 	RecoveryReport result;
 	for (const auto &id : QDir(accountDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+		checkCancellation(cancelled);
 		try {
 			const auto dir = mediaDirectory(account, id);
 			require(!QFileInfo(dir).isSymLink(), "session directory is a link");
@@ -212,15 +227,17 @@ RecoveryReport SessionStore::scanPending(const QString &account) const
 					}
 				}
 			}
-			validateObjects(dir, j);
+			validateObjects(dir, j, cancelled);
 			result.sessions.append(j);
 		} catch (const std::exception &) {
+			checkCancellation(cancelled);
 			// Never include raw JSON, credentials or server responses in recovery UI.
 			const bool safeId = QRegularExpression("\\A[a-zA-Z0-9_-]{1,80}\\z").match(id).hasMatch();
 			result.issues.append({safeId ? id : QString("invalid-local-id"),
 					      "Local recovery validation failed; files retained for inspection"});
 		}
 	}
+	checkCancellation(cancelled);
 	return result;
 }
 void SessionStore::checkpointLocal(const QString &account, const QString &localId, const QVector<ClosedObject> &closed,

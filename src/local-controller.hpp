@@ -30,6 +30,7 @@ private:
 	std::unique_ptr<CaptureOutput> capture_;
 	QTimer timer_;
 	QFutureWatcher<RecoveryReport> recovery_;
+	std::atomic<bool> cancelled_{false};
 	bool closing_ = false;
 };
 } // namespace hhc
