@@ -1,5 +1,7 @@
 # Execution ledger — Windows plan 2026-10-07
 
+Latest whole-branch review and focused fix pass: [report](reviews/windows-final-branch-review-2026-10-08.md). Two Important findings fixed, all 10 local tests pass, actual 61-second OBS media and Windows sharing/ACL denial checks pass. Original 8-segment terminal capture is retained, not resealed; quota cleanup approval and fresh positive production/long-run acceptance remain open. Evidence distinguishes precommit working-tree checks from frozen package and hosted CI.
+
 Authority: hhc-web-api e77d63aef2a02f2ddc590e8f5278cf15765d793f, reachable on origin/docs/obs-capture-plans. All four requested plans read. Platform working tree remains read-only. Local plugin branch: feat/windows-capture in .worktrees/windows-capture; no remote guessed.
 
 ## Active integration direction — user update 2026-10-07
@@ -71,7 +73,7 @@ F1-L producer is the same 3701e79, separate portable OBS PID 3128, capture start
 - Plugin remote and PR target: not provided; no PR or hosted CI can be claimed.
 - Fixed contract revision, deployed connection addresses and login/test access: await Mac readiness notification before direct integration.
 - Production UI/controller, network retry/resume/cleanup orchestration, remaining fault matrix, concurrent-output runs, candidate install/remove and signing remain unfinished.
-- Staging and immutable queue currently duplicate media on disk. Runtime reserve/package checks exist; disk exhaustion and watchdog fault injection still need testing.
+- Historical producers retained staging media copies. The whole-branch review fix now moves closed segments into the immutable queue on the same volume without overwrite/copy fallback; existing historical files are preserved. Physical disk exhaustion remains a separate gate.
 - F1-L uses the older producer without the later watchdog/finalization fixes. Its eventual media result is evidence only for that producer, not the current build.
 
 No merge, deployment, production plugin install, YouTube action or macOS work has occurred.

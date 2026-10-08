@@ -1,5 +1,7 @@
 # Windows integration continuation gates — 2026-10-08
 
+The [whole-branch review fix pass](reviews/windows-final-branch-review-2026-10-08.md) resolves two Important source findings: terminal failure can explicitly prepare another event after encoding stops, and closed segments move into the queue without a retained media copy. New local 61-second media, sharing-denial and ACL-denial checks pass; original terminal capture preservation and fixed C1 byte checks pass. These are distinct from fresh positive production acceptance. Earlier frozen candidates and their evidence remain unchanged.
+
 Current contract: C1 c1-2026-10-08.2 from fixed handoff e5a2dc0f370ddc4a90944d09015dca9ef1ef8540. All11 immutable artifacts match byte hashes; see [acknowledgement](reviews/c1-2026-10-08.2-acknowledgement.json). The owner reports Asset asset-api--0000084 / commit52efad00367d0101e9882519bdbbd0fa6aa8acd6 and CMS hhc-web-api--0000149 deployed. This resolves the old final-seal count contract dependency; Windows still needs actual current-platform acceptance.
 
 Original recording28a3c057-4885-4036-ac1c-0437c1495206 was previously deleted with explicit approval. Its capture5d68171bc2e63cd5f9cae36eef7032b7 remains aborted/recording_deleted, unexpired and stopped, with31 declared objects/27 verified. Original8 fragments/240.206633s/30000/1001fps, inventory, digest and seal operation key remain unchanged. No terminal operation may be reopened or forced through seal. The current native recovery observes the terminal state without replaying pending mutations.

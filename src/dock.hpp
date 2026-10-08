@@ -33,6 +33,7 @@ struct DockState {
 	bool connected = false;
 	QString account;
 	bool checkingLocal = false;
+	bool terminalFailure = false;
 };
 class Dock : public QWidget {
 public:

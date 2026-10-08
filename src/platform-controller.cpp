@@ -194,8 +194,13 @@ void PlatformController::action()
 	}
 	if (job_.isRunning() || auth_.account().isEmpty() || !auth_.permitted("cms:recordings:write"))
 		return;
-	if (state_.phase == Phase::Published || state_.phase == Phase::DraftReady) {
+	if (state_.phase == Phase::Published || state_.phase == Phase::DraftReady ||
+	    (state_.phase == Phase::Failed && state_.terminalFailure)) {
+		capture_.reset();
 		state_.phase = Phase::Ready;
+		state_.terminalFailure = false;
+		state_.issue.clear();
+		state_.pendingBytes = 0;
 		state_.liveEnabled = false;
 		state_.liveState.clear();
 		state_.autoPublish = false;
@@ -217,6 +222,7 @@ void PlatformController::action()
 		return;
 	}
 	creating_ = true;
+	state_.terminalFailure = false;
 	stopping_ = false;
 	paused_ = false;
 	failures_ = 0;
@@ -246,6 +252,7 @@ void PlatformController::recover(QString id)
 	owner_ = auth_.account();
 	capture_.reset();
 	creating_ = false;
+	state_.terminalFailure = false;
 	paused_ = false;
 	failures_ = 0;
 	state_.phase = Phase::Uploading;
@@ -394,6 +401,7 @@ void PlatformController::completed()
 			if (remote.autoPublish != "pending")
 				paused_ = true;
 		} else if (remote.state == "failed" || remote.state == "expired" || remote.state == "aborted") {
+			state_.terminalFailure = true;
 			if (capture_)
 				capture_->stop(StopReason::EncoderFailure);
 			state_.phase = busy() ? Phase::StopPending : Phase::Failed;

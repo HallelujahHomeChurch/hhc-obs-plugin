@@ -403,6 +403,18 @@ void begin()
 					       warning->text().contains("malformed_success") ||
 					       warning->text().contains("account_mismatch"));
 			if (complete || rejected || run->overall.elapsed() > (duration + 900) * 1000LL) {
+				if (expectedAbort && qEnvironmentVariableIsSet("HHC_FIXTURE_PREPARE_ANOTHER")) {
+					const bool enabled = action->isEnabled();
+					action->click(); // Prepare only; never click the new-event start action.
+					hhc::atomicJson(
+						destination + "/prepare-another.json",
+						{{"success",
+						  enabled && status->text() == QString::fromUtf8("準備收錄") &&
+							  !dock->findChild<QCheckBox *>("live")->isChecked() &&
+							  !dock->findChild<QCheckBox *>("publish")->isChecked()},
+						 {"recoveredLocalId", recoverId},
+						 {"started", run->started}});
+				}
 				hhc::atomicJson(destination + "/native-dock-evidence.json",
 						{{"complete", complete},
 						 {"requested", run->requested},

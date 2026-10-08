@@ -9,6 +9,7 @@
 #include <QSet>
 #include <QRegularExpression>
 #include <stdexcept>
+#include <windows.h>
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -137,18 +138,28 @@ void HlsMuxer::publishClosed()
 		QFile source(d->staging + "/" + name);
 		require(source.open(QIODevice::ReadOnly), "closed object missing");
 		require(source.size() > 0 && source.size() <= 128LL * 1024 * 1024, "object size limit");
-		QSaveFile target(d->root + "/" + d->relative + "/" + name);
-		require(target.open(QIODevice::WriteOnly), "queue object open failed");
+		const auto destination = d->root + "/" + d->relative + "/" + name;
+		const bool segment = name.startsWith("seg-");
+		QSaveFile target(destination);
+		require(segment || target.open(QIODevice::WriteOnly), "queue object open failed");
 		QCryptographicHash hash(QCryptographicHash::Sha256);
 		while (!source.atEnd()) {
 			const auto block = source.read(1024 * 1024);
 			require(!block.isEmpty(), "object read failed");
 			hash.addData(block);
-			require(target.write(block) == block.size(), "object write failed");
+			require(segment || target.write(block) == block.size(), "object write failed");
 		}
-		require(target.commit(), "atomic object commit failed");
+		const auto size = source.size();
+		source.close();
+		if (segment) {
+			// Same-volume rename only: never overwrite a queued object or fall back to copying.
+			require(MoveFileExW(reinterpret_cast<LPCWSTR>(source.fileName().utf16()),
+					    reinterpret_cast<LPCWSTR>(destination.utf16()), MOVEFILE_WRITE_THROUGH),
+				"atomic queue segment move failed");
+		} else
+			require(target.commit(), "atomic object commit failed");
 		d->inventory.append(QJsonObject{{"path", d->relative + "/" + name},
-						{"size", source.size()},
+						{"size", size},
 						{"sha256", QString::fromLatin1(hash.result().toHex())}});
 		d->published.insert(name);
 		atomicJson(d->root + "/" + d->relative + "/closed.json", {{"objects", d->inventory}});
@@ -164,13 +175,14 @@ void HlsMuxer::close()
 	require(playlist.open(QIODevice::ReadOnly), "final playlist missing");
 	const auto text = QString::fromUtf8(playlist.readAll());
 	require(text.contains("#EXT-X-ENDLIST"), "final playlist not ended");
+	publishClosed(); // Commit the final segment before validating its canonical queue location.
 	auto matches =
 		QRegularExpression("^seg-([0-9]{6})\\.m4s$", QRegularExpression::MultilineOption).globalMatch(text);
 	unsigned count = 0;
 	while (matches.hasNext()) {
 		const auto match = matches.next();
 		require(match.captured(1).toUInt() == count++, "segment sequence gap");
-		const QFileInfo file(d->staging + "/" + match.captured(0));
+		const QFileInfo file(d->root + "/" + d->relative + "/" + match.captured(0));
 		require(file.isFile() && file.size() > 0, "referenced segment missing or empty");
 	}
 	require(count > 0, "empty final media");

@@ -250,6 +250,10 @@ int main(int argc, char **argv)
 				result = 7;
 			}
 			for (const char *rendition : {"1080p", "720p", "480p"}) {
+				if (!QDir(out + "/staging/" + rendition).entryList({"seg-*.m4s"}, QDir::Files).empty()) {
+					std::cerr << "FAIL closed media retains an unbudgeted staging copy\n";
+					result = 23;
+				}
 				QFile playlist(out + "/" + rendition + "/index.m3u8");
 				double total = 0;
 				int count = 0;

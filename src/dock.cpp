@@ -285,6 +285,10 @@ void Dock::apply(const DockState &s)
 	case Phase::Failed:
 		status_->setText(QString::fromUtf8("收錄需要處理，本機資料已保留"));
 		action_->setText(QString::fromUtf8("查看未完成收錄"));
+		if (s.terminalFailure) {
+			action_->setText(QString::fromUtf8("準備另一場收錄"));
+			action_->setEnabled(s.connected);
+		}
 		if (s.localOnly) {
 			action_->setText(QString::fromUtf8("開始另一場本機驗證"));
 			action_->setEnabled(true);
