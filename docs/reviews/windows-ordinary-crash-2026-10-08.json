@@ -1,0 +1,103 @@
+{
+  "scope": "Actual ordinary-mode local OBS process interruption, separate SessionStore recovery and retained media decode; crash-dialog choice/native dock completion pending",
+  "started": {
+    "multi": false,
+    "pid": 5912,
+    "exe": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\.deps\\portable\\bin\\64bit\\obs64.exe",
+    "scope": "Actual local OBS interruption with normal crash detection; no HTTP",
+    "started": "2026-10-08T20:36:16.7161286+08:00"
+  },
+  "interrupted": {
+    "ended": "2026-10-08T20:36:52.5522833+08:00",
+    "exitCode": -1,
+    "pid": 5912,
+    "forcedTestInterruption": true
+  },
+  "preCrash": {
+    "localId": "5dae7dca-5190-44d2-91c3-6cd8b5cf9e7c",
+    "observed": "2026-10-08T20:36:52.4112192+08:00",
+    "objects": 6,
+    "sentinel": "run_fd9a4f4c-b2b3-495a-a5f5-1beb42cc3c01"
+  },
+  "recoveryProcess": {
+    "scope": "Separate process using actual SessionStore loadPending; not OBS crash-dialog UI or HTTP",
+    "exitCode": 0,
+    "checked": "2026-10-08T20:40:10.1031211+08:00"
+  },
+  "journalSha256": "25cab612bf5eccc57df20ddd4eba3eb92add14082a89d8421ab45eab0b8a89df",
+  "journalByteUnchanged": true,
+  "objects": [
+    {
+      "confirmed": false,
+      "path": "1080p/init.mp4",
+      "sha256": "9185885876e6592f11a681ab3c19566d8102c0b278f5233b1fd1812a0971cc97",
+      "size": 1376
+    },
+    {
+      "confirmed": false,
+      "path": "1080p/seg-000000.m4s",
+      "sha256": "89108c9324dd84b1207e3bb702258c3f8968b27a157aa11e5dbcd430f7c15b0f",
+      "size": 11283792
+    },
+    {
+      "confirmed": false,
+      "path": "720p/init.mp4",
+      "sha256": "31e275f063e476a1f6a643d079d0adc50deca50ab7afd8933ffd5a139d919135",
+      "size": 1374
+    },
+    {
+      "confirmed": false,
+      "path": "720p/seg-000000.m4s",
+      "sha256": "b43872b827511962f436bd9d85f1499959065f78e06ccb472c215559d4422baf",
+      "size": 5652992
+    },
+    {
+      "confirmed": false,
+      "path": "480p/init.mp4",
+      "sha256": "da8f7aa520153c00011c90ac09f146e584120462930a93edec0f59b4101eacac",
+      "size": 1375
+    },
+    {
+      "confirmed": false,
+      "path": "480p/seg-000000.m4s",
+      "sha256": "9b8d77977842bc5c9e483a19f74c3bf6a121b413a854e0c534f3824cd3ecf4e7",
+      "size": 3025475
+    }
+  ],
+  "normalEnd": false,
+  "stopIntent": false,
+  "sealAcknowledged": false,
+  "confirmedReady": false,
+  "inventoryAbsent": true,
+  "renditions": [
+    {
+      "height": 1080,
+      "width": 1920,
+      "fps": "30000/1001",
+      "hashSizeAndFullDecode": true
+    },
+    {
+      "height": 720,
+      "width": 1280,
+      "fps": "30000/1001",
+      "hashSizeAndFullDecode": true
+    },
+    {
+      "height": 480,
+      "width": 854,
+      "fps": "30000/1001",
+      "hashSizeAndFullDecode": true
+    }
+  ],
+  "uiAcceptanceComplete": false,
+  "httpAcceptanceComplete": false,
+  "ordinaryRestart": {
+    "scope": "Normal native restart smoke; no credentials copied, no login or capture intent",
+    "started": "2026-10-08T20:37:39.7519363+08:00",
+    "exe": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\.deps\\portable\\bin\\64bit\\obs64.exe",
+    "pid": 19928,
+    "multi": false,
+    "candidate": "f009725b49a7ea8cb24745f9df660d5f6351da4a"
+  },
+  "awaitingUI": "Crash or unclean shutdown detected; hidden prompt has no targetable native window"
+}
