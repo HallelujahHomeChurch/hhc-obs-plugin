@@ -1,5 +1,6 @@
 #include "hls-muxer.hpp"
 #include "wire.hpp"
+#include "windows-path.hpp"
 #include <QDir>
 #include <QFile>
 #include <QSaveFile>
@@ -153,9 +154,7 @@ void HlsMuxer::publishClosed()
 		source.close();
 		if (segment) {
 			// Same-volume rename only: never overwrite a queued object or fall back to copying.
-			require(MoveFileExW(reinterpret_cast<LPCWSTR>(source.fileName().utf16()),
-					    reinterpret_cast<LPCWSTR>(destination.utf16()), MOVEFILE_WRITE_THROUGH),
-				"atomic queue segment move failed");
+			require(moveQueueSegment(source.fileName(), destination), "atomic queue segment move failed");
 		} else
 			require(target.commit(), "atomic object commit failed");
 		d->inventory.append(QJsonObject{{"path", d->relative + "/" + name},

@@ -32,6 +32,7 @@ int main(int argc, char **argv)
 		    QString::fromLocal8Bit(argv[2]) == "--cleanup-check-test") {
 			const QString id = QString::fromLocal8Bit(argv[3]);
 			const QMap<QString, QString> authorized{
+				{"5edca3a5-c1e0-48f1-9465-e50a345cc952", "cd829ce268bfa10494a0ab36154c43dc"},
 				{"4b410b08-892f-46a0-bfcf-6ff68844f756", "f0d763fbce234ea290e774d9c008811d"},
 				{"2a002691-2cd7-4dca-b8be-0b8b7e330375", "e5e5d5b869f638e10abbab83b2c02def"},
 				{"28a3c057-4885-4036-ac1c-0437c1495206", "5d68171bc2e63cd5f9cae36eef7032b7"},

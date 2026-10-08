@@ -16,6 +16,11 @@ list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/.deps/sdk" "${CMAKE_SOURCE_DI
 find_package(libobs REQUIRED)
 find_package(obs-frontend-api REQUIRED)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Concurrent)
+add_executable(windows-path-test tests/windows-path-test.cpp)
+target_include_directories(windows-path-test PRIVATE src)
+target_link_libraries(windows-path-test PRIVATE Qt6::Core)
+add_test(NAME windows-queue-move COMMAND windows-path-test)
+set_tests_properties(windows-queue-move PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;$ENV{PATH}")
 add_library(hhc-capture STATIC src/capture-output.cpp src/hls-muxer.cpp)
 target_include_directories(hhc-capture PUBLIC src PRIVATE .deps/prebuilt/include)
 target_link_libraries(hhc-capture PUBLIC hhc-core OBS::libobs Qt6::Core PRIVATE
