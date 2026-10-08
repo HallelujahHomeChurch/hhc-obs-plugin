@@ -1,9 +1,13 @@
 """Local media QA only. Does not replace Mac V1 Asset validator."""
 import argparse, hashlib, json, pathlib, re, subprocess, sys
 
-def verify(root, expected):
+def local_path(root):
     if sys.platform=='win32' and not str(root).startswith(chr(92)*2+'?'+chr(92)):
-        root=pathlib.Path(chr(92)*2+'?'+chr(92)+str(root.resolve()))
+        return pathlib.Path(chr(92)*2+'?'+chr(92)+str(root.resolve()))
+    return root
+
+def verify(root, expected):
+    root=local_path(root)
     inventory=json.loads((root/'inventory.json').read_text(encoding='utf-8'))
     assert inventory['normalEnd'], 'not a normal end'
     assert inventory['fpsNum']==30000 and inventory['fpsDen']==1001
@@ -47,8 +51,9 @@ def verify(root, expected):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('directory',type=pathlib.Path);p.add_argument('--seconds',type=int,required=True);a=p.parse_args()
-    result=verify(a.directory,a.seconds)
-    (a.directory/'local-validation.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
+    root=local_path(a.directory)
+    result=verify(root,a.seconds)
+    (root/'local-validation.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
     print(json.dumps({'passed':True,'renditions':[{'height':r['height'],'segments':r['segments'],'duration':r['total']} for r in result['renditions']]}))
 
 
