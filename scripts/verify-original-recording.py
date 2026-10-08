@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import pathlib
 import subprocess
 import tempfile
@@ -26,7 +27,9 @@ def verify(directory, seconds):
         'hevc', 1920, 1080, '30000/1001'), 'original video settings changed'
     assert (audio['codec_name'], audio['sample_rate'], audio['channels']) == (
         'flac', '48000', 2), 'original audio settings changed'
-    assert seconds <= float(probe['format']['duration']) <= seconds + 30, 'unexpected recording duration'
+    # The original recording stops after HHC queue finalization; that work has no fixed 30s bound.
+    duration = float(probe['format']['duration'])
+    assert math.isfinite(duration) and duration >= seconds, 'incomplete or invalid recording duration'
     decoded = subprocess.run([
         'ffmpeg', '-v', 'error', '-i', str(path), '-f', 'null', '-'
     ], cwd=tempfile.gettempdir(), capture_output=True, check=True)

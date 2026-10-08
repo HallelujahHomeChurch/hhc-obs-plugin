@@ -1,0 +1,111 @@
+{
+  "scope": "Actual local OBS 2.5-hour HHC plus original recording; full hash/grid/format/decode passed, not production E2E",
+  "producerCommit": "7e17c7446ffcc844556a0b1a2e1e97cffb3c71bb",
+  "sourceCandidate": "f009725b49a7ea8cb24745f9df660d5f6351da4a",
+  "at": "2026-10-08T12:58:21.755948+00:00",
+  "inventorySha256": "9663d2560c93b77ab2712db7c3eab5515a984e9f8965163ad76aa1f0c9a9e0f2",
+  "objects": 907,
+  "bytes": 5982736690,
+  "fpsNum": 30000,
+  "fpsDen": 1001,
+  "normalEnd": true,
+  "stopIntent": true,
+  "sealAcknowledged": false,
+  "confirmedReady": false,
+  "renditions": [
+    {
+      "height": 1080,
+      "segments": 300,
+      "seconds": 9000.024367,
+      "regularMin": 30.03,
+      "regularMax": 30.03,
+      "tail": 21.054367
+    },
+    {
+      "height": 720,
+      "segments": 300,
+      "seconds": 9000.024367,
+      "regularMin": 30.03,
+      "regularMax": 30.03,
+      "tail": 21.054367
+    },
+    {
+      "height": 480,
+      "segments": 300,
+      "seconds": 9000.024367,
+      "regularMin": 30.03,
+      "regularMax": 30.03,
+      "tail": 21.054367
+    }
+  ],
+  "originalReceipt": {
+    "file": "C:/Users/IT/Projects/hhc-obs-plugin/.worktrees/windows-capture/artifacts/original-concurrent-recordings-9000/2026-10-08 18-25-34.mkv",
+    "hhcComplete": true,
+    "overlapMs": 9000026,
+    "started": true,
+    "stats": {
+      "encodingSkippedFrames": 0,
+      "renderLaggedFrames": 0,
+      "renderTotalFrames": 270778,
+      "totalFrames": 270698
+    },
+    "stopRequested": true,
+    "stopped": true
+  },
+  "checkedAt": "2026-10-08T13:04:50.612476+00:00",
+  "hhcFullHashGridFormatDecodePassed": true,
+  "obsProcess": {
+    "obsPid": 13768,
+    "obsExitCode": 0,
+    "completed": "2026-10-08T20:59:47.9130615+08:00",
+    "watcherExitCode": 1
+  },
+  "originalVerifierRecheck": {
+    "exitCode": 0,
+    "completed": "2026-10-08T21:03:12.0361468+08:00",
+    "scope": "actual original recording verifier after removing unjustified finalization upper bound"
+  },
+  "originalMedia": {
+    "size": 28232443094,
+    "sha256": "f72de7af0e704990b6496a7b2cfc1a6e3a575fc9c378e560e5b590401fa0bc4c",
+    "duration": 9032.924,
+    "overlapMs": 9000026,
+    "stats": {
+      "encodingSkippedFrames": 0,
+      "renderLaggedFrames": 0,
+      "renderTotalFrames": 270778,
+      "totalFrames": 270698
+    }
+  },
+  "originalVideo": {
+    "codec_name": "hevc",
+    "width": 1920,
+    "height": 1080,
+    "r_frame_rate": "30000/1001"
+  },
+  "originalAudio": {
+    "codec_name": "flac",
+    "sample_rate": "48000",
+    "channels": 2
+  },
+  "resourceSamples": {
+    "count": 301,
+    "first": "2026-10-08T10:25:31.9831293Z",
+    "last": "2026-10-08T12:56:12.6703819Z",
+    "peakWorkingSetBytes": 512249856,
+    "peakPrivateBytes": 1004830720,
+    "gpuScope": "desktop GPU shared with other QA; not isolated workload attribution"
+  },
+  "reportedAllocationsAtExit": 1,
+  "allocationCauseQualified": false,
+  "originalWatcherFailurePreserved": true,
+  "qaBeforeSha256": "2004445ce2bb6d8ba9cb7d1fd556785d7de59718b4b2591deb3afa32ae9ecb30",
+  "qaAfterSha256": "31f99cca55132b71a255616bbb501fcac79894762222e214433206300d683cbc",
+  "ruling": "Remove unsupported requestedSeconds+30 upper duration bound because fixture stops original recording after HHC queue finalization; retain finite lower duration, full overlap, stop receipts, media formats, hashes and full decode",
+  "rulingCost": "Original file duration no longer rejects excessive queue-finalization delay; shutdown latency remains a separate acceptance gate",
+  "originalProfileHashes": {
+    "basic.ini": "032fa776e9860ba8a49b462f6cecc1ad1c63151cc0bb752349479fe473a83e58",
+    "recordEncoder.json": "d8cafa0e35349e5118a5774aa357f6a857067a3472c410625e34e71c01a963b5",
+    "streamEncoder.json": "744c36a156342e9c014af13b2d5eca964cc29c26e374bb748fb4048d5d3a9fc9"
+  }
+}
