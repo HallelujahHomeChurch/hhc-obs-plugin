@@ -11,9 +11,11 @@ C1 `c1-2026-10-08.2`, schema 1, immutable manifest SHA-256
 All eleven immutable contract references were checked. OBS 32.2.2, RTX 4060,
 30000/1001 fps, three NVENC renditions, 900 frames / 30.03 seconds.
 Times below use Asia/Taipei (+08:00). No platform source or original OBS
-profile changes. The fixed handoff specifies one Auto image per live capture;
-periodic image replacement is not an acceptance requirement. The forwarded
-prompt also mentioned later occasional updates. No post-ready automatic
+profile changes. Fixed handoff line87 says subsequent live/reconnection
+must not periodically replace the image. The forwarded A prompt also asks
+for later occasional updates; its event-triggered policy is not specified
+by that instruction. Mac clarification of the trigger or corrected handoff
+is pending. No post-ready automatic
 image change was observed or qualified; the passes below cover initial
 generation, explicit mode switches and unchanged-byte VOD inheritance.
 They do not establish a later automatic-refresh feature.

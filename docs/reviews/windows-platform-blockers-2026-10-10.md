@@ -85,6 +85,16 @@ are Asia/Taipei (+08:00). Preserve both original packages and operation keys.
    reload, while a fresh tab used the existing account successfully. These
    browser observations have no native OAuth root-cause attribution.
 
+5. Thumbnail acceptance clarification remains open. The forwarded A list
+   requests later occasional automatic updates. Fixed handoff line87 says
+   subsequent live/reconnection must not periodically replace the image.
+   Stable first-generated images, explicit mode switches and identical-byte
+   VOD inheritance pass; no later automatic image replacement was observed
+   or qualified. These statements do not define a non-periodic trigger.
+   Please provide that trigger or a corrected immutable handoff. Do not
+   silently count the narrower initial-generation pass as completion of
+   the forwarded requirement. C1/wire/digest and the plugin remain unchanged.
+
 Global live-cover defaults were restored to Auto revision6 at05:13:35.198,
 retention30 days. No manual publish, arbitrary re-upload, schema relaxation,
 duration change, credentials or signed URLs were used to force acceptance.
