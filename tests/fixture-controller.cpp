@@ -62,6 +62,15 @@ void answerStopForFixture(QMessageBox::StandardButton answer = QMessageBox::Yes)
 				box->button(answer)->click();
 	});
 }
+void closeNativeFixtureWindow(QMainWindow *window)
+{
+	QTimer::singleShot(0, QCoreApplication::instance(), [] {
+		if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+			if (box->text().contains(QString::fromUtf8("退出 OBS 會正常停止 HHC 收錄")))
+				box->button(QMessageBox::Yes)->click();
+	});
+	window->close(); // Exercise OBS_FRONTEND_EVENT_EXIT before libobs teardown.
+}
 void studioReceipt(const QString &stage)
 {
 	obs_source_t *program = obs_frontend_get_current_scene();
@@ -328,13 +337,7 @@ void begin()
 				hhc::tryObserverJson(destination + "/accepted-exit.json",
 						     {{"recordingMs", elapsed},
 						      {"case", qEnvironmentVariable("HHC_FIXTURE_CASE")}});
-				QTimer::singleShot(50, QCoreApplication::instance(), [] {
-					if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
-						if (box->text().contains(
-							    QString::fromUtf8("退出 OBS 會正常停止 HHC 收錄")))
-							box->button(QMessageBox::Yes)->click();
-				});
-				window->close();
+				closeNativeFixtureWindow(window);
 				return;
 			}
 			auto closeAt = qEnvironmentVariableIntValue("HHC_FIXTURE_CLOSE_LIVE_AFTER_SECONDS"),
@@ -457,7 +460,7 @@ void begin()
 				watch->stop();
 				watch->deleteLater();
 				finish();
-				QCoreApplication::quit();
+				closeNativeFixtureWindow(window);
 			}
 		});
 		watch->start();
