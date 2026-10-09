@@ -8,7 +8,12 @@ ten-minute60–120-second gate. Auto lowest-resolution live startup fails the
 first-presented-frame check, despite successful measured ABR downgrade/upgrade.
 Long34 completed local9000.224567-second full media validation, native
 exit0, platform ready/automatic publication and native GUI recovery. Its
-full published480p watch continues. Scene-switch case40 subsequently
+full published480p/2x watch naturally ended07:16:56.158 without sampled
+errors,then UI backward-seek/manual1080p/Auto retained full duration,
+position,pause and2x. This is75 minutes wall playback of2.5-hour media.
+Current3462fe5 also recovered that original session through the actual
+native selector/resume button,complete=true and exit0;old-media recovery
+does not qualify new-source2.5-hour encoding. Scene-switch case40 subsequently
 published with all covers ready and the unchanged fixed JPEG selected;
 its member VOD played from zero to natural end without a media error.
 Reader replacement race fix `3462fe5` passes
