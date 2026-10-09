@@ -145,6 +145,16 @@ struct ControllerLifecycleTest {
 			check(!c.paused_ && c.state_.issue.isEmpty(), "observer cannot pause authoritative sync");
 			if (statusReader != INVALID_HANDLE_VALUE)
 				CloseHandle(statusReader);
+			for (const auto &error : {RequestError(410, "capture_expired"), RequestError(403, "capture_forbidden"),
+						  RequestError(503, "capture_unavailable")}) {
+				c.state_.terminalFailure = false;
+				c.state_.phase = Phase::Capturing;
+				c.paused_ = false;
+				c.launch([error]() -> PlatformJob { throw error; });
+				drain();
+				check(c.state_.terminalFailure == (error.code == "capture_expired") && c.id_ == id,
+				      "terminal capture HTTP error is distinguished from permission and temporary failures");
+			}
 			c.paused_ = true;
 			c.state_.phase = Phase::Failed;
 			c.view_->onLogout();

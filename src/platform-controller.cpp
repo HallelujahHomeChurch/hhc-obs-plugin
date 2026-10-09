@@ -487,6 +487,12 @@ void PlatformController::completed()
 		nextAttempt_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
 	} catch (const RequestError &e) {
 		state_.issue = QString::fromUtf8(e.what());
+		if (e.status == 410 && e.code == "capture_expired") {
+			state_.terminalFailure = true;
+			if (capture_)
+				capture_->stop(StopReason::EncoderFailure);
+			state_.phase = busy() ? Phase::StopPending : Phase::Failed;
+		}
 		auto delay = e.retryDelay(failures_);
 		if (!delay)
 			paused_ = true;

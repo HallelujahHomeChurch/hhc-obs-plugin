@@ -90,14 +90,18 @@ void recordingReceipt()
 }
 void finish()
 {
+	blog(LOG_INFO, "[HHC fixture] Cleanup begin; stop synthetic producer");
 	running = false;
 	if (producer.joinable())
 		producer.join();
+	blog(LOG_INFO, "[HHC fixture] Synthetic producer joined");
 	capture.reset();
 	localController.reset();
+	blog(LOG_INFO, "[HHC fixture] Fixture capture/controllers released; clear Program scene");
 	if (studioRequested && obs_frontend_preview_program_mode_active())
 		obs_frontend_set_preview_program_mode(false);
 	obs_frontend_set_current_scene(nullptr);
+	blog(LOG_INFO, "[HHC fixture] Program scene cleared");
 	if (previewScene) {
 		obs_source_remove(obs_scene_get_source(previewScene));
 		obs_scene_release(previewScene);
@@ -117,6 +121,7 @@ void finish()
 		obs_source_release(source);
 		source = nullptr;
 	}
+	blog(LOG_INFO, "[HHC fixture] Cleanup finished");
 }
 void begin()
 {
@@ -411,6 +416,7 @@ void begin()
 						warning->text().contains(QString::fromUtf8("伺服器狀態：expired"))) ||
 					       warning->text().contains("HTTP 400") ||
 					       warning->text().contains("HTTP 403") ||
+					       warning->text().contains("HTTP 410: capture_expired") ||
 					       warning->text().contains("malformed_success") ||
 					       warning->text().contains("account_mismatch"));
 			if (complete || rejected || run->overall.elapsed() > (duration + 900) * 1000LL) {
