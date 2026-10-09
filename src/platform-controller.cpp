@@ -470,19 +470,19 @@ void PlatformController::completed()
 			state_.phase = remote.sealAccepted ? Phase::Validating : Phase::Uploading;
 		if (remote.stopAccepted && state_.phase == Phase::StopPending)
 			state_.phase = Phase::Uploading;
-		atomicJson(root_ + "/integration-status.json",
-			   {{"localId", id_},
-			    {"recordingId", remote.recordingId},
-			    {"captureId", remote.captureId},
-			    {"state", remote.state},
-			    {"liveState", remote.liveState},
-			    {"liveEnabled", remote.liveEnabled},
-			    {"pendingBytes", qint64(remote.pendingBytes)},
-			    {"autoPublish", remote.autoPublish},
-			    {"stopAccepted", remote.stopAccepted},
-			    {"sealAccepted", remote.sealAccepted},
-			    {"lastSequence", remote.lastSequence},
-			    {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
+		tryObserverJson(root_ + "/integration-status.json",
+				{{"localId", id_},
+				 {"recordingId", remote.recordingId},
+				 {"captureId", remote.captureId},
+				 {"state", remote.state},
+				 {"liveState", remote.liveState},
+				 {"liveEnabled", remote.liveEnabled},
+				 {"pendingBytes", qint64(remote.pendingBytes)},
+				 {"autoPublish", remote.autoPublish},
+				 {"stopAccepted", remote.stopAccepted},
+				 {"sealAccepted", remote.sealAccepted},
+				 {"lastSequence", remote.lastSequence},
+				 {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
 		nextAttempt_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
 	} catch (const RequestError &e) {
 		state_.issue = QString::fromUtf8(e.what());

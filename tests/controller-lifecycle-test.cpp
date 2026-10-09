@@ -1,7 +1,10 @@
 #include "local-controller.hpp"
 #include "platform-controller.hpp"
+#include "hls-muxer.hpp"
+#include "windows-path.hpp"
 #include <QApplication>
 #include <QFile>
+#include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QThreadPool>
 #include <QUuid>
@@ -22,6 +25,35 @@ struct ControllerLifecycleTest {
 			check(QThreadPool::globalInstance()->waitForDone(5000), "worker completed without GUI events");
 			app.processEvents();
 		};
+		QTemporaryDir evidenceRoot;
+		const auto evidencePath = evidenceRoot.path() + "/progress.json";
+		atomicJson(evidencePath, {{"recordingMs", 1000}});
+		const auto nativePath = lockFilePath(evidencePath);
+		HANDLE held = CreateFileW(reinterpret_cast<LPCWSTR>(nativePath.utf16()), GENERIC_READ, FILE_SHARE_READ,
+					  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		check(held != INVALID_HANDLE_VALUE, "observer holds fixture progress without delete sharing");
+		bool escaped = false, written = true, criticalFailed = false;
+		try {
+			written = tryObserverJson(evidencePath, {{"recordingMs", 2000}});
+		} catch (const std::exception &) {
+			escaped = true;
+		}
+		check(!escaped && !written, "observer sharing denial cannot escape the fixture timer");
+		try {
+			atomicJson(evidencePath, {{"recordingMs", 3000}});
+		} catch (const std::exception &) {
+			criticalFailed = true;
+		}
+		check(criticalFailed, "required journal writes still fail closed on sharing denial");
+		QFile previous(evidencePath);
+		check(previous.open(QIODevice::ReadOnly) &&
+			      QJsonDocument::fromJson(previous.readAll()).object()["recordingMs"].toInt() == 1000,
+		      "failed telemetry/journal replacement preserves the prior file");
+		previous.close();
+		if (held != INVALID_HANDLE_VALUE)
+			CloseHandle(held);
+		check(tryObserverJson(evidencePath, {{"recordingMs", 4000}}),
+		      "fixture telemetry recovers when the observer releases its file");
 		QTemporaryDir localRoot;
 		{
 			LocalController c(localRoot.path());
@@ -100,9 +132,19 @@ struct ControllerLifecycleTest {
 			check(c.job_.future().isFinished() && c.job_.future().result().sync.pendingBytes == 321 &&
 				      c.auth_.account() == account && c.id_ == id,
 			      "pending sync result blocks account change and future replacement on all routes");
+			const auto statusPath = platformRoot.path() + "/integration-status.json";
+			atomicJson(statusPath, {{"previous", true}});
+			const auto nativeStatusPath = lockFilePath(statusPath);
+			HANDLE statusReader = CreateFileW(reinterpret_cast<LPCWSTR>(nativeStatusPath.utf16()),
+							  GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+							  FILE_ATTRIBUTE_NORMAL, nullptr);
+			check(statusReader != INVALID_HANDLE_VALUE, "observer holds optional platform status");
 			app.processEvents();
 			check(c.state_.phase == Phase::Uploading && c.state_.pendingBytes == 321 && c.id_ == id,
 			      "prior sync result is consumed for its original account and session");
+			check(!c.paused_ && c.state_.issue.isEmpty(), "observer cannot pause authoritative sync");
+			if (statusReader != INVALID_HANDLE_VALUE)
+				CloseHandle(statusReader);
 			c.paused_ = true;
 			c.state_.phase = Phase::Failed;
 			c.view_->onLogout();

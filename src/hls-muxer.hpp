@@ -19,5 +19,6 @@ private:
 	void publishClosed();
 };
 void atomicJson(const QString &path, const QJsonObject &);
+bool tryObserverJson(const QString &path, const QJsonObject &);
 QJsonObject finalizeMaster(const QString &root);
 } // namespace hhc

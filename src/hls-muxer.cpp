@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSaveFile>
+#include <QDebug>
 #include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -28,6 +29,17 @@ void atomicJson(const QString &path, const QJsonObject &j)
 	require(f.open(QIODevice::WriteOnly), "journal open failed");
 	const auto bytes = QJsonDocument(j).toJson();
 	require(f.write(bytes) == bytes.size() && f.commit(), "journal commit failed");
+}
+bool tryObserverJson(const QString &path, const QJsonObject &j)
+{
+	try {
+		atomicJson(path, j);
+		return true;
+	} catch (const std::exception &) {
+		// Observer snapshots are optional; required media/journals still use fail-closed atomicJson.
+		qWarning("[HHC] Observer file unavailable; capture/sync continues, snapshot is unconfirmed");
+		return false;
+	}
 }
 struct HlsMuxer::Impl {
 	AVFormatContext *fmt = nullptr;

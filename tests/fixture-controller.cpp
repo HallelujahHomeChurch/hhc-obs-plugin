@@ -74,18 +74,19 @@ void studioReceipt(const QString &stage)
 			    {"preview", QString::fromUtf8(preview ? obs_source_get_name(preview) : "")}});
 	obs_source_release(program);
 	obs_source_release(preview);
-	hhc::atomicJson(destination + "/studio-program.json", {{"observations", studioObservations}});
+	hhc::tryObserverJson(destination + "/studio-program.json", {{"observations", studioObservations}});
 }
 void recordingReceipt()
 {
 	if (originalRequested)
-		hhc::atomicJson(destination + "/original-recording.json", {{"started", originalStarted},
-									   {"stopped", originalStopped},
-									   {"stopRequested", originalStopRequested},
-									   {"hhcComplete", hhcComplete},
-									   {"overlapMs", overlapMs},
-									   {"file", originalFile},
-									   {"stats", recordingStats}});
+		hhc::tryObserverJson(destination + "/original-recording.json",
+				     {{"started", originalStarted},
+				      {"stopped", originalStopped},
+				      {"stopRequested", originalStopRequested},
+				      {"hhcComplete", hhcComplete},
+				      {"overlapMs", overlapMs},
+				      {"file", originalFile},
+				      {"stats", recordingStats}});
 }
 void finish()
 {
@@ -319,9 +320,9 @@ void begin()
 			auto exitAt = qEnvironmentVariableIntValue("HHC_FIXTURE_EXIT_AFTER_SECONDS");
 			if (run->started && exitAt > 0 && !run->exitRequested && elapsed >= exitAt * 1000) {
 				run->exitRequested = true;
-				hhc::atomicJson(destination + "/accepted-exit.json",
-						{{"recordingMs", elapsed},
-						 {"case", qEnvironmentVariable("HHC_FIXTURE_CASE")}});
+				hhc::tryObserverJson(destination + "/accepted-exit.json",
+						     {{"recordingMs", elapsed},
+						      {"case", qEnvironmentVariable("HHC_FIXTURE_CASE")}});
 				QTimer::singleShot(50, QCoreApplication::instance(), [] {
 					if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
 						if (box->text().contains(
@@ -389,13 +390,13 @@ void begin()
 						run->firstLiveMs = int(elapsed);
 				}
 
-				hhc::atomicJson(destination + "/progress.json",
-						{{"status", status->text()},
-						 {"issue", warning ? warning->text() : QString{}},
-						 {"recordingMs", elapsed},
-						 {"overallMs", run->overall.elapsed()},
-						 {"offlineInjected", run->offline},
-						 {"transportRestored", run->restored}});
+				hhc::tryObserverJson(destination + "/progress.json",
+						     {{"status", status->text()},
+						      {"issue", warning ? warning->text() : QString{}},
+						      {"recordingMs", elapsed},
+						      {"overallMs", run->overall.elapsed()},
+						      {"offlineInjected", run->offline},
+						      {"transportRestored", run->restored}});
 			}
 			const bool expectedAbort = !recoverId.isEmpty() &&
 						   qEnvironmentVariableIsSet("HHC_FIXTURE_EXPECT_ABORT") && warning &&
@@ -416,7 +417,7 @@ void begin()
 				if (expectedAbort && qEnvironmentVariableIsSet("HHC_FIXTURE_PREPARE_ANOTHER")) {
 					const bool enabled = action->isEnabled();
 					action->click(); // Prepare only; never click the new-event start action.
-					hhc::atomicJson(
+					hhc::tryObserverJson(
 						destination + "/prepare-another.json",
 						{{"success",
 						  enabled && status->text() == QString::fromUtf8("準備收錄") &&
@@ -425,22 +426,23 @@ void begin()
 						 {"recoveredLocalId", recoverId},
 						 {"started", run->started}});
 				}
-				hhc::atomicJson(destination + "/native-dock-evidence.json",
-						{{"complete", complete},
-						 {"requested", run->requested},
-						 {"started", run->started},
-						 {"stopped", run->stopped},
-						 {"status", status->text()},
-						 {"issue", warning ? warning->text() : QString{}},
-						 {"elapsedMs", run->overall.elapsed()},
-						 {"trace", run->trace},
-						 {"firstLiveMs", run->firstLiveMs},
-						 {"closeLiveRequested", run->closeRequested},
-						 {"cancelPublishRequested", run->cancelRequested},
-						 {"recoveredLocalId", recoverId},
-						 {"expectedAbort", expectedAbort},
-						 {"liveIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_LIVE")},
-						 {"publishIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_PUBLISH")}});
+				hhc::tryObserverJson(
+					destination + "/native-dock-evidence.json",
+					{{"complete", complete},
+					 {"requested", run->requested},
+					 {"started", run->started},
+					 {"stopped", run->stopped},
+					 {"status", status->text()},
+					 {"issue", warning ? warning->text() : QString{}},
+					 {"elapsedMs", run->overall.elapsed()},
+					 {"trace", run->trace},
+					 {"firstLiveMs", run->firstLiveMs},
+					 {"closeLiveRequested", run->closeRequested},
+					 {"cancelPublishRequested", run->cancelRequested},
+					 {"recoveredLocalId", recoverId},
+					 {"expectedAbort", expectedAbort},
+					 {"liveIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_LIVE")},
+					 {"publishIntent", qEnvironmentVariableIsSet("HHC_FIXTURE_PUBLISH")}});
 				dock->grab().save(destination + "/native-final.png");
 				blog(LOG_INFO, "[HHC fixture] Native platform test complete=%s",
 				     complete ? "true" : "false");
@@ -527,11 +529,12 @@ void begin()
 							    !QJsonDocument::fromJson(journal.readAll())
 								     .object()["stopIntent"]
 								     .toBool(true);
-					hhc::atomicJson(destination + "/stop-cancel.json",
-							{{"cancelKeptEncoding",
-							  localController->busy() &&
-								  localController->phase() == hhc::Phase::Capturing},
-							 {"stopIntentUnchanged", noStop}});
+					hhc::tryObserverJson(
+						destination + "/stop-cancel.json",
+						{{"cancelKeptEncoding",
+						  localController->busy() &&
+							  localController->phase() == hhc::Phase::Capturing},
+						 {"stopIntentUnchanged", noStop}});
 				}
 				answerStopForFixture();
 				localController->view()->findChild<QPushButton *>("action")->click();
