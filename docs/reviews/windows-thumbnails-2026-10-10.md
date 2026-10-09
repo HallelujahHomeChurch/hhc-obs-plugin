@@ -12,7 +12,11 @@ All eleven immutable contract references were checked. OBS 32.2.2, RTX 4060,
 30000/1001 fps, three NVENC renditions, 900 frames / 30.03 seconds.
 Times below use Asia/Taipei (+08:00). No platform source or original OBS
 profile changes. The fixed handoff specifies one Auto image per live capture;
-periodic image replacement is not an acceptance requirement.
+periodic image replacement is not an acceptance requirement. The forwarded
+prompt also mentioned later occasional updates. No post-ready automatic
+image change was observed or qualified; the passes below cover initial
+generation, explicit mode switches and unchanged-byte VOD inheritance.
+They do not establish a later automatic-refresh feature.
 
 ## Auto
 
