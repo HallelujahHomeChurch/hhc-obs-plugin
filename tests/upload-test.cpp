@@ -1,4 +1,5 @@
 #include "session-store.hpp"
+#include "windows-path.hpp"
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QDir>
@@ -15,6 +16,47 @@ int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
 	QTemporaryDir root;
+	if (argc == 2 && QString(argv[1]) == "--qfile-sharing-probe") {
+		hhc::SessionStore store(root.path());
+		hhc::CaptureJournal journal;
+		journal.account = "characterization";
+		journal.localId = "read-during-checkpoint";
+		store.save(journal);
+		QFile reader(store.mediaDirectory(journal.account, journal.localId) + "/journal.json");
+		if (!hhc::openSharedJsonRead(reader))
+			return 70;
+		const auto original = reader.readAll();
+		try {
+			store.checkpointLocal(journal.account, journal.localId, {}, true, false);
+		} catch (const std::exception &e) {
+			std::cerr << "CHECKPOINT WITH QFile READER: " << e.what() << '\n';
+			return 71;
+		}
+		if (!reader.seek(0) || reader.readAll() != original)
+			return 73;
+		reader.close();
+		const auto loaded = store.loadPending(journal.account);
+		if (loaded.size() != 1 || !loaded[0].stopIntent || !original.contains("\"stopIntent\":false"))
+			return 72;
+		// A reader denying delete must fail closed and retain the previous complete checkpoint.
+		QFile blocker(store.mediaDirectory(journal.account, journal.localId) + "/journal.json");
+		if (!blocker.open(QIODevice::ReadOnly))
+			return 74;
+		const auto prior = blocker.readAll();
+		bool rejected = false;
+		try {
+			store.checkpointLocal(journal.account, journal.localId, {}, false, false);
+		} catch (const std::exception &) {
+			rejected = true;
+		}
+		if (!rejected || !blocker.seek(0) || blocker.readAll() != prior)
+			return 75;
+		blocker.close();
+		if (store.loadPending(journal.account).size() != 1)
+			return 76;
+		std::cout << "QFile reader does not block atomic checkpoint\n";
+		return 0;
+	}
 	int failures = 0;
 	auto check = [&](bool ok, const char *name) {
 		if (!ok) {

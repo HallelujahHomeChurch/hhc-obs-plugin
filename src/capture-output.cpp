@@ -73,7 +73,10 @@ struct CaptureOutput::Impl {
 		failed = true;
 		{
 			std::lock_guard lock(mutex);
-			error = QString::fromUtf8(message);
+			if (error.isEmpty()) {
+				error = QString::fromUtf8(message);
+				blog(LOG_ERROR, "[HHC] Local capture failed: %s", message);
+			}
 		}
 		cv.notify_all();
 	}

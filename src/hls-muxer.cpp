@@ -25,10 +25,8 @@ static void require(bool ok, const char *msg)
 }
 void atomicJson(const QString &path, const QJsonObject &j)
 {
-	QSaveFile f(path);
-	require(f.open(QIODevice::WriteOnly), "journal open failed");
 	const auto bytes = QJsonDocument(j).toJson();
-	require(f.write(bytes) == bytes.size() && f.commit(), "journal commit failed");
+	require(writeAtomicMetadata(path, bytes), "journal commit failed");
 }
 bool tryObserverJson(const QString &path, const QJsonObject &j)
 {

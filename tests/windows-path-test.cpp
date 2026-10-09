@@ -24,6 +24,13 @@ int main(int argc, char **argv)
 		while (longPath && root.size() < 280)
 			root += QString::fromUtf8("/影音暫存-1234567890");
 		check(QDir().mkpath(root), "create owned test directory");
+		const auto metadata = root + "/journal.json";
+		check(hhc::writeAtomicMetadata(metadata, "first"), "create atomic metadata");
+		QFile snapshot(metadata);
+		check(hhc::openSharedJsonRead(snapshot), "open shared metadata snapshot");
+		check(hhc::writeAtomicMetadata(metadata, "second") && snapshot.readAll() == "first" &&
+			      read(metadata) == "second", "replacement preserves old snapshot on short and long paths");
+		snapshot.close();
 		const auto source = root + "/closed.m4s", destination = root + "/queued.m4s";
 		QFile file(source);
 		check(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "write closed bytes");

@@ -1,9 +1,9 @@
 #include "session-store.hpp"
+#include "windows-path.hpp"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -138,7 +138,7 @@ void SessionStore::save(const CaptureJournal &j)
 	validateObjects(dir, j);
 	QFile previous(dir + "/journal.json");
 	if (previous.exists()) {
-		require(previous.size() <= 8 * 1024 * 1024 && previous.open(QIODevice::ReadOnly),
+		require(previous.size() <= 8 * 1024 * 1024 && openSharedJsonRead(previous),
 			"prior journal unreadable");
 		QJsonParseError error;
 		auto doc = QJsonDocument::fromJson(previous.readAll(), &error);
@@ -156,10 +156,7 @@ void SessionStore::save(const CaptureJournal &j)
 	}
 	// Serialize an allowlist of typed local fields, never arbitrary server JSON.
 	const auto data = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
-	QSaveFile f(dir + "/journal.json");
-	f.setDirectWriteFallback(false);
-	require(f.open(QIODevice::WriteOnly), "journal open failed");
-	require(f.write(data) == data.size() && f.commit(), "atomic journal commit failed");
+	require(writeAtomicMetadata(dir + "/journal.json", data), "atomic journal commit failed");
 }
 QVector<CaptureJournal> SessionStore::loadPending(const QString &account) const
 {
@@ -182,7 +179,7 @@ RecoveryReport SessionStore::scanPending(const QString &account, const std::atom
 			QFile f(dir + "/journal.json");
 			if (!f.exists())
 				continue;
-			require(f.size() <= 8 * 1024 * 1024 && f.open(QIODevice::ReadOnly),
+			require(f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f),
 				"journal unreadable or too large");
 			QJsonParseError error;
 			const auto doc = QJsonDocument::fromJson(f.readAll(), &error);
@@ -199,7 +196,7 @@ RecoveryReport SessionStore::scanPending(const QString &account, const std::atom
 					if (!receipt.exists())
 						continue;
 					require(!QFileInfo(receipt).isSymLink() && receipt.size() <= 8 * 1024 * 1024 &&
-							receipt.open(QIODevice::ReadOnly),
+							openSharedJsonRead(receipt),
 						"close receipt unreadable");
 					QJsonParseError receiptError;
 					const auto closed = QJsonDocument::fromJson(receipt.readAll(), &receiptError);
@@ -248,7 +245,7 @@ void SessionStore::checkpointLocal(const QString &account, const QString &localI
 			!QFileInfo(dir).isSymLink(),
 		"session ancestor is a link");
 	QFile file(dir + "/journal.json");
-	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && file.open(QIODevice::ReadOnly),
+	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && openSharedJsonRead(file),
 		"checkpoint requires existing journal");
 	QJsonParseError error;
 	const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
@@ -288,9 +285,7 @@ void SessionStore::checkpointLocal(const QString &account, const QString &localI
 		j.normalEnd = true;
 	}
 	const auto bytes = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
-	QSaveFile target(dir + "/journal.json");
-	target.setDirectWriteFallback(false);
-	require(target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() && target.commit(),
+	require(writeAtomicMetadata(dir + "/journal.json", bytes),
 		"atomic checkpoint failed");
 }
 void SessionStore::confirmReady(const QString &account, const QString &id, const QString &captureId,
@@ -301,7 +296,7 @@ void SessionStore::confirmReady(const QString &account, const QString &id, const
 			!QFileInfo(dir).isSymLink(),
 		"Ready session ancestor is a link");
 	QFile file(dir + "/journal.json");
-	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && file.open(QIODevice::ReadOnly),
+	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && openSharedJsonRead(file),
 		"Ready journal unavailable; media retained");
 	QJsonParseError error;
 	const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
@@ -329,9 +324,7 @@ void SessionStore::confirmReady(const QString &account, const QString &id, const
 	j.readyAt = observedAt.toUTC();
 	// Metadata checkpoint only. Recovery verifies every media hash before offering cleanup.
 	const auto bytes = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
-	QSaveFile target(dir + "/journal.json");
-	target.setDirectWriteFallback(false);
-	require(target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() && target.commit(),
+	require(writeAtomicMetadata(dir + "/journal.json", bytes),
 		"Ready evidence commit failed; media retained");
 }
 bool SessionStore::isPrepared(const QString &account, const QString &id) const
@@ -348,7 +341,7 @@ bool SessionStore::isPrepared(const QString &account, const QString &id) const
 					!QFileInfo(dir + "/" + name).isSymLink(),
 				"Prepared directory contains media or unknown files");
 		QFile f(dir + "/journal.json");
-		require(f.size() <= 8 * 1024 * 1024 && f.open(QIODevice::ReadOnly), "Prepared journal unavailable");
+		require(f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f), "Prepared journal unavailable");
 		QJsonParseError e;
 		auto doc = QJsonDocument::fromJson(f.readAll(), &e);
 		require(e.error == QJsonParseError::NoError && doc.isObject(), "Prepared journal corrupt");

@@ -1,3 +1,7 @@
+# Current continuation status — 2026-10-09
+
+[Mutable-journal fix and long18 failure](reviews/windows-atomic-journal-2026-10-09.md): local 13-test suite and actual NVENC inventory-fault check pass; new CI/package and 9000-second native production qualification remain pending. Long18 is failed, not running or ready. Live20 short stop/seal/ready/publication and the separately requested 2375.91-second player flow passed; the ten-minute live catch-up gate failed and awaits the platform/backend/player owner. Existing evidence below is historical, not qualification of the new candidate. No merge, release, deployment or YouTube changes.
+
 # Windows integration continuation gates — 2026-10-08
 
 The [whole-branch review fix pass](reviews/windows-final-branch-review-2026-10-08.md) resolves two Important source findings: terminal failure can explicitly prepare another event after encoding stops, and closed segments move into the queue without a retained media copy. New local 61-second media, sharing-denial and ACL-denial checks pass; original terminal capture preservation and fixed C1 byte checks pass. These are distinct from fresh positive production acceptance. Earlier frozen candidates and their evidence remain unchanged.

@@ -6,7 +6,6 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 #include <QDir>
 #include <QCryptographicHash>
 #include <QRegularExpression>
@@ -24,7 +23,7 @@ void require(bool ok, const char *why)
 QJsonObject readJson(const QString &path)
 {
 	QFile f(path);
-	require(!QFileInfo(f).isSymLink() && f.size() <= 8 * 1024 * 1024 && f.open(QIODevice::ReadOnly),
+	require(!QFileInfo(f).isSymLink() && f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f),
 		"Queue document unavailable");
 	QJsonParseError e;
 	auto d = QJsonDocument::fromJson(f.readAll(), &e);
@@ -161,10 +160,8 @@ void CaptureSync::persistControl(const QString &root, const QString &account, co
 			"Invalid control intent");
 	auto tag = live ? QString("close_live") : QString("cancel_auto_publish");
 	intent[tag] = id + "." + tag;
-	QSaveFile f(path);
 	auto bytes = QJsonDocument(intent).toJson(QJsonDocument::Compact);
-	require(f.open(QIODevice::WriteOnly) && f.write(bytes) == bytes.size() && f.commit(),
-		"Control intent commit failed");
+	require(writeAtomicMetadata(path, bytes), "Control intent commit failed");
 }
 QString CaptureSync::directory() const
 {
@@ -176,9 +173,7 @@ void CaptureSync::save()
 		"Remote queue directory unavailable");
 	auto bytes = QJsonDocument(journal_).toJson(QJsonDocument::Compact);
 	require(bytes.size() <= 8 * 1024 * 1024, "Remote journal limit");
-	QSaveFile f(directory() + "/remote-journal.json");
-	f.setDirectWriteFallback(false);
-	require(f.open(QIODevice::WriteOnly) && f.write(bytes) == bytes.size() && f.commit(),
+	require(writeAtomicMetadata(directory() + "/remote-journal.json", bytes),
 		"Remote journal commit failed");
 }
 void CaptureSync::apply(const QJsonObject &capture)

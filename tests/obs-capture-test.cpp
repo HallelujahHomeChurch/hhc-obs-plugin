@@ -168,7 +168,8 @@ int main(int argc, char **argv)
 			capture.stop(hhc::StopReason::User);
 			const bool ok = capture.wait(15000);
 			const auto recovered = store.loadPending(config.account);
-			if (ok || !capture.finished() || recovered.size() != 1 || recovered[0].normalEnd) {
+			if (ok || !capture.finished() || recovered.size() != 1 || recovered[0].normalEnd ||
+			    capture.error() != "journal commit failed") {
 				std::cerr << "FAIL final inventory failure declared successful journal\n";
 				result = 20;
 			}

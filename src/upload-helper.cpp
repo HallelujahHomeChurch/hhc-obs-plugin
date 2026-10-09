@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 			QStringList ids;
 			for (const auto &id : QDir(accountDirectory).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
 				QFile j(accountDirectory + "/" + id + "/journal.json");
-				if (j.size() > 8 * 1024 * 1024 || !j.open(QIODevice::ReadOnly))
+				if (j.size() > 8 * 1024 * 1024 || !hhc::openSharedJsonRead(j))
 					continue;
 				auto meta = QJsonDocument::fromJson(j.readAll()).object();
 				if (meta["normalEnd"].toBool() && meta["account"] == account)

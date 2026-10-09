@@ -373,7 +373,8 @@ void PlatformController::poll()
 	if (capture_ && capture_->finished()) {
 		bool normal = capture_->wait(1);
 		if (!normal && state_.issue.isEmpty())
-			state_.issue = QString::fromUtf8("編碼未正常完成；本機素材保留，將同步 abort。");
+			state_.issue = QString::fromUtf8("編碼未正常完成；本機素材保留，將同步 abort。") +
+				       " " + capture_->error();
 		capture_.reset();
 		state_.phase = paused_ ? Phase::Failed : Phase::Uploading;
 		nextAttempt_ = {};
