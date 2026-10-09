@@ -31,6 +31,8 @@ int main(int argc, char **argv)
 		bool publish = false;
 		QString readyPackage = capture["captureId"].toString();
 		QString terminalOverride;
+		bool stalePages = false;
+		int statusQueries = 0;
 		QTemporaryDir root;
 		const QString account = "018f0c1f-18d0-7e81-9f6f-69c456db7003", id = "complete-test";
 		hhc::SessionStore store(root.path());
@@ -120,6 +122,8 @@ int main(int argc, char **argv)
 						    {"meta", QJsonObject{}},
 						    {"error", QJsonValue::Null}};
 				} else if (first.startsWith("GET ")) {
+					++statusQueries;
+					capture["nextCursor"] = stalePages ? "1080p/init.mp4" : "";
 					if (!terminalOverride.isEmpty()) {
 						capture["state"] = terminalOverride;
 						capture["liveState"] = terminalOverride;
@@ -276,9 +280,13 @@ int main(int argc, char **argv)
 			if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
 				return 3;
 			terminalOverride = terminal;
+			stalePages = true;
+			const auto queriesBefore = statusQueries;
 			hhc::CaptureSync recovery(root.path(), account, id, api);
 			const auto before = operations.size();
 			auto stopped = recovery.step(false);
+			check(statusQueries == queriesBefore + 1,
+			      "terminal status ignores stale object pagination after one authoritative read");
 			check(stopped.state == terminal && operations.size() == before,
 			      "authoritative terminal capture prevents replay of rejected seal intent");
 			QFile afterFile(directory + "/remote-journal.json");
@@ -288,6 +296,21 @@ int main(int argc, char **argv)
 			check(after["mutations"].toObject()["seal"] == savedSeal,
 			      "terminal recovery preserves exact inventory and operation key without a receipt");
 		}
+		terminalOverride.clear();
+		capture["state"] = "uploading";
+		capture["liveState"] = "starting";
+		capture["autoPublish"] = "pending";
+		capture["terminalReason"] = QJsonValue::Null;
+		const auto beforeActive = operations.size();
+		bool repeatedPageRejected = false;
+		try {
+			hhc::CaptureSync active(root.path(), account, id, api);
+			active.step(false);
+		} catch (const std::exception &e) {
+			repeatedPageRejected = QByteArray(e.what()) == "Repeated object in status pages";
+		}
+		check(repeatedPageRejected && operations.size() == beforeActive,
+		      "active capture still rejects repeated object pages before stop or seal");
 		return failed ? 1 : 0;
 	} catch (const std::exception &e) {
 		std::cerr << "TEST EXCEPTION " << e.what() << '\n';

@@ -304,6 +304,8 @@ QJsonObject CaptureSync::poll()
 		auto page = api_.request("GET", path, {}, "RecordingCaptureEnvelope")["data"].toObject();
 		apply(page);
 		capture = page;
+		if (QStringList{"aborted", "expired", "failed"}.contains(state_.state))
+			break;
 		for (const auto &v : page["objects"].toArray()) {
 			require(!paths.contains(v.toObject()["path"].toString()), "Repeated object in status pages");
 			paths.insert(v.toObject()["path"].toString());
