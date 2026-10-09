@@ -50,6 +50,17 @@ member VOD or native exit. Other OBS encoders are inactive; prior captures'
 background synchronization and member browser observations remain separate
 loads. Installation and actual startup do not qualify the long-run gate.
 
+The same downloaded CI3462fe5 subsequently passed actual OBS GUI recovery
+of the original long34 session in the other inactive portable runtime.
+It selected `9c89a897-7043-4a8e-8769-38ad0077960a`, displayed published,
+returned complete=true without starting an encoder, and exited0 at
+06:52:30.7177366 with all original operator profile hashes unchanged.
+The907-object inventory hash remained unchanged; original stop and seal
+receipts retained acceptance times05:19:58.754341759 and05:21:28.223757.
+This tests current-source recovery of oldd59f1eb media, independently of
+the new9000-second encoding run. Its short synthetic renderer overlapped
+long41 and is included in whole-GPU resource observations.
+
 Ignored local evidence is retained under `artifacts/metadata-reader-*`:
 the original stress and regression failures, error-32 diagnostic, final
 stress JSON/log, and fresh candidate build/CTest logs. Only allowlisted
