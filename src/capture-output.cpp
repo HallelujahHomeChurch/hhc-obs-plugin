@@ -180,7 +180,8 @@ struct CaptureOutput::Impl {
 			if (p->size > 64ULL * 1024 * 1024 - s.bytes) {
 				s.reason = failureReason(s.reason, StopReason::QueueLimit);
 				s.failed = true;
-				s.error = "Encoded packet queue exceeded 64 MiB";
+				if (s.error.isEmpty())
+					s.error = "Encoded packet queue exceeded 64 MiB";
 			} else {
 				encoder_packet copy{};
 				obs_encoder_packet_ref(&copy, p);
