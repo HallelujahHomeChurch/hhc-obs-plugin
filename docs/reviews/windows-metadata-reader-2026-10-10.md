@@ -25,9 +25,30 @@ A fresh full local build and all 13 CTests passed at
 temporary characterization. A read-only review found no critical or
 important findings. The reviewer noted scheduling limits in the concurrent
 test and optional-file existence checks outside this shared open helper;
-those attribute lookups have not been characterized. This is not evidence
+those attribute lookups have not been characterized. The local checks alone are not evidence
 for concurrent writers, historical root cause, hosted CI, actual OBS or
 end-to-end qualification of the new source revision.
+
+Commit `3462fe5c4adb6bcdfd30719ede136aa046e25d07` push CI37994926661 and
+PR CI37994931498 both succeeded. Downloaded Windows x64 unsigned preview:
+630099 bytes, SHA-256
+`f422bfffd81a724961700ac773e2cac97e4d81e934fc5634a478d515127dbe53`.
+All seven manifest members and both embedded source stamps matched; the
+developer fixture is excluded. The inactive test runtime was updated at
+05:47:16.6444722. Its actual CI helper refreshed the existing OAuth session
+successfully using Credential Manager and resumed the original pending
+thumbnail40 capture; original inventory hash was unchanged.
+
+Actual OBS loaded the same compiled source and began a new9000-second
+native capture at05:48:55.867: recording
+`8a2a3ce3-5dff-4da6-9350-32932e926642`, capture
+`632bfda5df0932c7698cd4713cb5fff3`, local identity
+`405cabc2-d6e6-49d2-b5f8-6e58aaa3d5dd`. C1 acknowledgement retains all11
+verified immutable references and30000/1001 fps. This run is in progress;
+it has not yet passed final media validation, stop/seal/ready/publication,
+member VOD or native exit. Other OBS encoders are inactive; prior captures'
+background synchronization and member browser observations remain separate
+loads. Installation and actual startup do not qualify the long-run gate.
 
 Ignored local evidence is retained under `artifacts/metadata-reader-*`:
 the original stress and regression failures, error-32 diagnostic, final

@@ -1,4 +1,29 @@
-# Current continuation status — 2026-10-09
+# Current continuation status — 2026-10-10
+
+Actual downloaded CI product `d59f1eb8035168cdc205eebcd1b42f82ecd76c0e`
+passes short native stop/seal/ready/auto-publication, original hashes/full
+three-rendition decode, member VOD, isolated-load recovery and completed
+Auto/fixed thumbnail cases. Shared-load actual player recovery fails the
+ten-minute60–120-second gate. Auto lowest-resolution live startup fails the
+first-presented-frame check, despite successful measured ABR downgrade/upgrade.
+Long34 completed local9000.224567-second full media validation, native
+exit0, platform ready/automatic publication and native GUI recovery. Its
+full published480p watch continues. Scene-switch case40 subsequently
+published with all covers ready and the unchanged fixed JPEG selected;
+its member VOD played from zero to natural end without a media error.
+Reader replacement race fix `3462fe5` passes
+all13 local tests and both hosted CI runs. Its downloaded candidate passed
+manifest/source checks and native OAuth refresh; new9000-second actual-OBS
+capture41 is in progress, not complete.
+See [current results](reviews/windows-e2e-2026-10-10.md),
+[fixed Mac recovery handoff](reviews/windows-shared-recovery-2026-10-10.md)
+and [thumbnail results](reviews/windows-thumbnails-2026-10-10.md).
+See [latest platform blockers](reviews/windows-platform-blockers-2026-10-10.md)
+for exact capture IDs, times and the requested owner investigation.
+No merge, signed release, deployment or YouTube changes. The sections below
+retain historical context and do not override these current results.
+
+## Historical continuation status — 2026-10-09
 
 [Mutable-journal fix and long18 failure](reviews/windows-atomic-journal-2026-10-09.md): local 13-test suite and actual NVENC inventory-fault check pass; new CI/package and 9000-second native production qualification remain pending. Long18 is failed, not running or ready. Live20 short stop/seal/ready/publication and the separately requested 2375.91-second player flow passed; the ten-minute live catch-up gate failed and awaits the platform/backend/player owner. Existing evidence below is historical, not qualification of the new candidate. No merge, release, deployment or YouTube changes.
 
