@@ -34,9 +34,18 @@ inline bool openSharedJsonRead(QFile &file)
 	if (file.isOpen())
 		return false;
 	const auto path = lockFilePath(file.fileName());
-	HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), GENERIC_READ,
-				    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-				    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	HANDLE handle = INVALID_HANDLE_VALUE;
+	// Concurrent replacement briefly removes or locks the name. Keep the wait bounded.
+	for (int attempt = 0; attempt < 5; ++attempt) {
+		handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), GENERIC_READ,
+				     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+				     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		const auto error = GetLastError();
+		if (handle != INVALID_HANDLE_VALUE ||
+		    (error != ERROR_FILE_NOT_FOUND && error != ERROR_SHARING_VIOLATION) || attempt == 4)
+			break;
+		Sleep(10);
+	}
 	if (handle == INVALID_HANDLE_VALUE)
 		return false;
 	const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);

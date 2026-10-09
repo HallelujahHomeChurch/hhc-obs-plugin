@@ -2,6 +2,10 @@
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QElapsedTimer>
+#include <array>
+#include <atomic>
+#include <thread>
 #include <iostream>
 int main(int argc, char **argv)
 {
@@ -31,6 +35,55 @@ int main(int argc, char **argv)
 		check(hhc::writeAtomicMetadata(metadata, "second") && snapshot.readAll() == "first" &&
 			      read(metadata) == "second", "replacement preserves old snapshot on short and long paths");
 		snapshot.close();
+		// A reader must see one complete snapshot while the writer replaces its name.
+		const QByteArray a(4096, 'a'), b(4096, 'b');
+		check(hhc::writeAtomicMetadata(metadata, a), "seed concurrent metadata");
+		std::atomic<bool> done = false;
+		std::atomic<unsigned> readersReady = 0, reads = 0, unavailable = 0, corrupt = 0, firstError = 0;
+		std::array<std::thread, 2> readers;
+		for (auto &reader : readers)
+			reader = std::thread([&] {
+				++readersReady;
+				while (!done) {
+					QFile file(metadata);
+					if (!hhc::openSharedJsonRead(file)) {
+						unsigned error = GetLastError(), zero = 0;
+						firstError.compare_exchange_strong(zero, error);
+						++unavailable;
+						continue;
+					}
+					const auto data = file.readAll();
+					if (data != a && data != b)
+						++corrupt;
+					++reads;
+				}
+			});
+		while (readersReady != 2)
+			std::this_thread::yield();
+		for (int i = 0; i < 150; ++i)
+			check(hhc::writeAtomicMetadata(metadata, i % 2 ? a : b), "replace concurrent metadata");
+		done = true;
+		for (auto &reader : readers)
+			reader.join();
+		if (unavailable || corrupt)
+			std::cerr << "metadata reads=" << reads << " unavailable=" << unavailable
+				  << " corrupt=" << corrupt << " firstWin32=" << firstError << '\n';
+		check(reads > 0 && unavailable == 0 && corrupt == 0, "concurrent replacement keeps metadata readable");
+		QFile missing(root + "/absent.json");
+		QElapsedTimer wait;
+		wait.start();
+		check(!hhc::openSharedJsonRead(missing) && wait.elapsed() < 1000,
+		      "persistently missing metadata fails within a bounded wait");
+		const auto nativeMetadata = hhc::lockFilePath(metadata);
+		HANDLE exclusive = CreateFileW(reinterpret_cast<LPCWSTR>(nativeMetadata.utf16()), GENERIC_READ,
+					       0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		check(exclusive != INVALID_HANDLE_VALUE, "hold metadata with exclusive sharing");
+		QFile denied(metadata);
+		wait.restart();
+		check(!hhc::openSharedJsonRead(denied) && wait.elapsed() < 1000,
+		      "persistent sharing denial stays a bounded failure");
+		if (exclusive != INVALID_HANDLE_VALUE)
+			CloseHandle(exclusive);
 		const auto source = root + "/closed.m4s", destination = root + "/queued.m4s";
 		QFile file(source);
 		check(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "write closed bytes");
