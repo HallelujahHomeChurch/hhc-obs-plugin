@@ -95,6 +95,20 @@ are Asia/Taipei (+08:00). Preserve both original packages and operation keys.
    silently count the narrower initial-generation pass as completion of
    the forwarded requirement. C1/wire/digest and the plugin remain unchanged.
 
+6. Current3462fe5 Long41 normal-live observation exceeded the120-second
+   p95 estimate. Same recording/capture as item4, no outage injected,
+   no reload/manual ReturnLive/quality change.8828 playing decoded1x samples
+   before actual stop08:18:56.063: p50=116.276907,p95=128.849099,
+   p99=133.113367,max134.879626,3380 samples above120 seconds;
+   all1080p and no sampled fatal HTMLMedia error. Encoder-wall-origin minus
+   actual currentTime is an estimate, not visible-timecode OCR. Post-stop
+   samples are excluded; earlier partial115.277484-second p95 is not a
+   whole-run pass. Other renderer/browser/hash-scan loads are documented;
+   this is not strict isolated-GPU qualification. Retain waterline/buffer
+   and stage-log correlation without attributing cause to one component.
+   Local907 hashes/stream formats/playlist grid/three full decodes and original live natural
+   end passed independently. See [current-CI long evidence](windows-long-current-ci-2026-10-10.md).
+
 Global live-cover defaults were restored to Auto revision6 at05:13:35.198,
 retention30 days. No manual publish, arbitrary re-upload, schema relaxation,
 duration change, credentials or signed URLs were used to force acceptance.

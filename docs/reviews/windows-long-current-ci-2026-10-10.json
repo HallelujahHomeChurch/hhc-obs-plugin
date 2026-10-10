@@ -1,0 +1,212 @@
+{
+  "at": "2026-10-10T08:24:13.517673+08:00",
+  "recordingId": "8a2a3ce3-5dff-4da6-9350-32932e926642",
+  "captureId": "632bfda5df0932c7698cd4713cb5fff3",
+  "localId": "405cabc2-d6e6-49d2-b5f8-6e58aaa3d5dd",
+  "sourceCommit": "3462fe5c4adb6bcdfd30719ede136aa046e25d07",
+  "c1": "c1-2026-10-08.2",
+  "manifestSha256": "f702477236ba184853c119ffa9c4da0cc9f6d44cf7911785f85f3aa6d94e8be9",
+  "media": {
+    "at": "2026-10-10T08:21:40.709336+08:00",
+    "exitCode": 0,
+    "nominalCheckExitCode": 0,
+    "normalEnd": true,
+    "fpsNum": 30000,
+    "fpsDen": 1001,
+    "objects": 907,
+    "inventoryFileSha256": "14c7083f77ca2998dc74056114449f9b6304524b8e23f575202964d455480c2e",
+    "exactInventoryDurationSeconds": 9000.191200000001,
+    "scope": "Original exact-duration full QA, separately retains nominal timer-tolerance result; no inventory edits",
+    "renditions": [
+      {
+        "height": 1080,
+        "segments": 300,
+        "duration": 9000.191200000001
+      },
+      {
+        "height": 720,
+        "segments": 300,
+        "duration": 9000.191200000001
+      },
+      {
+        "height": 480,
+        "segments": 300,
+        "duration": 9000.191200000001
+      }
+    ]
+  },
+  "controls": {
+    "stop": {
+      "operationKey": "405cabc2-d6e6-49d2-b5f8-6e58aaa3d5dd.stop",
+      "acceptedAt": "2026-10-10T00:19:02.475243037Z"
+    },
+    "seal": {
+      "operationKey": "405cabc2-d6e6-49d2-b5f8-6e58aaa3d5dd.seal",
+      "acceptedAt": "2026-10-10T00:20:26.99884Z",
+      "inventoryDigest": "4c11d443d7366114d054a2934c3853834703702c9f91c4b0f74b12f516e7428f"
+    }
+  },
+  "originalLiveNaturalEnd": {
+    "at": "2026-10-10T00:22:00.874Z",
+    "currentTime": 9000.213333,
+    "duration": 9000.213333,
+    "ended": true,
+    "paused": true,
+    "rate": 1,
+    "width": 1920,
+    "height": 1080,
+    "frames": 264267,
+    "dropped": 67,
+    "ready": 4,
+    "error": null
+  },
+  "playerBeforeStop": {
+    "recordingId": "8a2a3ce3-5dff-4da6-9350-32932e926642",
+    "captureId": "632bfda5df0932c7698cd4713cb5fff3",
+    "sourceCommit": "3462fe5c4adb6bcdfd30719ede136aa046e25d07",
+    "encoderStarted": "2026-10-10T05:48:55.867000+08:00",
+    "nativeStopRequested": "2026-10-10T08:18:56.063000+08:00",
+    "observedAt": "2026-10-10T00:19:03.700Z",
+    "rawSha256": "aa4fefd6e150222669f0c2c6b5d617401f45f9f5bafc99ba430b0e6082d516d5",
+    "preStopSamples": 8831,
+    "playingDecodedSamples": 8828,
+    "first": {
+      "at": "2026-10-09T21:51:48.867Z",
+      "currentTime": 90.777142,
+      "duration": 120.149333,
+      "ended": false,
+      "paused": false,
+      "rate": 1,
+      "width": 1920,
+      "height": 1080,
+      "frames": 25,
+      "dropped": 19,
+      "ready": 4,
+      "error": null
+    },
+    "last": {
+      "at": "2026-10-10T00:18:55.865Z",
+      "currentTime": 8872.661475,
+      "duration": 8918.933333,
+      "ended": false,
+      "paused": false,
+      "rate": 1,
+      "width": 1920,
+      "height": 1080,
+      "frames": 259515,
+      "dropped": 60,
+      "ready": 4,
+      "error": null
+    },
+    "lagSeconds": {
+      "p50": 116.27690699999994,
+      "p95": 128.84909900000002,
+      "p99": 133.11336699999993
+    },
+    "maxLagSeconds": 134.87962599999992,
+    "samplesAbove120": 3380,
+    "sampledFatalMediaErrors": 0,
+    "resolutionSamples": {
+      "1920": 8828
+    },
+    "p95EstimateAbove120": true,
+    "scope": "Whole original live-player observation before actual native stop; no outage/reload/manual ReturnLive/quality change. Approximate wall-origin minus decoded currentTime, not timecode OCR. Background GUI recovery/render/hash scan and browser loads are recorded separately; not strict isolated-GPU qualification. Fatal HTMLMedia errors only; does not establish absence of HLS/network retry errors. Post-stop samples excluded."
+  },
+  "scope": "Actual current CI 2.5-hour media/907 hashes/three full decodes and original accepted stop/seal receipts; original live replay natural end. Ready/publication/native exit and published VOD remain separate. Wire inventoryDigest is retained, not replaced by the inventory-file SHA-256.",
+  "initialNativeExit": {
+    "obsPid": 29204,
+    "sourceCommit": "3462fe5c4adb6bcdfd30719ede136aa046e25d07",
+    "obsExitCode": 0,
+    "profileHashesAfter": {
+      "streamEncoder.json": "744C36A156342E9C014AF13B2D5ECA964CC29C26E374BB748FB4048D5D3A9FC9",
+      "basic.ini": "032FA776E9860BA8A49B462F6CECC1AD1C63151CC0BB752349479FE473A83E58",
+      "recordEncoder.json": "D8CAFA0E35349E5118A5774AA357F6A857067A3472C410625E34E71C01A963B5"
+    },
+    "completed": "2026-10-10T08:33:24.2360181+08:00",
+    "originalProfilesUnchanged": true
+  },
+  "initialNativeResult": {
+    "complete": false,
+    "requested": true,
+    "started": true,
+    "stopped": true,
+    "status": "\u4f3a\u670d\u5668\u6aa2\u67e5\u5f71\u7247\u4e2d",
+    "issue": "",
+    "elapsedMs": 9900259
+  },
+  "platformAfterInitialExit": {
+    "requestStarted": "2026-10-10T08:36:07.672467+08:00",
+    "at": "2026-10-10T08:36:08.818969+08:00",
+    "requestExitCode": 0,
+    "nativeBefore": {
+      "issue": "",
+      "offlineInjected": false,
+      "overallMs": 9900249,
+      "recordingMs": 9867981,
+      "status": "\u4f3a\u670d\u5668\u6aa2\u67e5\u5f71\u7247\u4e2d",
+      "transportRestored": false
+    },
+    "nativeAfter": {
+      "issue": "",
+      "offlineInjected": false,
+      "overallMs": 9900249,
+      "recordingMs": 9867981,
+      "status": "\u4f3a\u670d\u5668\u6aa2\u67e5\u5f71\u7247\u4e2d",
+      "transportRestored": false
+    },
+    "server": {
+      "autoPublish": "pending",
+      "captureId": "632bfda5df0932c7698cd4713cb5fff3",
+      "declaredBytes": 5982837476,
+      "declaredObjects": 907,
+      "expiresAt": "2026-10-10T21:48:54.859137069Z",
+      "liveEnabled": true,
+      "liveState": "ended",
+      "objectStates": {
+        "queued": 4,
+        "verified": 903
+      },
+      "packageId": "632bfda5df0932c7698cd4713cb5fff3",
+      "progress": {
+        "ended": true,
+        "endedAt": "2026-10-10T00:21:30.138609Z",
+        "firstSequence": 0,
+        "lastAdvancedAt": "2026-10-10T00:21:30.138609Z",
+        "lastSequence": 299,
+        "mediaEndSeconds": 9000.1912,
+        "revision": 301
+      },
+      "recordingId": "8a2a3ce3-5dff-4da6-9350-32932e926642",
+      "recordingVersion": 1,
+      "replayUntil": "2026-10-10T03:21:30.329809Z",
+      "serverNow": "2026-10-10T00:36:07.908514895Z",
+      "state": "validating",
+      "stopAcceptedAt": "2026-10-10T00:19:02.475243037Z",
+      "terminalReason": null
+    },
+    "nativeObserver": {
+      "autoPublish": "pending",
+      "captureId": "632bfda5df0932c7698cd4713cb5fff3",
+      "lastSequence": 299,
+      "liveEnabled": true,
+      "liveState": "ended",
+      "localId": "405cabc2-d6e6-49d2-b5f8-6e58aaa3d5dd",
+      "observedAt": "2026-10-10T00:33:22.678Z",
+      "pendingBytes": 0,
+      "recordingId": "8a2a3ce3-5dff-4da6-9350-32932e926642",
+      "sealAccepted": true,
+      "state": "validating",
+      "stopAccepted": true
+    },
+    "verifiedLagSeconds": null,
+    "scope": "Fixed-C1 direct read-only server progress with native timer bounds; file reads share delete and retry temporary path gaps; not actual player delay"
+  },
+  "unattributedObsAllocationCount": 1,
+  "operatorGuard": {
+    "at": "2026-10-10T08:34:41.4370881+08:00",
+    "operatorObsActive": true,
+    "noNewCapture": true,
+    "recoveryAndConcurrencyDeferred": true,
+    "notFeatureRedEvidence": true
+  }
+}

@@ -19,7 +19,11 @@ its member VOD played from zero to natural end without a media error.
 Reader replacement race fix `3462fe5` passes
 all13 local tests and both hosted CI runs. Its downloaded candidate passed
 manifest/source checks and native OAuth refresh; new9000-second actual-OBS
-capture41 is in progress, not complete.
+capture41 passes local907 hashes/three full decodes, accepted stop/seal and
+original live natural end. Native exit0 preserves profiles; the initial
+bounded wait returned complete=false. Ready/publication remain pending;
+whole pre-stop live lag estimate p95=128.849099 exceeds120 seconds.
+See [current-CI long evidence](reviews/windows-long-current-ci-2026-10-10.md).
 See [current results](reviews/windows-e2e-2026-10-10.md),
 [fixed Mac recovery handoff](reviews/windows-shared-recovery-2026-10-10.md)
 and [thumbnail results](reviews/windows-thumbnails-2026-10-10.md).
