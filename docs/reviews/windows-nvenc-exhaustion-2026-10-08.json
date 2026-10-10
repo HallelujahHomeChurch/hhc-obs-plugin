@@ -1,0 +1,91 @@
+{
+  "probe": {
+    "exitCode": -542398533,
+    "pid": 28248,
+    "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\artifacts\\nvenc-exhaustion-partial-06f63d7/holder-12.log"
+  },
+  "sourceCommit": "06f63d7fcdc97fb4f2e90c7eed768ee7e7c23fcc",
+  "failedJournalLocalId": "da3036aa-320e-4967-aa1f-892996c8367e",
+  "partialInitialization": {
+    "holderSessions": 10,
+    "journalUnchanged": true,
+    "nvencSessionsReleased": true,
+    "objects": 0,
+    "journalSha256": "febcf413765360cefc3cf825684c2bd170dde835182cdc45aa0dba175de832fa",
+    "localId": "61de9480-9cb0-40f4-a365-40e805492a95",
+    "error": "NV_ENC_ERR_INCOMPATIBLE_CLIENT_KEY",
+    "obs": {
+      "exitCode": 0,
+      "pid": 23928,
+      "completed": "2026-10-08T21:17:30.5108489+08:00",
+      "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\artifacts\\nvenc-exhaustion-partial-06f63d7/partial-obs.log",
+      "started": "2026-10-08T21:17:25.9244213+08:00"
+    }
+  },
+  "healthyObs": {
+    "exitCode": 0,
+    "pid": 23804,
+    "completed": "2026-10-08T21:17:41.0383132+08:00",
+    "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\artifacts\\nvenc-exhaustion-partial-06f63d7/healthy-obs.log",
+    "started": "2026-10-08T21:17:30.8985336+08:00"
+  },
+  "failedObs": {
+    "exitCode": 0,
+    "pid": 38696,
+    "completed": "2026-10-08T21:17:25.7159867+08:00",
+    "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\artifacts\\nvenc-exhaustion-partial-06f63d7/denied-obs.log",
+    "started": "2026-10-08T21:17:21.2163461+08:00"
+  },
+  "normalEnd": false,
+  "failedJournalSha256": "391ccec1c75e6947a47f4a0b9ada084150f1ee3e46b919e99f0725655edf33f8",
+  "cpuEncoderInitialized": false,
+  "failedJournalUnchanged": true,
+  "scope": "Actual local OBS NVENC module-startup and per-rendition initialization denial plus independent healthy capture; not GPU removal, same-dock retry, CPU benchmark or E2E",
+  "failedObjects": 0,
+  "confirmedReady": false,
+  "obsNvencCheckError": "session_limit",
+  "fixtureSha256": "6c4ecca9f3f1b31f28e0a676e822aaf4414e2595d57d5c424db2a52a1ff8b89e",
+  "activeSessionsAtDenial": 12,
+  "healthyMedia": [
+    {
+      "height": 1080,
+      "segments": 1,
+      "seconds": 5.005,
+      "fps": "30000/1001",
+      "codec": "h264",
+      "audioCodec": "aac",
+      "hashFormatGridFullDecode": true
+    },
+    {
+      "height": 720,
+      "segments": 1,
+      "seconds": 5.005,
+      "fps": "30000/1001",
+      "codec": "h264",
+      "audioCodec": "aac",
+      "hashFormatGridFullDecode": true
+    },
+    {
+      "height": 480,
+      "segments": 1,
+      "seconds": 5.005,
+      "fps": "30000/1001",
+      "codec": "h264",
+      "audioCodec": "aac",
+      "hashFormatGridFullDecode": true
+    }
+  ],
+  "compiledCaptureSource": "f009725b49a7ea8cb24745f9df660d5f6351da4a",
+  "gpu": "NVIDIA GeForce RTX 4060",
+  "driver": "617.14",
+  "obs": "32.2.2",
+  "testScriptSha256": "324be4097f96f9b02a6e11de94ebd354ea7d8ac0cbf8731abdff526a1cc4f0c4",
+  "checkedAt": "2026-10-08T13:19:43.182495+00:00",
+  "reportedAllocationsAtExit": 1,
+  "allocationCauseQualified": false,
+  "originalProfileHashes": {
+    "basic.ini": "032fa776e9860ba8a49b462f6cecc1ad1c63151cc0bb752349479fe473a83e58",
+    "recordEncoder.json": "d8cafa0e35349e5118a5774aa357f6a857067a3472c410625e34e71c01a963b5",
+    "streamEncoder.json": "744c36a156342e9c014af13b2d5eca964cc29c26e374bb748fb4048d5d3a9fc9"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "checkedAt": "2026-10-08T12:08:26.892Z",
+  "recordingId": "7d4ca4d0-3989-40f5-89d5-b2bb71336f2d",
+  "page": "https://www.alive.org.tw/zh-Hant/member-videos/7d4ca4d0-3989-40f5-89d5-b2bb71336f2d?page=1",
+  "expectedVideoSeconds": 617.183233,
+  "expectedFrameRate": "30000/1001",
+  "producerCommit": "e8fc296a72220a5c35ac960fdf4e0cf412d1f109",
+  "currentPluginCandidate": "f009725b49a7ea8cb24745f9df660d5f6351da4a",
+  "currentCandidatePositiveE2E": false,
+  "initialSamples": [
+    {
+      "currentTime": 335.109262,
+      "duration": 617.215999,
+      "ended": false,
+      "errorCode": null,
+      "height": 720,
+      "paused": false,
+      "readyState": 4,
+      "stage": "720p-mid-play",
+      "width": 1280
+    },
+    {
+      "currentTime": 76.583589,
+      "duration": 480.511999,
+      "ended": false,
+      "errorCode": null,
+      "height": 480,
+      "paused": false,
+      "readyState": 4,
+      "stage": "480p-backward-play",
+      "width": 854
+    },
+    {
+      "currentTime": 186.431905,
+      "duration": 480.511999,
+      "ended": false,
+      "errorCode": null,
+      "height": 480,
+      "paused": false,
+      "readyState": 4,
+      "seekMaximum": "480.511999",
+      "stage": "480p-duration-shortened",
+      "width": 854
+    }
+  ],
+  "firstFailure": {
+    "currentTime": 244.137294,
+    "duration": 480.511999,
+    "ended": false,
+    "errorCode": null,
+    "height": 480,
+    "paused": true,
+    "readyState": 4,
+    "seekMaximum": "480.511999",
+    "width": 854
+  },
+  "firstSeek610Rejected": true,
+  "afterReload": {
+    "playlist": {
+      "status": 200,
+      "segments": 21,
+      "totalSeconds": 617.1832329999996,
+      "endlist": true,
+      "mediaSequence": "0"
+    },
+    "tail": {
+      "currentTime": 617.215999,
+      "duration": 617.215999,
+      "ended": true,
+      "errorCode": null,
+      "height": 480,
+      "paused": true,
+      "readyState": 4,
+      "seekMaximum": "617.215999",
+      "width": 854
+    }
+  },
+  "reproduction": {
+    "before": {
+      "currentTime": 315.375231,
+      "duration": 617.215999,
+      "errorCode": null,
+      "height": 720,
+      "readyState": 4,
+      "width": 1280
+    },
+    "after": {
+      "currentTime": 75.989332,
+      "duration": 337.855999,
+      "ended": false,
+      "errorCode": null,
+      "height": 480,
+      "paused": false,
+      "readyState": 4,
+      "seekMaximum": "337.855999",
+      "width": 854
+    },
+    "seek610Rejected": true,
+    "steps": [
+      "Reload published member page and start playback",
+      "Select 480p and seek610; reaches ended with full duration",
+      "Select720p, seek300, resume and confirm1280x720",
+      "Select480p, seek60 immediately; duration becomes337.855999",
+      "After854x480 decoding resumes, duration and slider maximum remain337.855999",
+      "Pause and attempt610; input rejects value"
+    ]
+  },
+  "screenshot": {
+    "saved": false,
+    "reason": "Two supported browser screenshot commands timed out"
+  },
+  "rootCauseEstablished": false
+}

@@ -1,0 +1,25 @@
+{
+  "scope": "actual OBS retained-queue scan exit; not encoding/E2E/physical blocked I/O qualification",
+  "recordedAt": "2026-10-08T11:38:51.716403+00:00",
+  "baseCommit": "ff1b99fe4bf4324eab6b49263a0610c755506f7a",
+  "testedSourceSha256": {
+    "src\\session-store.cpp": "985418ec8b1f4508a56007ee71707d6218b3101b576ee1875037651a3fe77a28",
+    "src\\session-store.hpp": "ca89daf74ac6875a3578722867608db2466851930a3cfa092b6b83ac06f22985",
+    "src\\platform-controller.cpp": "2dff587cb50f138ba3ceb4c279854c0daaaf782c962e8f46777bb1dfbb899727",
+    "src\\local-controller.cpp": "446b13a5f08a33a1cd667d47f9074f62773b1580fb853d9e632dd76a24a87ac7",
+    "src\\local-controller.hpp": "f397f37cb599b7584286b535b1d0486fdc78a0cea1fa9cd23594967c192d304d",
+    "tests\\upload-test.cpp": "5a3c1ebf1e73ff74b7b899de8940612046fbe2fa26313e34f0faadd2c1bab7cc"
+  },
+  "obsExitCode": 0,
+  "productDllSha256": "a64f841656ad78b6b188885df9429547a22d3a1684fe365d9fba9a0651325a96",
+  "preFixShutdownToContextFreeMs": 37422,
+  "pluginAbsentShutdownToContextFreeMs": 127,
+  "fixedShutdownToContextFreeMs": 98,
+  "retainedQueueBytes": 6674933300,
+  "preservedJournalCount": 18,
+  "journalsPreserved": true,
+  "originalProfilePreserved": true,
+  "reportedAllocationLeaks": 1,
+  "tests": "10 CTest cases pass including pre-cancel and in-flight64MiB hash cancellation; corruption/identity/digest checks remain",
+  "schemaChanged": false
+}

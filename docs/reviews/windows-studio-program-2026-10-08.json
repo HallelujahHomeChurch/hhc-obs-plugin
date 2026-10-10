@@ -1,0 +1,166 @@
+{
+  "evidence": "real local OBS Studio Mode/Program/Preview/transition; not E2E",
+  "observations": [
+    {
+      "elapsedMs": 0,
+      "preview": "HHC studio A",
+      "program": "HHC studio A",
+      "stage": "started",
+      "studioMode": true
+    },
+    {
+      "elapsedMs": 1502,
+      "preview": "HHC studio B",
+      "program": "HHC studio A",
+      "stage": "preview-b",
+      "studioMode": true
+    },
+    {
+      "elapsedMs": 6001,
+      "preview": "HHC studio A",
+      "program": "HHC studio B",
+      "stage": "transition-complete",
+      "studioMode": true
+    },
+    {
+      "elapsedMs": 8499,
+      "preview": "HHC studio B",
+      "program": "HHC studio B",
+      "stage": "preview-b-after-transition",
+      "studioMode": true
+    },
+    {
+      "elapsedMs": 8998,
+      "preview": "HHC studio A",
+      "program": "HHC studio B",
+      "stage": "preview-a-after-transition",
+      "studioMode": true
+    }
+  ],
+  "pixels": [
+    {
+      "rung": "1080p",
+      "second": 2,
+      "rgb": [
+        100,
+        37,
+        33
+      ]
+    },
+    {
+      "rung": "1080p",
+      "second": 4,
+      "rgb": [
+        100,
+        39,
+        32
+      ]
+    },
+    {
+      "rung": "1080p",
+      "second": 7,
+      "rgb": [
+        0,
+        255,
+        1
+      ]
+    },
+    {
+      "rung": "1080p",
+      "second": 10,
+      "rgb": [
+        0,
+        255,
+        1
+      ]
+    },
+    {
+      "rung": "720p",
+      "second": 2,
+      "rgb": [
+        100,
+        37,
+        33
+      ]
+    },
+    {
+      "rung": "720p",
+      "second": 4,
+      "rgb": [
+        100,
+        39,
+        32
+      ]
+    },
+    {
+      "rung": "720p",
+      "second": 7,
+      "rgb": [
+        0,
+        255,
+        1
+      ]
+    },
+    {
+      "rung": "720p",
+      "second": 10,
+      "rgb": [
+        0,
+        255,
+        1
+      ]
+    },
+    {
+      "rung": "480p",
+      "second": 2,
+      "rgb": [
+        100,
+        37,
+        33
+      ]
+    },
+    {
+      "rung": "480p",
+      "second": 4,
+      "rgb": [
+        100,
+        39,
+        32
+      ]
+    },
+    {
+      "rung": "480p",
+      "second": 7,
+      "rgb": [
+        0,
+        255,
+        1
+      ]
+    },
+    {
+      "rung": "480p",
+      "second": 10,
+      "rgb": [
+        0,
+        255,
+        1
+      ]
+    }
+  ],
+  "recordedAt": "2026-10-08T11:19:27.017303+00:00",
+  "nativeCoreSourceCommit": "148c8787fc2fef50908dc5b01c5d44716e0638ca",
+  "fixtureSourceSha256": "42613c35c92f0e68560d61e7dc06493140cd78f0a49e9214e70eb29fbc303c0a",
+  "fixtureDllSha256": "cf723daa825d7df02fc105645784f90c93e25c62b63480df81608b6496d9fe1f",
+  "obsExitCode": 0,
+  "obsPid": 12768,
+  "inventorySha256": "4e7d0e4943de8c5ea0c0566b16cce645a8e06254b1ffd89143e7b040091985f4",
+  "originalProfileHashes": {
+    "basic.ini": "032fa776e9860ba8a49b462f6cecc1ad1c63151cc0bb752349479fe473a83e58",
+    "recordEncoder.json": "d8cafa0e35349e5118a5774aa357f6a857067a3472c410625e34e71c01a963b5",
+    "streamEncoder.json": "744c36a156342e9c014af13b2d5eca964cc29c26e374bb748fb4048d5d3a9fc9"
+  },
+  "portableStudioModeRestored": true,
+  "savedPreviewProgramMode": false,
+  "reportedAllocationLeaks": 1,
+  "scope": "developer fixture only; no product runtime changes; not platform/member/E2E acceptance"
+}
