@@ -8,6 +8,7 @@
 #include <QTemporaryDir>
 #include <QThreadPool>
 #include <QUuid>
+#include <QtConcurrent/QtConcurrentRun>
 #include <iostream>
 
 namespace hhc {
@@ -157,6 +158,43 @@ struct ControllerLifecycleTest {
 			}
 			c.paused_ = true;
 			c.state_.phase = Phase::Failed;
+			c.broadcastId_ = "018f0c1f-18d0-7e81-9f6f-69c456db7003";
+			c.controlAwaiting_ = true;
+			c.controlJob_.setFuture(
+			    QtConcurrent::run([] { return QJsonObject{{"phase", "end_pending"}}; }));
+			check(QThreadPool::globalInstance()->waitForDone(5000),
+			      "control worker completes before Qt consumption");
+			c.view_->onLogout();
+			check(c.auth_.account() == account && c.controlBusy(),
+			      "pending control result fences logout");
+			app.processEvents();
+			check(!c.controlBusy() && c.state_.broadcastPhase == "end_pending" &&
+				  c.state_.phase == Phase::Failed,
+			      "Console End does not change capture phase or stop outputs");
+			const auto priorControl = c.controlJob_.future();
+			c.pollControl();
+			check(!c.controlBusy() && c.controlJob_.future().isFinished() && c.controlJob_.future().result() == priorControl.result(),
+			      "inactive capture does not launch control polls");
+			CaptureJournal recovery;
+			recovery.account = account;
+			recovery.localId = "corrupt-binding";
+			recovery.normalEnd = true;
+			c.recoveryCache_.sessions.append(recovery);
+			const auto corruptDir = SessionStore(platformRoot.path() + "/queue")
+						    .mediaDirectory(account, recovery.localId);
+			QDir().mkpath(corruptDir);
+			atomicJson(corruptDir + "/broadcast-journal.json", {{"recordingId", ""}});
+			const auto previousId = c.id_;
+			c.recover(recovery.localId);
+			check(c.id_ == previousId && !c.jobBusy(),
+			      "corrupt B1 recovery never falls back to another C1 capture");
+			std::function<std::optional<int>()> clock;
+			{
+				CaptureOutput output;
+				clock = output.boundaryClock();
+				check(!clock(), "no marker before encoder progress");
+			}
+			check(!clock(), "expired encoder clock cannot select a recovery marker");
 			c.view_->onLogout();
 			check(c.auth_.account().isEmpty() && c.state_.phase == Phase::Unavailable,
 			      "consumed platform result permits stable signed-out state");

@@ -15,6 +15,11 @@
 
 namespace hhc {
 struct CaptureOutput::Impl {
+	struct MarkerClock {
+		std::array<std::atomic<int64_t>, 3> frames{{-1, -1, -1}};
+		std::atomic<bool> active{true};
+	};
+	std::shared_ptr<MarkerClock> marker = std::make_shared<MarkerClock>();
 	Impl()
 	{
 		for (auto &pts : lastDts)
@@ -67,6 +72,7 @@ struct CaptureOutput::Impl {
 	QString error;
 	void fail(const char *message)
 	{
+		marker->active = false;
 		auto previous = reason.load();
 		while (!reason.compare_exchange_weak(previous, failureReason(previous, StopReason::EncoderFailure))) {
 		}
@@ -154,6 +160,8 @@ struct CaptureOutput::Impl {
 		}
 		if (s.failed)
 			return;
+		if (p->type == OBS_ENCODER_VIDEO && p->track_idx < 3 && p->timebase_den > 0)
+			s.marker->frames[p->track_idx] = p->pts * 30000 / (int64_t(p->timebase_den) * 1001);
 		const unsigned stream = p->type == OBS_ENCODER_AUDIO ? 3 : p->track_idx;
 		if (stream < 4) {
 			auto previous = s.lastDts[stream].load();
@@ -350,6 +358,7 @@ struct CaptureOutput::Impl {
 			std::lock_guard lock(mutex);
 			error = "Capture ended without normal user-stop completion; local media retained";
 		}
+		marker->active = false;
 		done = true;
 		cv.notify_all();
 	}
@@ -488,6 +497,7 @@ bool CaptureOutput::start(const CaptureConfig &config)
 }
 void CaptureOutput::stop(StopReason reason)
 {
+	d->marker->active = false;
 	if (!d->output || d->stopRequested.exchange(true))
 		return;
 	auto previous = d->reason.load();
@@ -506,6 +516,19 @@ void CaptureOutput::stop(StopReason reason)
 bool CaptureOutput::active() const
 {
 	return !d->done && !d->failed;
+}
+std::function<std::optional<int>()> CaptureOutput::boundaryClock() const
+{
+	const std::weak_ptr<Impl::MarkerClock> clock = d->marker;
+	return [clock]() -> std::optional<int> {
+		auto marker = clock.lock();
+		if (!marker || !marker->active)
+			return std::nullopt;
+		std::array<int64_t, 3> frames;
+		for (unsigned i = 0; i < 3; ++i)
+			frames[i] = marker->frames[i].load();
+		return marker->active ? nextCommonBoundary(frames) : std::nullopt;
+	};
 }
 bool CaptureOutput::finished() const
 {

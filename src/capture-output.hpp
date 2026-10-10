@@ -2,6 +2,7 @@
 #include "capture-policy.hpp"
 #include <QString>
 #include <memory>
+#include <functional>
 #include <obs.h>
 namespace hhc {
 struct CaptureConfig {
@@ -24,8 +25,9 @@ public:
 	bool wait(unsigned timeoutMs);
 	QString error() const;
 	std::uint64_t encodedBytes() const;
+	std::function<std::optional<int>()> boundaryClock() const;
 
-private:
+      private:
 	struct Impl;
 	std::unique_ptr<Impl> d;
 };

@@ -1,5 +1,14 @@
 #include "capture-policy.hpp"
+#include <algorithm>
+#include <limits>
 namespace hhc {
+std::optional<int> nextCommonBoundary(const std::array<std::int64_t, 3> &frames)
+{
+	if (*std::min_element(frames.begin(), frames.end()) < 0)
+		return std::nullopt;
+	const auto sequence = *std::max_element(frames.begin(), frames.end()) / 900 + 1;
+	return sequence <= std::numeric_limits<int>::max() ? std::optional<int>(int(sequence)) : std::nullopt;
+}
 StopReason failureReason(StopReason current, StopReason failure)
 {
 	return current == StopReason::User || current == StopReason::Shutdown ? failure : current;

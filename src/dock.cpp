@@ -11,6 +11,8 @@
 #include <QComboBox>
 #include <QMessageBox>
 #include <QPointer>
+#include <QJsonObject>
+#include <QSignalBlocker>
 namespace hhc {
 Dock::Dock(QWidget *parent) : QWidget(parent)
 {
@@ -59,6 +61,18 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	connect(login_, &QPushButton::clicked, this, [this] {
 		if (onLogin)
 			onLogin();
+	});
+	broadcasts_ = new QComboBox;
+	broadcasts_->setObjectName("broadcasts");
+	broadcasts_->setAccessibleName(QString::fromUtf8("收錄方式與直播場次"));
+	setBroadcasts({});
+	layout->addWidget(broadcasts_);
+	broadcastRefresh_ = new QPushButton(QString::fromUtf8("重新查詢可綁定的直播"));
+	broadcastRefresh_->setObjectName("broadcastRefresh");
+	layout->addWidget(broadcastRefresh_);
+	connect(broadcastRefresh_, &QPushButton::clicked, this, [this] {
+		if (onBroadcastRefresh)
+			onBroadcastRefresh();
 	});
 	auto *titleLabel = new QLabel(QString::fromUtf8("本場標題"));
 	title_ = new QLineEdit;
@@ -194,20 +208,38 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	setTabOrder(live_, publish_);
 	setTabOrder(publish_, action_);
 	apply({});
+	connect(broadcasts_, &QComboBox::currentIndexChanged, this, [this] {
+		apply(currentState_);
+		if (!selectedBroadcast().isEmpty()) {
+			title_->setText(broadcasts_->currentText());
+			hint_->setText(QString::fromUtf8(
+			    "綁定後先收錄預覽。直播開始、結束與會後發布由控制室管理；結束直播會繼續收錄。"));
+		}
+	});
 }
 void Dock::apply(const DockState &s)
 {
+	currentState_ = s;
 	if (!s.localOnly && accountId_ != s.account) {
 		accountId_ = s.account;
 		title_->setText(QDate::currentDate().toString("yyyy-MM-dd") + QString::fromUtf8(" 聚會"));
 		track_->setCurrentIndex(0);
 		setRecoverySessions({});
+		setBroadcasts({});
 		setRecoveryText(QString::fromUtf8("尚無此帳號的本機收錄。"));
 	}
 	capturing_ = s.phase == Phase::Capturing;
 	localOnly_ = s.localOnly;
 	const bool idle = s.phase == Phase::Ready || s.phase == Phase::DraftReady || s.phase == Phase::Published ||
 			  s.phase == Phase::Failed || s.phase == Phase::Unavailable;
+	broadcasts_->setVisible(!s.localOnly);
+	broadcastRefresh_->setVisible(!s.localOnly);
+	broadcasts_->setEnabled(s.connected && s.phase == Phase::Ready && !s.checkingLocal);
+	broadcastRefresh_->setEnabled(s.connected && idle && !s.checkingLocal);
+	if (s.broadcastBound && s.phase == Phase::Capturing)
+		broadcastRefresh_->setEnabled(true);
+	broadcastRefresh_->setText(
+	    QString::fromUtf8(s.broadcastBound ? "重新確認直播控制" : "重新查詢可綁定的直播"));
 	login_->setVisible(!s.localOnly);
 	login_->setEnabled(idle && !s.checkingLocal);
 	logout_->setVisible(!s.localOnly && s.connected);
@@ -215,8 +247,8 @@ void Dock::apply(const DockState &s)
 	login_->setText(s.account.isEmpty() ? QString::fromUtf8("登入 HHC") : QString::fromUtf8("重新登入 HHC"));
 	account_->setText(s.account.isEmpty() ? QString::fromUtf8("尚未登入")
 					      : QString::fromUtf8("帳號：%1").arg(s.account));
-	closeLive_->setVisible(!s.localOnly && s.connected);
-	cancelPublish_->setVisible(!s.localOnly && s.connected);
+	closeLive_->setVisible(!s.localOnly && s.connected && !s.broadcastBound);
+	cancelPublish_->setVisible(!s.localOnly && s.connected && !s.broadcastBound);
 	closeLive_->setEnabled(s.liveEnabled && (s.phase == Phase::Capturing || s.phase == Phase::Uploading));
 	cancelPublish_->setEnabled(
 		s.autoPublish.value_or(false) &&
@@ -335,6 +367,29 @@ void Dock::apply(const DockState &s)
 	}
 	if (s.checkingLocal && s.phase != Phase::Capturing && s.phase != Phase::StopPending)
 		action_->setEnabled(false);
+	if (!s.localOnly && (s.broadcastBound || !selectedBroadcast().isEmpty())) {
+		title_->setEnabled(false);
+		live_->setEnabled(false);
+		publish_->setEnabled(false);
+		hint_->setText(QString::fromUtf8("控制室管理直播開始、結束與會後發布。停止收錄只停止本次 "
+						 "HHC，不影響 YouTube 或本機錄影。"));
+		if (s.phase == Phase::Ready)
+			action_->setText(QString::fromUtf8("綁定並開始 HHC 收錄"));
+		if (s.phase == Phase::Creating)
+			status_->setText(QString::fromUtf8("等待直播綁定就緒"));
+		if (s.broadcastBound) {
+			QString label = QString::fromUtf8("待確認");
+			for (const auto &[phase, text] :
+			     {std::pair{"draft", "草稿"}, std::pair{"scheduled", "已發布預告"},
+			      std::pair{"preview", "預覽收錄中"}, std::pair{"start_pending", "等待開播條件"},
+			      std::pair{"live", "直播中"}, std::pair{"end_pending", "等待結束邊界"},
+			      std::pair{"processing", "會後處理中"}, std::pair{"archived", "已轉為錄影"},
+			      std::pair{"cancelled", "已取消"}, std::pair{"failed", "需要處理"}})
+				if (s.broadcastPhase == phase)
+					label = QString::fromUtf8(text);
+			liveStatus_->setText(QString::fromUtf8("控制室：") + label);
+		}
+	}
 }
 unsigned Dock::audioTrack() const
 {
@@ -358,6 +413,21 @@ bool Dock::selectedLive() const
 bool Dock::selectedPublish() const
 {
 	return publish_->isChecked();
+}
+QString Dock::selectedBroadcast() const { return broadcasts_->currentData().toString(); }
+void Dock::setBroadcasts(const QJsonArray &items)
+{
+	const auto selected = broadcasts_->currentData();
+	const QSignalBlocker blocker(broadcasts_);
+	broadcasts_->clear();
+	broadcasts_->addItem(QString::fromUtf8("獨立收錄（既有錄影／直播設定）"), QString{});
+	for (const auto &v : items) {
+		const auto o = v.toObject();
+		broadcasts_->addItem(o["title"].toString(), o["recordingId"]);
+	}
+	const auto index = broadcasts_->findData(selected);
+	if (index >= 0)
+		broadcasts_->setCurrentIndex(index);
 }
 void Dock::setRecoverySessions(const QStringList &ids, const QStringList &cleanupIds)
 {

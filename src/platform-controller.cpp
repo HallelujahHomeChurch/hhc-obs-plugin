@@ -1,4 +1,5 @@
 #include "async.hpp"
+#include "windows-path.hpp"
 #include "platform-controller.hpp"
 #include "hls-muxer.hpp"
 #include <QtConcurrent/QtConcurrentRun>
@@ -29,6 +30,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 	view_->onAction = [this] {
 		action();
 	};
+	view_->onBroadcastRefresh = [this] { refreshBroadcasts(); };
 	view_->onRefresh = [this] {
 		refresh();
 	};
@@ -36,7 +38,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		recover(id);
 	};
 	view_->onLogin = [this] {
-		if (closing_ || authenticating_ || busy() || jobBusy())
+		if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy())
 			return;
 		const bool previouslyPaused = paused_;
 		paused_ = true;
@@ -54,7 +56,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		view_->apply(state_);
 	};
 	view_->onLogout = [this] {
-		if (closing_ || authenticating_ || busy() || jobBusy())
+		if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy())
 			return;
 		try {
 			auth_.logout();
@@ -68,7 +70,8 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		QDesktopServices::openUrl(QUrl::fromLocalFile(root_ + "/queue"));
 	};
 	view_->onOpenCleanup = [this](QString id) {
-		if (closing_ || authenticating_ || busy() || jobBusy() || auth_.account().isEmpty())
+		if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy() ||
+		    auth_.account().isEmpty())
 			return;
 		SessionStore store(root_ + "/queue");
 		for (const auto &j : recoveryCache_.sessions) {
@@ -98,6 +101,8 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		if (state_.account != auth_.account()) {
 			capture_.reset();
 			id_.clear();
+			broadcastId_.clear();
+			controlPaused_ = false;
 			owner_.clear();
 			title_.clear();
 			recoveryCache_ = {};
@@ -136,6 +141,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 	timer_.setInterval(200);
 	connect(&timer_, &QTimer::timeout, this, [this] { poll(); });
 	connect(&job_, &QFutureWatcher<PlatformJob>::finished, this, [this] { completed(); });
+	connect(&controlJob_, &QFutureWatcher<QJsonObject>::finished, this, [this] { controlCompleted(); });
 	timer_.start();
 	auth_.resume();
 }
@@ -174,6 +180,7 @@ void PlatformController::shutdown()
 	}
 	try {
 		job_.waitForFinished();
+		controlJob_.waitForFinished();
 	} catch (...) {
 	}
 	if (!id_.isEmpty())
@@ -213,6 +220,90 @@ void PlatformController::refresh()
 		return result;
 	});
 }
+void PlatformController::refreshBroadcasts()
+{
+	if (!closing_ && !authenticating_ && busy() && !broadcastId_.isEmpty()) {
+		controlPaused_ = false;
+		controlFailures_ = 0;
+		nextControl_ = {};
+		pollControl();
+		return;
+	}
+	if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy() || auth_.account().isEmpty())
+		return;
+	state_.checkingLocal = true;
+	view_->apply(state_);
+	const auto account = auth_.account();
+	launch([this, account] {
+		HttpCancellationScope cancellation(cancelled_);
+		ApiClient api(QUrl("https://admin.alive.org.tw/api"), [this, account](bool force) {
+			auto token = auth_.bearer(force);
+			if (auth_.account() != account)
+				throw RequestError(403, "account_mismatch");
+			return token;
+		});
+		PlatformJob result;
+		result.broadcastScan = true;
+		result.broadcasts = BroadcastControl::selectable(api);
+		return result;
+	});
+}
+void PlatformController::pollControl()
+{
+	if (closing_ || authenticating_ || paused_ || controlPaused_ || controlBusy() ||
+	    broadcastId_.isEmpty() || !busy() || stopping_ || creating_ ||
+	    std::chrono::steady_clock::now() < nextControl_)
+		return;
+	const auto directory = SessionStore(root_ + "/queue").mediaDirectory(owner_, id_);
+	const auto account = owner_, id = id_;
+	const auto boundary = capture_->boundaryClock();
+	controlAwaiting_ = true;
+	try {
+		controlJob_.setFuture(QtConcurrent::run([this, directory, account, id, boundary] {
+			HttpCancellationScope cancellation(cancelled_);
+			ApiClient api(QUrl("https://admin.alive.org.tw/api"), [this, account](bool force) {
+				auto token = auth_.bearer(force);
+				if (auth_.account() != account)
+					throw RequestError(403, "account_mismatch");
+				return token;
+			});
+			return BroadcastControl(directory, account, id, api).poll(boundary);
+		}));
+	} catch (...) {
+		controlAwaiting_ = false;
+		throw;
+	}
+}
+void PlatformController::controlCompleted()
+{
+	const auto consumed = qScopeGuard([this] { controlAwaiting_ = false; });
+	if (closing_ || !view_)
+		return;
+	try {
+		auto control = workerResult(controlJob_.future());
+		controlFailures_ = 0;
+		controlIssue_.clear();
+		state_.broadcastPhase = control["phase"].toString();
+		tryObserverJson(
+		    root_ + "/broadcast-status.json",
+		    {{"localId", id_},
+		     {"recordingId", broadcastId_},
+		     {"control", control},
+		     {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
+		nextControl_ = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	} catch (const RequestError &e) {
+		controlIssue_ = QString::fromUtf8("直播控制未完成，收錄與暫存持續：") + e.code;
+		state_.issue = controlIssue_;
+		const auto delay = e.retryDelay(controlFailures_);
+		controlPaused_ = !delay;
+		nextControl_ = std::chrono::steady_clock::now() + std::chrono::seconds(delay.value_or(0));
+	} catch (...) {
+		controlPaused_ = true;
+		controlIssue_ = QString::fromUtf8("直播控制資料無法確認；本機素材與命令意向保留。");
+		state_.issue = controlIssue_;
+	}
+	view_->apply(state_);
+}
 void PlatformController::action()
 {
 	if (closing_ || authenticating_ || !view_)
@@ -231,11 +322,15 @@ void PlatformController::action()
 		nextAttempt_ = {};
 		return;
 	}
-	if (jobBusy() || auth_.account().isEmpty() || !auth_.permitted("cms:recordings:write"))
+	if (jobBusy() || controlBusy() || auth_.account().isEmpty() ||
+	    !auth_.permitted("cms:recordings:write"))
 		return;
 	if (state_.phase == Phase::Published || state_.phase == Phase::DraftReady ||
 	    (state_.phase == Phase::Failed && state_.terminalFailure)) {
 		capture_.reset();
+		state_.broadcastBound = false;
+		state_.broadcastPhase.clear();
+		broadcastId_.clear();
 		state_.phase = Phase::Ready;
 		state_.terminalFailure = false;
 		state_.issue.clear();
@@ -253,10 +348,15 @@ void PlatformController::action()
 	capture_.reset();
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	owner_ = auth_.account();
+	broadcastId_ = view_->selectedBroadcast();
+	controlPaused_ = false;
+	controlIssue_.clear();
+	controlFailures_ = 0;
+	nextControl_ = {};
 	title_ = view_->title();
 	track_ = view_->audioTrack();
-	live_ = view_->selectedLive();
-	publish_ = view_->selectedPublish();
+	live_ = broadcastId_.isEmpty() && view_->selectedLive();
+	publish_ = broadcastId_.isEmpty() && view_->selectedPublish();
 	if ((live_ || publish_) && !auth_.permitted("cms:recordings:publish")) {
 		state_.issue = QString::fromUtf8("目前帳號沒有直播／發布權限。");
 		view_->apply(state_);
@@ -269,6 +369,7 @@ void PlatformController::action()
 	failures_ = 0;
 	state_.phase = Phase::Creating;
 	state_.issue.clear();
+	state_.broadcastBound = !broadcastId_.isEmpty();
 	state_.liveEnabled = live_;
 	state_.liveState.clear();
 	state_.autoPublish = publish_;
@@ -277,7 +378,7 @@ void PlatformController::action()
 }
 void PlatformController::recover(QString id)
 {
-	if (closing_ || authenticating_ || busy() || jobBusy() || auth_.account().isEmpty())
+	if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy() || auth_.account().isEmpty())
 		return;
 	const auto &report = recoveryCache_;
 	auto found = std::find_if(report.sessions.begin(), report.sessions.end(),
@@ -289,9 +390,27 @@ void PlatformController::recover(QString id)
 				  QString::fromUtf8("這場未正常完成。同步會回報 abort 並保留本機素材；不會發布。繼續？"),
 				  QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
 		return;
+	QString broadcastId;
+	const auto broadcastPath =
+	    SessionStore(root_ + "/queue").mediaDirectory(auth_.account(), id) + "/broadcast-journal.json";
+	if (QFileInfo::exists(broadcastPath)) {
+		QFile f(broadcastPath);
+		if (QFileInfo(f).isSymLink() || f.size() > 8 * 1024 * 1024 || !openSharedJsonRead(f))
+			return;
+		const auto meta = QJsonDocument::fromJson(f.readAll()).object();
+		if (meta["account"] != auth_.account() || meta["localId"] != id ||
+		    meta["protocolVersion"] != b1Version || QUuid(meta["recordingId"].toString()).isNull()) {
+			state_.issue = QString::fromUtf8("直播 journal 無法確認；保留原資料，不另建收錄。");
+			view_->apply(state_);
+			return;
+		}
+		broadcastId = meta["recordingId"].toString();
+	}
 	id_ = id;
 	owner_ = auth_.account();
 	capture_.reset();
+	broadcastId_ = broadcastId;
+	state_.broadcastBound = !broadcastId_.isEmpty();
 	creating_ = false;
 	state_.terminalFailure = false;
 	paused_ = false;
@@ -310,7 +429,8 @@ void PlatformController::submit()
 	bool active = busy(), create = creating_;
 	auto account = owner_, id = id_, title = title_;
 	bool publish = publish_, live = live_;
-	launch([this, account, id, title, publish, live, active, create] {
+	auto broadcastId = broadcastId_;
+	launch([this, account, id, title, publish, live, active, create, broadcastId] {
 		HttpCancellationScope cancellation(cancelled_);
 		if (auth_.account() != account)
 			throw RequestError(403, "account_mismatch");
@@ -322,14 +442,28 @@ void PlatformController::submit()
 		});
 		CaptureSync sync(root_ + "/queue", account, id, api);
 		PlatformJob result;
-		if (create) {
+		if (create || !broadcastId.isEmpty()) {
 			CaptureJournal j;
 			j.account = account;
 			j.localId = id;
 			SessionStore store(root_ + "/queue");
 			if (!QFileInfo::exists(store.mediaDirectory(account, id) + "/journal.json"))
 				store.save(j);
-			result.sync = sync.begin(title, publish, live);
+			if (broadcastId.isEmpty())
+				result.sync = sync.begin(title, publish, live);
+			else {
+				BroadcastControl control(store.mediaDirectory(account, id), account, id, api);
+				result.broadcast = control.bind(broadcastId);
+				if (!result.broadcast["binding"].isObject())
+					return result;
+				result.sync = sync.adopt(result.broadcast);
+				if (!create) {
+					if (!active)
+						control.replay();
+					result.sync = sync.step(active);
+				}
+			}
+
 		} else
 			result.sync = sync.step(active);
 		return result;
@@ -349,7 +483,7 @@ void PlatformController::launch(std::function<PlatformJob()> work)
 }
 void PlatformController::control(bool closeLive)
 {
-	if (closing_ || authenticating_ || id_.isEmpty())
+	if (closing_ || authenticating_ || id_.isEmpty() || !broadcastId_.isEmpty())
 		return;
 	try {
 		CaptureSync::persistControl(root_ + "/queue", owner_, id_, closeLive);
@@ -380,6 +514,7 @@ void PlatformController::poll()
 		nextAttempt_ = {};
 		view_->apply(state_);
 	}
+	pollControl();
 	if (!authenticating_ && !id_.isEmpty() && !paused_ && !jobBusy() &&
 	    std::chrono::steady_clock::now() >= nextAttempt_)
 		submit();
@@ -394,13 +529,21 @@ void PlatformController::completed()
 		auto result = workerResult(job_.future());
 		failures_ = 0;
 		state_.issue.clear();
+		if (result.broadcastScan) {
+			view_->setBroadcasts(result.broadcasts);
+			view_->apply(state_);
+			return;
+		}
 		if (result.scan) {
 			recoveryCache_ = result.recovery;
 			QStringList rows, ids, cleanupIds;
 			for (const auto &j : result.recovery.sessions) {
 				if (QFileInfo::exists(
-					    SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
-					    "/remote-journal.json")) {
+					SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
+					"/remote-journal.json") ||
+				    QFileInfo::exists(
+					SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
+					"/broadcast-journal.json")) {
 					ids << j.localId;
 					const bool cleanup = SessionStore(root_ + "/queue")
 								     .mayCleanup(j, QDateTime::currentDateTimeUtc());
@@ -420,6 +563,18 @@ void PlatformController::completed()
 			view_->setRecoverySessions(ids, cleanupIds);
 			view_->apply(state_);
 			return;
+		}
+		if (!result.broadcast.isEmpty()) {
+			state_.broadcastPhase = result.broadcast["phase"].toString();
+			if (!result.broadcast["binding"].isObject()) {
+				nextAttempt_ = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+				view_->apply(state_);
+				return;
+			}
+			title_ = result.broadcast["title"].toString();
+			publish_ = result.broadcast["policy"].toObject()["autoPublish"].toBool();
+			live_ = true;
+			state_.autoPublish = publish_;
 		}
 		const auto &remote = result.sync;
 		state_.pendingBytes = remote.pendingBytes;
@@ -506,6 +661,8 @@ void PlatformController::completed()
 		if (!busy())
 			state_.phase = Phase::Failed;
 	}
+	if (!controlIssue_.isEmpty() && !state_.issue.contains(controlIssue_))
+		state_.issue += "\n" + controlIssue_;
 	view_->apply(state_);
 }
 } // namespace hhc

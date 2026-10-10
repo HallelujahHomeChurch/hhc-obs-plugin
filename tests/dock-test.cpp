@@ -80,6 +80,35 @@ int main(int argc, char **argv)
 		check(dock.audioTrack() == 3, "selected mixer is passed to capture");
 	}
 	int clicks = 0;
+	state.localOnly = false;
+	state.connected = true;
+	state.account = "synthetic";
+	state.phase = hhc::Phase::Ready;
+	state.canPublish = true;
+	state.autoPublish = false;
+	dock.apply(state);
+	dock.setBroadcasts(QJsonArray{QJsonObject{{"title", "SYNTHETIC Console broadcast"},
+						  {"recordingId", "018f0c1f-18d0-7e81-9f6f-69c456db7003"}}});
+	auto *broadcasts = dock.findChild<QComboBox *>("broadcasts");
+	broadcasts->setCurrentIndex(1);
+	check(!dock.selectedBroadcast().isEmpty() && !title->isEnabled() && !live->isEnabled() &&
+		  !publish->isEnabled(),
+	      "Console binding uses server details and policy");
+	broadcasts->setCurrentIndex(0);
+	check(title->isEnabled() && live->isEnabled() && publish->isEnabled(),
+	      "standalone controls restored after deselection");
+	state.broadcastBound = true;
+	state.broadcastPhase = "end_pending";
+	state.phase = hhc::Phase::Capturing;
+	dock.apply(state);
+	check(dock.findChild<QPushButton *>("closeLive")->isHidden() && action->isEnabled(),
+	      "Console End keeps HHC stop available and hides legacy live control");
+	check(dock.findChild<QPushButton *>("broadcastRefresh")->isEnabled(),
+	      "active B1 can retry original control without rebind");
+	state.broadcastBound = false;
+	state.localOnly = true;
+	state.phase = hhc::Phase::Ready;
+	dock.apply(state);
 	dock.onAction = [&] {
 		++clicks;
 	};

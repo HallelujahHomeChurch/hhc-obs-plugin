@@ -1,5 +1,6 @@
 #include "native-auth.hpp"
 #include "capture-sync.hpp"
+#include "broadcast-control.hpp"
 #include "session-store.hpp"
 #include <QCoreApplication>
 #include <QCommandLineParser>
@@ -98,6 +99,8 @@ int main(int argc, char **argv)
 						return bearer;
 					});
 					hhc::CaptureSync sync(root + "/queue", account, j.localId, api);
+					if (QFileInfo::exists(dir + "/broadcast-journal.json"))
+						hhc::BroadcastControl(dir, account, j.localId, api).replay();
 					auto state = sync.step(false);
 					terminalFailed |= state.state == "failed" || state.state == "expired";
 					pending |= state.state != "ready" && state.state != "aborted" &&

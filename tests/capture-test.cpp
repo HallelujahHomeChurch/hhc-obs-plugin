@@ -10,6 +10,12 @@ int main()
 			++failures;
 		}
 	};
+	check(hhc::nextCommonBoundary({899, 898, 897}) == 1, "next common 900-frame boundary");
+	check(hhc::nextCommonBoundary({900, 899, 898}) == 2,
+	      "never select a boundary a rendition already crossed");
+	check(hhc::nextCommonBoundary({7200, 7180, 7199}) == 9,
+	      "markers use encoder progress, not verified watermarks");
+	check(!hhc::nextCommonBoundary({-1, 0, 0}), "all three renditions required");
 	hhc::SourceFormat s{1920, 1080, 30000, 1001, 48000, 2, 1};
 	check(hhc::validateSource(s).empty(), "accept actual Program 1080p29.97 stereo track 1");
 	s.fpsNum = 30;

@@ -1,5 +1,22 @@
 # Current continuation status — 2026-10-10
 
+Latest B1 continuation supersedes the older pending snapshot below. See
+[B1 Windows evidence](reviews/windows-b1-control-2026-10-10.md). Local development is allowed;
+real OBS/API tests remain paused until deployment/feature confirmation and user notice.
+Regular meeting-load follower recovery targets stable approximately 2–3 minutes;
+five-minute outage/ten-minute catch-up is a separate stress indicator. Mandatory
+480p first frame is no longer a release blocker. Preserve original failed measurements.
+
+User-authorized pre-test cleanup deleted seven synthetic platform recordings, each
+with DELETE 204 and subsequent GET 404; four formal recordings were preserved.
+Local journals/media/hashes/reports remain retained. Capture41 had subsequently reached
+ready/publication; its VOD was paused at 1783.947705/9000.213333 seconds and never qualified
+full playback. Deleted platform captures cannot be resumed; future E2E requires new
+approved captures. Receipt evidence is retained locally in
+`artifacts/user-cleanup-20261010-report.json`.
+
+## Earlier 2026-10-10 snapshot (historical)
+
 Actual downloaded CI product `d59f1eb8035168cdc205eebcd1b42f82ecd76c0e`
 passes short native stop/seal/ready/auto-publication, original hashes/full
 three-rendition decode, member VOD, isolated-load recovery and completed

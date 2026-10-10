@@ -4,6 +4,7 @@
 #include "native-auth.hpp"
 #include "dock.hpp"
 #include "session-store.hpp"
+#include "broadcast-control.hpp"
 #include <QPointer>
 #include <QTimer>
 #include <QFutureWatcher>
@@ -12,6 +13,9 @@ struct PlatformJob {
 	SyncState sync;
 	RecoveryReport recovery;
 	bool scan = false;
+	bool broadcastScan = false;
+	QJsonArray broadcasts;
+	QJsonObject broadcast;
 };
 class PlatformController : public QObject {
 public:
@@ -29,6 +33,10 @@ private:
 	void action();
 	void poll();
 	void refresh();
+	void refreshBroadcasts();
+	void pollControl();
+	void controlCompleted();
+	bool controlBusy() const { return controlAwaiting_ || controlJob_.isRunning(); }
 	void submit();
 	void launch(std::function<PlatformJob()>);
 	bool jobBusy() const { return awaitingResult_ || job_.isRunning(); }
@@ -37,6 +45,8 @@ private:
 	void completed();
 	void helper();
 	QString root_, id_, title_, owner_;
+	QString broadcastId_;
+	QString controlIssue_;
 	unsigned track_ = 1;
 	RecoveryReport recoveryCache_;
 	bool stopping_ = false;
@@ -52,5 +62,9 @@ private:
 	std::unique_ptr<CaptureOutput> capture_;
 	QTimer timer_;
 	QFutureWatcher<PlatformJob> job_;
+	QFutureWatcher<QJsonObject> controlJob_;
+	bool controlAwaiting_ = false, controlPaused_ = false;
+	unsigned controlFailures_ = 0;
+	std::chrono::steady_clock::time_point nextControl_{};
 };
 } // namespace hhc
