@@ -118,11 +118,13 @@ int main(int argc, char **argv)
 	state.phase = hhc::Phase::Capturing;
 	dock.apply(state);
 	check(track && !track->isEnabled(), "audio mixer locked during capture");
+	QString stopMessage;
 	auto answerStop = [&](QMessageBox::StandardButton answer) {
 		bool prompted = false;
 		QTimer::singleShot(0, &dock, [&] {
 			if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
 				prompted = true;
+				stopMessage = box->text();
 				box->button(answer)->click();
 			}
 		});
@@ -132,6 +134,20 @@ int main(int argc, char **argv)
 	};
 	check(answerStop(QMessageBox::Cancel) && clicks == 1, "cancel stop must leave capture controller untouched");
 	check(answerStop(QMessageBox::Yes) && clicks == 2, "confirmed stop reaches capture controller once");
+	state.localOnly = false;
+	state.broadcastBound = true;
+	dock.apply(state);
+	check(answerStop(QMessageBox::Cancel) && stopMessage.contains("控制室") &&
+		  !stopMessage.contains("不會自動發布") && clicks == 2,
+	      "B1 stop defers publication policy to Console instead of the disabled C1 checkbox");
+	state.phase = hhc::Phase::DraftReady;
+	dock.apply(state);
+	check(status->text().contains("控制室") && !status->text().contains("已發布"),
+	      "B1 ready does not invent a publication outcome from C1 policy");
+	state.localOnly = true;
+	state.broadcastBound = false;
+	state.phase = hhc::Phase::Capturing;
+	dock.apply(state);
 	QTimer::singleShot(0, &dock, [&] {
 		state.phase = hhc::Phase::Failed;
 		state.terminalFailure = true;

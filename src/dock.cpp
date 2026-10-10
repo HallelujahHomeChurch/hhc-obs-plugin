@@ -191,7 +191,9 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 					? QString::fromUtf8(
 						  "停止這場 HHC 本機驗證收錄？完成後保留資料，不會上傳或發布。")
 					: QString::fromUtf8("停止這場 HHC 收錄？停止後會繼續補傳並等待影片驗證。\n") +
-						  (selectedPublish()
+						  (currentState_.broadcastBound
+							   ? QString::fromUtf8("本場會後發布依控制室設定。")
+							   : selectedPublish()
 							   ? QString::fromUtf8("本場驗證通過後會自動發布。")
 							   : QString::fromUtf8("本場保留為草稿，不會自動發布。"));
 			if (QMessageBox::question(this, QString::fromUtf8("停止 HHC 收錄"), message,
@@ -338,7 +340,8 @@ void Dock::apply(const DockState &s)
 		action_->setText(QString::fromUtf8("等待檢查結果"));
 		break;
 	case Phase::DraftReady:
-		status_->setText(QString::fromUtf8("草稿已就緒"));
+		status_->setText(s.broadcastBound ? QString::fromUtf8("收錄已就緒，發布狀態請見控制室")
+						 : QString::fromUtf8("草稿已就緒"));
 		action_->setText(QString::fromUtf8("開始另一場收錄"));
 		action_->setEnabled(s.connected);
 		break;
