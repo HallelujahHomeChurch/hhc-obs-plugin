@@ -113,12 +113,33 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 	}
 	if (result.status < 200 || result.status >= 300) {
 		const auto code = QJsonDocument::fromJson(result.body).object()["error"].toObject()["code"].toString();
-		static const QSet<QString> known{
-			"capture_invalid",        "capture_unauthorized", "capture_forbidden",
-			"capture_not_found",      "capture_conflict",     "capture_missing_objects",
-			"capture_expired",        "capture_too_large",    "capture_rate_limited",
-			"capture_unavailable",    "recording_conflict",   "invalid_recording",
-			"recordings_unavailable", "unauthorized",         "forbidden"};
+		static const QSet<QString> known{"capture_invalid",
+						 "capture_unauthorized",
+						 "capture_forbidden",
+						 "capture_not_found",
+						 "capture_conflict",
+						 "capture_missing_objects",
+						 "capture_expired",
+						 "capture_too_large",
+						 "capture_rate_limited",
+						 "capture_unavailable",
+						 "recording_conflict",
+						 "invalid_recording",
+						 "recordings_unavailable",
+						 "unauthorized",
+						 "forbidden",
+						 "broadcast_invalid",
+						 "broadcast_not_found",
+						 "broadcast_state_conflict",
+						 "broadcast_already_bound",
+						 "broadcast_active_limit",
+						 "broadcast_epoch_mismatch",
+						 "broadcast_boundary_conflict",
+						 "broadcast_operation_conflict",
+						 "broadcast_revision_conflict",
+						 "broadcast_protocol_unsupported",
+						 "rate_limited",
+						 "unavailable"};
 		throw RequestError(result.status, known.contains(code) ? code : QString("request_rejected"),
 				   result.retryAfter);
 	}

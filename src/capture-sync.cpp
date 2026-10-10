@@ -142,6 +142,34 @@ SyncState CaptureSync::step(bool active)
 	auto owner = lock();
 	return stepImpl(active);
 }
+SyncState CaptureSync::adopt(const QJsonObject &broadcast)
+{
+	require(validWire("BroadcastView", broadcast), "Invalid bound broadcast");
+	const auto binding = broadcast["binding"].toObject();
+	require(binding["actorId"] == account_, "Binding account mismatch");
+	auto owner = lock();
+	if (journal_.empty()) {
+		journal_ = {{"version", 1},
+			    {"account", account_},
+			    {"localId", id_},
+			    {"title", broadcast["title"]},
+			    {"autoPublish", broadcast["policy"].toObject()["autoPublish"]},
+			    {"liveEnabled", true},
+			    {"recordingId", broadcast["recordingId"]},
+			    {"recordingVersion", 0},
+			    {"captureId", binding["captureId"]},
+			    {"mutations", QJsonObject{}},
+			    {"lastCapture", QJsonObject{}}};
+		state_.recordingId = broadcast["recordingId"].toString();
+		state_.captureId = binding["captureId"].toString();
+		save();
+	}
+	require(journal_["recordingId"] == broadcast["recordingId"] &&
+		    journal_["captureId"] == binding["captureId"],
+		"Existing capture differs from binding");
+	poll(); // C1 GET only, never create a parallel capture.
+	return state_;
+}
 SyncState CaptureSync::control(bool live)
 {
 	persistControl(root_, account_, id_, live);

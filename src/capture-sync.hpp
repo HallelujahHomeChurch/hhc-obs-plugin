@@ -18,6 +18,7 @@ public:
 							const QMap<QByteArray, QByteArray> &)>;
 	CaptureSync(QString root, QString account, QString localId, ApiClient &, PutTransport put = httpRequest);
 	SyncState begin(const QString &title, bool autoPublish, bool liveEnabled);
+	SyncState adopt(const QJsonObject &broadcast);
 	SyncState step(bool encoderActive);
 	SyncState control(bool closeLive);
 	QString directory() const;
