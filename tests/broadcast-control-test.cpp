@@ -2,6 +2,7 @@
 #include "capture-sync.hpp"
 #include "session-store.hpp"
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QJsonDocument>
@@ -307,6 +308,17 @@ int main(int argc, char **argv)
 		check(QFile::copy(dir.path() + "/broadcast-journal.json",
 				  sync.directory() + "/broadcast-journal.json"),
 		      "seed original B1 identity beside C1 uploader");
+		check(store.isPrepared(actor, localId),
+		      "B1 journal beside adopted C1 journal permits initial encoder start");
+		QFile unexpected(sync.directory() + "/unexpected.txt");
+		check(unexpected.open(QIODevice::WriteOnly), "create unexpected preparation file");
+		unexpected.write("test");
+		unexpected.close();
+		check(!store.isPrepared(actor, localId), "B1 preparation still rejects unknown files");
+		check(unexpected.remove(), "remove temporary unexpected file");
+		QDir().mkpath(sync.directory() + "/1080p");
+		check(!store.isPrepared(actor, localId), "B1 preparation still rejects existing media directories");
+		check(QDir(sync.directory()).rmdir("1080p"), "remove temporary media directory");
 		b1Unavailable = true;
 		const auto beforeViews = viewGets;
 		bool independent = true;

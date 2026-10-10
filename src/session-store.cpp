@@ -334,7 +334,8 @@ bool SessionStore::isPrepared(const QString &account, const QString &id) const
 		require(!QFileInfo(root_).isSymLink() && !QFileInfo(QFileInfo(dir).absolutePath()).isSymLink() &&
 				!QFileInfo(dir).isSymLink(),
 			"Prepared directory is a link");
-		const QSet<QString> allowed{"journal.json", "remote-journal.json", "local-session.json"};
+		const QSet<QString> allowed{"journal.json", "remote-journal.json", "local-session.json",
+					    "broadcast-journal.json"};
 		for (const auto &name :
 		     QDir(dir).entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System))
 			require(allowed.contains(name) && QFileInfo(dir + "/" + name).isFile() &&
