@@ -16,27 +16,38 @@ const QJsonObject schemaRoot = QJsonDocument::fromJson(QByteArray(
 #include "c1-schema.inc"
 							       ))
 				       .object();
-QJsonObject resolve(const QString &ref)
+const QJsonObject b1Root = QJsonDocument::fromJson(QByteArray(
+#include "b1-schema.inc"
+						       ))
+			       .object();
+QJsonObject resolve(const QJsonObject &root, const QString &ref)
 {
-	QJsonValue v(schemaRoot);
+	QJsonValue v(root);
 	for (const auto &key : ref.mid(2).split('/'))
 		v = v.toObject()[key];
 	return v.toObject();
 }
-bool validate(const QJsonObject &s, const QJsonValue &v, int depth = 0)
+bool validate(const QJsonObject &root, const QJsonObject &s, const QJsonValue &v, int depth = 0)
 {
 	if (depth > 40 || s.empty())
 		return false;
 	if (s.contains("$ref"))
-		return validate(resolve(s["$ref"].toString()), v, depth + 1);
+		return validate(root, resolve(root, s["$ref"].toString()), v, depth + 1);
 	for (const auto &a : s["allOf"].toArray())
-		if (!validate(a.toObject(), v, depth + 1))
+		if (!validate(root, a.toObject(), v, depth + 1))
 			return false;
 	if (s.contains("oneOf")) {
 		int matches = 0;
 		for (const auto &a : s["oneOf"].toArray())
-			matches += validate(a.toObject(), v, depth + 1);
+			matches += validate(root, a.toObject(), v, depth + 1);
 		if (matches != 1)
+			return false;
+	}
+	if (s.contains("anyOf")) {
+		bool matches = false;
+		for (const auto &a : s["anyOf"].toArray())
+			matches |= validate(root, a.toObject(), v, depth + 1);
+		if (!matches)
 			return false;
 	}
 	if (s.contains("const") && s["const"] != v)
@@ -56,17 +67,19 @@ bool validate(const QJsonObject &s, const QJsonValue &v, int depth = 0)
 		return false;
 	if (v.isObject()) {
 		const auto o = v.toObject(), p = s["properties"].toObject();
+		if (o.size() < s["minProperties"].toInt())
+			return false;
 		for (const auto &r : s["required"].toArray())
 			if (!o.contains(r.toString()))
 				return false;
 		for (auto i = o.begin(); i != o.end(); ++i) {
 			if (p.contains(i.key())) {
-				if (!validate(p[i.key()].toObject(), i.value(), depth + 1))
+				if (!validate(root, p[i.key()].toObject(), i.value(), depth + 1))
 					return false;
 			} else if (s["additionalProperties"].isBool() && !s["additionalProperties"].toBool())
 				return false;
 			else if (s["additionalProperties"].isObject() &&
-				 !validate(s["additionalProperties"].toObject(), i.value(), depth + 1))
+				 !validate(root, s["additionalProperties"].toObject(), i.value(), depth + 1))
 				return false;
 		}
 	}
@@ -75,7 +88,7 @@ bool validate(const QJsonObject &s, const QJsonValue &v, int depth = 0)
 		if (a.size() < s["minItems"].toInt() || (s.contains("maxItems") && a.size() > s["maxItems"].toInt()))
 			return false;
 		for (int i = 0; i < a.size(); ++i) {
-			if (s.contains("items") && !validate(s["items"].toObject(), a[i], depth + 1))
+			if (s.contains("items") && !validate(root, s["items"].toObject(), a[i], depth + 1))
 				return false;
 			if (s["uniqueItems"].toBool())
 				for (int j = 0; j < i; ++j)
@@ -189,7 +202,9 @@ qint64 measuredBandwidth(const QVector<double> &durations, const QVector<qint64>
 }
 bool validWire(const QString &schema, const QJsonValue &value)
 {
-	return validate(resolve("#/components/schemas/" + schema), value);
+	const auto &root =
+	    schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot : b1Root;
+	return validate(root, resolve(root, "#/components/schemas/" + schema), value);
 }
 QByteArray canonicalInventory(const QJsonObject &i)
 {

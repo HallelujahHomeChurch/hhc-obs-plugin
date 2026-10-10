@@ -28,6 +28,21 @@ int main(int argc, char **argv)
 			check(hhc::validWire(o["schema"].toString(), o["value"]) == o["valid"].toBool(),
 			      qPrintable(o["name"].toString()));
 	}
+	QFile b1("tests/fixtures/b1.json");
+	check(b1.open(QIODevice::ReadOnly), "read pinned B1 fixtures");
+	const auto b1Bytes = b1.readAll();
+	check(QCryptographicHash::hash(b1Bytes, QCryptographicHash::Sha256).toHex() ==
+		  "bbd056e6e3bb7546caadd4a2ff913ca760341ca61cb6bdfb4e94425be9c82bcc",
+	      "B1 fixture hash");
+	for (const auto &v : QJsonDocument::fromJson(b1Bytes).array()) {
+		const auto o = v.toObject();
+		if (o["schema"].toString().startsWith("Broadcast"))
+			check(hhc::validWire(o["schema"].toString(), o["value"]) == o["valid"].toBool(),
+			      qPrintable(o["name"].toString()));
+	}
+	check(!hhc::validWire("BroadcastControl",
+			      QJsonObject{{"revision", 1}, {"phase", "preview"}, {"pendingCommand", true}}),
+	      "B1 nullable object rejects boolean");
 	auto fixtures = QJsonDocument::fromJson(QByteArray("[]"));
 	QJsonObject token{{"access_token", "synthetic"},
 			  {"refresh_token", "synthetic-refresh"},
