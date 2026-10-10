@@ -197,8 +197,20 @@ QJsonObject BroadcastControl::ack(const QString &commandId, QJsonObject saved)
 		save();
 		return data["broadcast"].toObject();
 	} catch (const RequestError &e) {
-		if (e.status == 409 || e.status == 412)
-			view();
+		if (e.status == 409 || e.status == 412) {
+			const auto current = view();
+			// A rejected stale command must not poison the next command. Other conflicts stay
+			// fenced.
+			if (e.code == "broadcast_state_conflict" &&
+			    current["pendingCommand"].toObject()["commandId"] != commandId) {
+				saved["cancelled"] = true;
+				auto commands = journal_["commands"].toObject();
+				commands[commandId] = saved;
+				journal_["commands"] = commands;
+				save();
+				return current;
+			}
+		}
 		throw;
 	}
 }

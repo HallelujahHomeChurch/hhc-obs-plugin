@@ -99,9 +99,11 @@ int main(int argc, char **argv)
 						return bearer;
 					});
 					hhc::CaptureSync sync(root + "/queue", account, j.localId, api);
-					if (QFileInfo::exists(dir + "/broadcast-journal.json"))
-						hhc::BroadcastControl(dir, account, j.localId, api).replay();
-					auto state = sync.step(false);
+					auto state = sync.step(false, [&] {
+						if (QFileInfo::exists(dir + "/broadcast-journal.json"))
+							hhc::BroadcastControl(dir, account, j.localId, api)
+							    .replay();
+					});
 					terminalFailed |= state.state == "failed" || state.state == "expired";
 					pending |= state.state != "ready" && state.state != "aborted" &&
 							   state.state != "expired" && state.state != "failed" ||

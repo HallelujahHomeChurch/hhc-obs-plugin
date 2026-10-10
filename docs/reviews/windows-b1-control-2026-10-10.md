@@ -11,6 +11,7 @@ Implemented:
 - Markers use current encoder video PTS across all three renditions and the strictly next 900-frame boundary. The clock becomes unavailable after stop/failure/destruction. No verified watermark or scheduledAt gate is used. Public End ACK is exclusive and never stops HHC, YouTube or global OBS outputs.
 - B1 UI uses Console title/policy, preserves standalone C1 options and only exposes the HHC stop action while bound. A control retry keeps the original journal. Uncertain saved ACKs are reconciled before stop/seal recovery; inactive completed journals perform no control polling.
 - Existing C1 normal-stop/tail/upload/seal/ready/autopublish and abnormal abort flow, Credential Manager and OAuth retained unchanged. Broadcast journals store IDs, wire version, bind/ACK bodies and receipts; no credentials or signed URLs.
+- Established uploads no longer depend on B1 GET. Saved uncertain ACKs fence only seal, after C1 stop/upload; rejected stale commands are reconciled and retired without poisoning newer commands. See the [final review and RED/GREEN fixes](windows-b1-final-review-2026-10-10.md).
 
 Local evidence:
 
@@ -22,7 +23,7 @@ Local evidence:
 
 Pending independent qualification:
 
-1. Fresh final source review, hosted CI and unsigned candidate package verification.
+1. Final source review and both Important fixes are complete; hosted CI and unsigned candidate package evidence are linked from the draft PR and package manifest for the actual commit.
 2. Actual deployed Admin #219/Website #197 versions, B1 writer enablement and user notice before real OBS/API tests. Historical handoff deployment/flags are insufficient.
 3. Real OBS bind/preview/start/end boundaries, actual range access, normal Stop, stop/seal/ready/autopublish, crash recovery, and current-source 2.5-hour run.
 4. Deployed member-player quality switching/last-frame preservation, complete duration/seek/pause/rate/DVR, Auto ABR and regular meeting-load follower recovery to stable approximately 2–3 minutes.

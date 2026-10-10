@@ -442,30 +442,21 @@ void PlatformController::submit()
 		});
 		CaptureSync sync(root_ + "/queue", account, id, api);
 		PlatformJob result;
-		if (create || !broadcastId.isEmpty()) {
+		if (!broadcastId.isEmpty()) {
+			const auto bound = sync.broadcastStep(broadcastId, active, create);
+			result.sync = bound.sync;
+			result.broadcast = bound.broadcast;
+		} else if (create) {
 			CaptureJournal j;
 			j.account = account;
 			j.localId = id;
 			SessionStore store(root_ + "/queue");
 			if (!QFileInfo::exists(store.mediaDirectory(account, id) + "/journal.json"))
 				store.save(j);
-			if (broadcastId.isEmpty())
-				result.sync = sync.begin(title, publish, live);
-			else {
-				BroadcastControl control(store.mediaDirectory(account, id), account, id, api);
-				result.broadcast = control.bind(broadcastId);
-				if (!result.broadcast["binding"].isObject())
-					return result;
-				result.sync = sync.adopt(result.broadcast);
-				if (!create) {
-					if (!active)
-						control.replay();
-					result.sync = sync.step(active);
-				}
-			}
-
+			result.sync = sync.begin(title, publish, live);
 		} else
 			result.sync = sync.step(active);
+
 		return result;
 	});
 }

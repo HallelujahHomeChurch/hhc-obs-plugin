@@ -1,4 +1,5 @@
 #include "capture-sync.hpp"
+#include "broadcast-control.hpp"
 #include "session-store.hpp"
 #include "windows-path.hpp"
 #include "wire.hpp"
@@ -137,10 +138,34 @@ SyncState CaptureSync::begin(const QString &t, bool p, bool l)
 	auto owner = lock();
 	return beginImpl(t, p, l);
 }
-SyncState CaptureSync::step(bool active)
+SyncState CaptureSync::step(bool active, std::function<void()> beforeSeal)
 {
 	auto owner = lock();
-	return stepImpl(active);
+	return stepImpl(active, beforeSeal);
+}
+BroadcastSyncResult CaptureSync::broadcastStep(const QString &recordingId, bool active, bool creating)
+{
+	SessionStore store(root_);
+	if (!QFileInfo::exists(directory() + "/journal.json")) {
+		CaptureJournal j;
+		j.account = account_;
+		j.localId = id_;
+		store.save(j);
+	}
+	BroadcastControl control(directory(), account_, id_, api_);
+	BroadcastSyncResult result;
+	if (!creating && !state_.captureId.isEmpty()) {
+		require(state_.recordingId == recordingId, "Bound recording changed");
+		result.sync = step(active, [&] { control.replay(); });
+		return result;
+	}
+	result.broadcast = control.bind(recordingId);
+	if (!result.broadcast["binding"].isObject())
+		return result;
+	result.sync = adopt(result.broadcast);
+	if (!creating)
+		result.sync = step(active, [&] { control.replay(); });
+	return result;
 }
 SyncState CaptureSync::adopt(const QJsonObject &broadcast)
 {
@@ -358,7 +383,7 @@ SyncState CaptureSync::controlImpl(bool closeLive)
 	       base + (closeLive ? "/live" : "/auto-publish"), {}, closeLive ? "close_live" : "cancel_auto_publish");
 	return state_;
 }
-SyncState CaptureSync::stepImpl(bool active)
+SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 {
 	if (state_.captureId.isEmpty())
 		beginImpl(journal_["title"].toString(), journal_["autoPublish"].toBool(),
@@ -404,6 +429,8 @@ SyncState CaptureSync::stepImpl(bool active)
 			"Unknown pending intent");
 		auto method = op == "close_live" || op == "cancel_auto_publish" ? QByteArray("DELETE")
 										: QByteArray("POST");
+		if (op == "seal" && beforeSeal)
+			beforeSeal();
 		mutate(tag, method, basePath + suffix, saved["body"].toObject(), op);
 	}
 	if (state_.state == "ready" || state_.state == "aborted" || state_.state == "expired" ||
@@ -524,6 +551,8 @@ SyncState CaptureSync::stepImpl(bool active)
 	}
 	if (!active && local["normalEnd"].toBool() && complete) {
 		require(local["stopIntent"].toBool() && state_.stopAccepted, "Seal requires durable stop acceptance");
+		if (beforeSeal)
+			beforeSeal();
 		mutate("seal", "POST", base + "/seal",
 		       {{"normalEnd", true}, {"inventory", buildInventory(directory())}}, "seal");
 	}

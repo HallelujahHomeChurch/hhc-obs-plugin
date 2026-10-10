@@ -12,6 +12,10 @@ struct SyncState {
 	quint64 pendingBytes = 0;
 	int lastSequence = -1;
 };
+struct BroadcastSyncResult {
+	SyncState sync;
+	QJsonObject broadcast;
+};
 class CaptureSync {
 public:
 	using PutTransport = std::function<HttpResponse(const QByteArray &, const QUrl &, const QByteArray &,
@@ -19,7 +23,8 @@ public:
 	CaptureSync(QString root, QString account, QString localId, ApiClient &, PutTransport put = httpRequest);
 	SyncState begin(const QString &title, bool autoPublish, bool liveEnabled);
 	SyncState adopt(const QJsonObject &broadcast);
-	SyncState step(bool encoderActive);
+	SyncState step(bool encoderActive, std::function<void()> beforeSeal = {});
+	BroadcastSyncResult broadcastStep(const QString &recordingId, bool encoderActive, bool creating);
 	SyncState control(bool closeLive);
 	QString directory() const;
 	static void persistControl(const QString &root, const QString &account, const QString &id, bool closeLive);
@@ -28,7 +33,7 @@ private:
 	void load();
 	std::unique_ptr<QLockFile> lock();
 	SyncState beginImpl(const QString &, bool, bool);
-	SyncState stepImpl(bool);
+	SyncState stepImpl(bool, std::function<void()> = {});
 	SyncState controlImpl(bool);
 	QJsonObject mutate(QString tag, QByteArray method, QString path, QJsonObject body, QString operation);
 	QJsonObject poll();

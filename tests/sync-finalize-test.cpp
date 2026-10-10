@@ -205,6 +205,17 @@ int main(int argc, char **argv)
 		sync.begin("TEST", true, false);
 		auto queued = sync.step(false);
 		auto sealed = queued;
+		bool fencedSeal = false;
+		for (int n = 0; n < 20 && !sealed.sealAccepted && !fencedSeal; ++n) {
+			try {
+				sealed =
+				    sync.step(false, [] { throw hhc::RequestError(503, "unavailable"); });
+			} catch (const hhc::RequestError &e) {
+				fencedSeal = e.status == 503;
+			}
+		}
+		const bool uploadedBeforeFence =
+		    uploaded.size() == 10 && operations.contains("stop") && !operations.contains("seal");
 		for (int n = 0; n < 20 && !sealed.sealAccepted; ++n)
 			sealed = sync.step(false);
 		const auto beforeReady = store.loadPending(account).first();
@@ -219,6 +230,8 @@ int main(int argc, char **argv)
 			}
 		};
 		check(uploadSafe && uploaded.size() == 10, "PUT exact closed bytes with no CMS bearer or cookies");
+		check(fencedSeal && uploadedBeforeFence,
+		      "B1 reconciliation fence only gates seal after C1 stop and all uploads");
 		check(operations.first() == "create" && operations[1] == "stop" && operations.last() == "seal" &&
 			      operations.count("declare") == 10 && operations.count("confirm") == 10,
 		      "stop is accepted before tail confirmation and seal");

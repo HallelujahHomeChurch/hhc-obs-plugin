@@ -9,6 +9,7 @@
 #include <QKeyEvent>
 #include <QTimer>
 #include <QMessageBox>
+#include <QJsonObject>
 #include <iostream>
 int main(int argc, char **argv)
 {
