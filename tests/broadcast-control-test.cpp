@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 	server.listen(QHostAddress::LocalHost, 0);
 	int bindPosts = 0, ackPosts = 0, viewGets = 0, calls = 0;
 	bool bound = false, loseAck = true, conflict = false, badProtocol = false, rejected = false,
-	     b1Unavailable = false, rejectSuperseded = false;
+	     b1Unavailable = false, rejectSuperseded = false, omitReceiptCommandId = false;
 	int stops = 0, aborts = 0;
 	QFile c1File("tests/fixtures/c1.json");
 	check(c1File.open(QIODevice::ReadOnly), "C1 fixture");
@@ -111,6 +111,14 @@ int main(int argc, char **argv)
 							    {"operation", "ack"},
 							    {"state", "completed"},
 							    {"commandId", command["commandId"]}}}};
+				if (omitReceiptCommandId) {
+					auto receipt = data.toObject()["receipt"].toObject();
+					receipt.remove("commandId");
+					receipt["state"] = "accepted";
+					auto result = data.toObject();
+					result["receipt"] = receipt;
+					data = result;
+				}
 				status = rejected ? 412 : loseAck ? 503 : 202;
 				loseAck = false;
 				if (rejectSuperseded &&
@@ -291,6 +299,23 @@ int main(int argc, char **argv)
 		} catch (...) {
 		}
 		rejectSuperseded = false;
+		stage = "optional-receipt-command-id";
+		omitReceiptCommandId = true;
+		loseAck = false;
+		command["commandId"] = "018f0c1f-18d0-7e81-9f6f-69c456db7017";
+		bool optionalReceiptAccepted = true;
+		try {
+			recovered.poll([] { return std::optional<int>{28}; });
+			hhc::BroadcastControl optionalRestart(dir.path(), actor, "session", api);
+			optionalRestart.replay();
+		} catch (...) {
+			optionalReceiptAccepted = false;
+		}
+		check(optionalReceiptAccepted, "wire-optional commandId accepted and restored with original key");
+		omitReceiptCommandId = false;
+		recovered.poll([] { return std::optional<int>{99}; });
+		check(ackBodies.last()["boundarySequence"] == 28,
+		      "accepted optional receipt replays original marker instead of choosing later boundary");
 		stage = "c1-adopt";
 		QTemporaryDir queueRoot;
 		const QString localId = "session";

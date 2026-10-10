@@ -70,7 +70,8 @@ void BroadcastControl::load()
 		if (!saved["receipt"].isNull())
 			require(validWire("BroadcastReceipt", saved["receipt"]) &&
 				saved["receipt"].toObject()["operationKey"] == body["operationKey"] &&
-				saved["receipt"].toObject()["commandId"] == it.key() &&
+				(!saved["receipt"].toObject().contains("commandId") ||
+				 saved["receipt"].toObject()["commandId"] == it.key()) &&
 				saved["receipt"].toObject()["operation"] == "ack");
 	}
 }
@@ -187,7 +188,8 @@ QJsonObject BroadcastControl::ack(const QString &commandId, QJsonObject saved)
 				.toObject();
 		auto receipt = data["receipt"].toObject();
 		require(receipt["operationKey"] == saved["body"].toObject()["operationKey"] &&
-			receipt["operation"] == "ack" && receipt["commandId"] == commandId &&
+			receipt["operation"] == "ack" &&
+			(!receipt.contains("commandId") || receipt["commandId"] == commandId) &&
 			receipt["state"] != "rejected");
 		checkBinding(data["broadcast"].toObject());
 		saved["receipt"] = receipt;
