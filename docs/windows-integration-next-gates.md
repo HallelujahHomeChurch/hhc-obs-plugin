@@ -1,8 +1,25 @@
-# Current continuation status — 2026-10-10
+# Current continuation status — 2026-10-11
 
-Latest B1 continuation supersedes the older pending snapshot below. See
-[B1 Windows evidence](reviews/windows-b1-control-2026-10-10.md). Local development is allowed;
-real OBS/API tests remain paused until deployment/feature confirmation and user notice.
+Latest B1 production testing supersedes the older pending snapshot below. User confirmed
+no meeting and authorized dedicated OBS testing. The pending CMS weekly release completed;
+actual tested CMS is `hhc-web-api--0000181`, not the handoff's earlier `0000180`.
+See [actual B1 production evidence](reviews/windows-b1-production-2026-10-10.md).
+Two real native failures were fixed at their shared roots: B1 preparation rejected its
+own durable journal, and ACK receipt parsing incorrectly required optional commandId.
+Replacement `fe61bb1` passes native Start/End ACK, preserved [2,8) boundaries,
+Stop/seal/40-object ready and three complete local decoded renditions at 29.97 fps.
+Current `b259fa7` adds correct Console-owned publication text, passes 14/14 local
+tests and both hosted native CI runs, and passes actual never-public process-crash
+GUI recovery with original binding/capture and 12 unchanged file hashes / safe abort.
+Local package and downloaded hosted package hashes remain separate evidence.
+Production acceptance remains incomplete: staff preview cookie preflight returns 403;
+B1 archive is ready while recording remains draft / autoPublish pending; the original
+member page reports expiry before C1 replayUntil. VOD cover bytes also differ from the
+live JPEG, with no authoritative selectedCoverId. See the
+[copyable Mac follow-up](reviews/windows-b1-mac-blockers-2026-10-11.md).
+No new b259fa7 normal shared-load recovery, controlled weak-network ABR, five-minute
+outage/ten-minute stress qualification or 2.5-hour run has passed. Resume those after
+A–D production paths are usable and the user confirms an available meeting-free window.
 Regular meeting-load follower recovery targets stable approximately 2–3 minutes;
 five-minute outage/ten-minute catch-up is a separate stress indicator. Mandatory
 480p first frame is no longer a release blocker. Preserve original failed measurements.
