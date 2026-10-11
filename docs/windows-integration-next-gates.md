@@ -1,6 +1,6 @@
 # Current continuation status — 2026-10-11
 
-## Current fixed candidate work, 17:35 UTC+8
+## Current fixed candidate work, 18:23 UTC+8
 
 Installed product is `9cbeec04d79a09eee89c37f0a92460b80708a805`; both native CI runs and 14/14 local tests pass. Unsigned ZIP SHA-256: `025d7aab1e0eceb7dbefb88862d30e0e31bd83ec3be48e9b5f22df91b5fc1a69`. Actual CMS0183/Website0200 supersede older snapshots below; Asset0090 and fixed B1/C1/media rules remain unchanged.
 
@@ -9,6 +9,8 @@ Real OBS controlled atomic remote-journal replacement failure recovers through t
 Current recording `e496a04e-4e2e-4dad-9269-63a610dd7c06` / capture `bcccb147fbd332d73a9bae51097fa633` remains active and protected from cleanup. Planned Console End around18:51 and HHC/global Stop around18:52 allow both the source and public interval to exceed150 minutes. End/public range, Stop/seal/ready/autopublish, full local decode and VOD checks are still pending. Original follower remains actual1080p with about119 seconds estimated delay at17:34. Controlled weak-media downloads confirm about1.1Mbps; independent Auto DVR playback drops to480p and automatically returns720p then1080p after strong-network restoration, preserving its position/1x. Paused/playing manual quality state and nonempty last frame pass; rapid switching has an18.491-second rebuild wait. See [current measurements](reviews/windows-b1-recheck-long-2026-10-11.md). Old379/388-second and five-minute player failures remain failures.
 
 Long-lived Console preview remains a platform failure: a17:35 retry uses a bearer expired17:21:45, returns401, then refresh200 while the preview alert persists. Console-only reload restores real preview but does not fix renewal. [Mac follow-up](reviews/windows-b1-admin-refresh-followup-2026-10-11.md) records the reproduction; Windows endurance and upload work continue independently. A fresh17:38 member/staff-preview test now qualifies200 staff positive →401 member grant →200 restored staff positive, with original member cookie untouched. The earlier unqualified setup attempt is retained separately; the full public-boundary media authorization matrix is still pending.
+
+The same Mac follow-up now also records a missing member-list live thumbnail: Console has a real1280×720 JPEG, but a fresh member-list card displays only the512×512 church-logo fallback. This does not imply playback failure. At18:18, actual decoded timecode gives130.945-second delay; later drift is disclosed, not substituted for the passed ten-minute gate. Source/global have exceeded two hours. OBS aggregate stats show0encoding skips and6render misses; its UI counter increments on timer callbacks and cannot replace final file duration/decode. Both documentation-only c1010e6 native CI runs pass; installed product remains9cbeec0.
 
 Completed prior b259fa7 short tests now qualify actual preview/member-negative authorization, short follower recovery, controlled ABR, End/public range, ready/autopublish, same-URL VOD/thumbnail and never-public nonpublication. They do not automatically qualify 9cbeec0. Separate cleanup removed only three completed disposable synthetic recordings and retained local evidence/current/ambiguous/failure recordings.
 
