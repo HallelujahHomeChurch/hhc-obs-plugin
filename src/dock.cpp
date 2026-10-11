@@ -390,6 +390,10 @@ void Dock::apply(const DockState &s)
 			      std::pair{"cancelled", "已取消"}, std::pair{"failed", "需要處理"}})
 				if (s.broadcastPhase == phase)
 					label = QString::fromUtf8(text);
+			// Active control polling stops with the encoder; its last phase is no longer current.
+			if (s.phase == Phase::Uploading || s.phase == Phase::Validating ||
+			    s.phase == Phase::DraftReady || s.phase == Phase::Published)
+				label = QString::fromUtf8("收錄後狀態請見控制室");
 			liveStatus_->setText(QString::fromUtf8("控制室：") + label);
 		}
 	}

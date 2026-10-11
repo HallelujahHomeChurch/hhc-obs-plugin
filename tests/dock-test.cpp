@@ -106,6 +106,17 @@ int main(int argc, char **argv)
 	      "Console End keeps HHC stop available and hides legacy live control");
 	check(dock.findChild<QPushButton *>("broadcastRefresh")->isEnabled(),
 	      "active B1 can retry original control without rebind");
+	auto *broadcastStatus = dock.findChild<QLabel *>("liveStatus");
+	const auto activeEndLabel = broadcastStatus->text();
+	for (const auto phase : {hhc::Phase::Uploading, hhc::Phase::Validating,
+	                         hhc::Phase::DraftReady, hhc::Phase::Published}) {
+		state.phase = phase;
+		dock.apply(state);
+		check(broadcastStatus->text() != activeEndLabel &&
+		          broadcastStatus->text().contains("控制室") &&
+		          !broadcastStatus->text().contains("已轉為錄影"),
+		      "stopped B1 does not present a stale active boundary or invent an archive outcome");
+	}
 	state.broadcastBound = false;
 	state.localOnly = true;
 	state.phase = hhc::Phase::Ready;
