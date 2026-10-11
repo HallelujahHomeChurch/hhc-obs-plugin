@@ -1,6 +1,7 @@
 #include "native-auth.hpp"
 #include "http.hpp"
 #include "session-store.hpp"
+#include "windows-path.hpp"
 #include <QFile>
 #include <QCoreApplication>
 #include <QDir>
@@ -157,6 +158,30 @@ int main(int argc, char **argv)
 			counts[s] = counts[s].toInt() + 1;
 		}
 		safe["objectStates"] = counts;
+		const auto localId = qEnvironmentVariable("HHC_DIAGNOSTIC_LOCAL_ID");
+		if (!localId.isEmpty()) {
+			QFile local(hhc::SessionStore(QString::fromLocal8Bit(argv[1]) + "/queue")
+					    .mediaDirectory(auth.account(), localId) + "/journal.json");
+			if (local.size() > 8 * 1024 * 1024 || !hhc::openSharedJsonRead(local))
+				return 8;
+			auto journal = QJsonDocument::fromJson(local.readAll()).object();
+			if (journal["account"] != auth.account() || journal["localId"] != localId)
+				return 8;
+			QMap<QString, QJsonObject> retained;
+			for (const auto &v : journal["objects"].toArray())
+				retained[v.toObject()["path"].toString()] = v.toObject();
+			QJsonArray mismatches;
+			for (const auto &v : c["objects"].toArray()) {
+				auto remote = v.toObject(), object = retained.value(remote["path"].toString());
+				if (object.isEmpty() || object["sha256"] != remote["sha256"] ||
+				    object["size"] != remote["sizeBytes"])
+					mismatches.append(QJsonObject{{"retainedObjectPresent", !object.isEmpty()},
+							     {"hashMatches", object["sha256"] == remote["sha256"]},
+							     {"sizeMatches", object["size"] == remote["sizeBytes"]}});
+			}
+			safe["retainedObjectCount"] = retained.size();
+			safe["immutableMismatches"] = mismatches;
+		}
 		std::cout << QJsonDocument(safe).toJson().toStdString();
 		return c["state"] == "failed" ? 4 : 0;
 	} catch (const std::exception &e) {

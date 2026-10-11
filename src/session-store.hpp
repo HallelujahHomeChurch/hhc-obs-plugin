@@ -36,7 +36,8 @@ public:
 	void confirmReady(const QString &account, const QString &localId, const QString &captureId,
 			  const QString &packageId, QDateTime observedAt);
 	QVector<CaptureJournal> loadPending(const QString &account) const;
-	RecoveryReport scanPending(const QString &account, const std::atomic<bool> *cancelled = nullptr) const;
+	RecoveryReport scanPending(const QString &account, const std::atomic<bool> *cancelled = nullptr,
+				   const QString &localId = {}) const;
 	QString mediaDirectory(const QString &account, const QString &localId) const;
 	bool isPrepared(const QString &account, const QString &localId) const;
 	bool mayCleanup(const CaptureJournal &, QDateTime now) const;

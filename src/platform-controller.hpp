@@ -37,12 +37,13 @@ private:
 	void pollControl();
 	void controlCompleted();
 	bool controlBusy() const { return controlAwaiting_ || controlJob_.isRunning(); }
-	void submit();
+	void submit(bool revalidateLocal = false);
 	void launch(std::function<PlatformJob()>);
 	bool jobBusy() const { return awaitingResult_ || job_.isRunning(); }
 	void recover(QString);
 	void control(bool);
 	void completed();
+	void pauseSync(const QString &code);
 	void helper();
 	QString root_, id_, title_, owner_;
 	QString broadcastId_;

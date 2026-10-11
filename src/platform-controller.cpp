@@ -208,7 +208,20 @@ void PlatformController::helper()
 }
 void PlatformController::refresh()
 {
-	if (closing_ || authenticating_ || jobBusy() || busy() || auth_.account().isEmpty())
+	if (closing_ || authenticating_ || jobBusy() || controlBusy() || auth_.account().isEmpty())
+		return;
+	if (paused_ && !state_.terminalFailure && !id_.isEmpty() && owner_ == auth_.account() &&
+	    (state_.phase == Phase::Capturing || state_.phase == Phase::StopPending ||
+	     state_.phase == Phase::Uploading || state_.phase == Phase::Failed)) {
+		paused_ = false;
+		failures_ = 0;
+		nextAttempt_ = {};
+		state_.issue.clear();
+		view_->apply(state_);
+		submit(true);
+		return;
+	}
+	if (busy())
 		return;
 	state_.checkingLocal = true;
 	view_->apply(state_);
@@ -422,7 +435,7 @@ void PlatformController::recover(QString id)
 	view_->apply(state_);
 	submit();
 }
-void PlatformController::submit()
+void PlatformController::submit(bool revalidateLocal)
 {
 	if (closing_ || authenticating_ || paused_ || jobBusy() || id_.isEmpty())
 		return;
@@ -430,10 +443,15 @@ void PlatformController::submit()
 	auto account = owner_, id = id_, title = title_;
 	bool publish = publish_, live = live_;
 	auto broadcastId = broadcastId_;
-	launch([this, account, id, title, publish, live, active, create, broadcastId] {
+	launch([this, account, id, title, publish, live, active, create, broadcastId, revalidateLocal] {
 		HttpCancellationScope cancellation(cancelled_);
 		if (auth_.account() != account)
 			throw RequestError(403, "account_mismatch");
+		if (revalidateLocal) {
+			const auto report = SessionStore(root_ + "/queue").scanPending(account, &cancelled_, id);
+			if (!report.issues.empty() || report.sessions.size() != 1 || report.sessions[0].localId != id)
+				throw std::runtime_error("Local recovery validation failed; files retained for inspection");
+		}
 		ApiClient api(QUrl("https://admin.alive.org.tw/api"), [this, account](bool force) {
 			auto token = auth_.bearer(force);
 			if (auth_.account() != account)
@@ -646,14 +664,30 @@ void PlatformController::completed()
 			       std::chrono::milliseconds(QRandomGenerator::global()->bounded(1000));
 		if (!busy())
 			state_.phase = Phase::Failed;
+	} catch (const std::exception &e) {
+		// Only exact internal messages may select a public code; never emit raw exception text.
+		const auto reason = QByteArray(e.what());
+		const QString code = reason == "Remote journal commit failed" ? "local_remote_journal_write_failed"
+				     : reason == "Queue document unavailable" ? "local_queue_unavailable"
+				     : reason == "Closed upload bytes changed" ? "local_media_changed"
+				     : reason == "Remote immutable object differs" ? "local_remote_media_conflict"
+										  : "local_sync_validation_failed";
+		pauseSync(code);
 	} catch (...) {
-		paused_ = true;
-		state_.issue = QString::fromUtf8("同步檢查失敗；保留原始意向及本機資料，請重新檢查。");
-		if (!busy())
-			state_.phase = Phase::Failed;
+		pauseSync("local_sync_validation_failed");
 	}
 	if (!controlIssue_.isEmpty() && !state_.issue.contains(controlIssue_))
 		state_.issue += "\n" + controlIssue_;
 	view_->apply(state_);
+}
+void PlatformController::pauseSync(const QString &code)
+{
+	paused_ = true;
+	state_.issue = QString::fromUtf8("同步檢查失敗；保留原始意向及本機資料，請重新檢查。 ") + code;
+	if (!busy())
+		state_.phase = Phase::Failed;
+	tryObserverJson(root_ + "/sync-error.json",
+			{{"localId", id_}, {"code", code},
+			 {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
 }
 } // namespace hhc

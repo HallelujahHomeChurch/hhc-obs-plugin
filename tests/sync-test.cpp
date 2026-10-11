@@ -15,6 +15,20 @@ int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
 	try {
+		if (argc == 5 && QString::fromLocal8Bit(argv[1]) == "--inspect-local") {
+			const auto report = hhc::SessionStore(QString::fromLocal8Bit(argv[2]))
+						   .scanPending(QString::fromLocal8Bit(argv[3]), nullptr,
+								QString::fromLocal8Bit(argv[4]));
+			if (!report.issues.empty() || report.sessions.size() != 1)
+				throw std::runtime_error("Local recovery validation failed; files retained for inspection");
+			hhc::ApiClient offline(QUrl("http://127.0.0.1"), [](bool) -> QByteArray {
+				throw std::runtime_error("Read-only inspection attempted HTTP");
+			});
+			hhc::CaptureSync inspect(QString::fromLocal8Bit(argv[2]), QString::fromLocal8Bit(argv[3]),
+						 QString::fromLocal8Bit(argv[4]), offline);
+			std::cout << "Saved local checkpoint, receipted media and synchronization journal validate; no HTTP or mutation\n";
+			return 0;
+		}
 		QFile f("tests/fixtures/c1.json");
 		f.open(QIODevice::ReadOnly);
 		QJsonObject create, poll, abort, stop;

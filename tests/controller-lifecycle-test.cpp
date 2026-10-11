@@ -2,11 +2,13 @@
 #include "platform-controller.hpp"
 #include "hls-muxer.hpp"
 #include "windows-path.hpp"
+#include "async.hpp"
 #include <QApplication>
 #include <QFile>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QThreadPool>
+#include <QCryptographicHash>
 #include <QUuid>
 #include <QtConcurrent/QtConcurrentRun>
 #include <iostream>
@@ -55,6 +57,14 @@ struct ControllerLifecycleTest {
 			CloseHandle(held);
 		check(tryObserverJson(evidencePath, {{"recordingMs", 4000}}),
 		      "fixture telemetry recovers when the observer releases its file");
+		held = CreateFileW(reinterpret_cast<LPCWSTR>(nativePath.utf16()), GENERIC_READ,
+				   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				   FILE_ATTRIBUTE_NORMAL, nullptr);
+		check(held != INVALID_HANDLE_VALUE, "observer opens a shared metadata snapshot");
+		check(writeAtomicMetadata(evidencePath, QJsonDocument(QJsonObject{{"recordingMs", 5000}}).toJson()),
+		      "delete-sharing observer does not block authoritative metadata replacement");
+		if (held != INVALID_HANDLE_VALUE)
+			CloseHandle(held);
 		QTemporaryDir localRoot;
 		{
 			LocalController c(localRoot.path());
@@ -155,6 +165,117 @@ struct ControllerLifecycleTest {
 				drain();
 				check(c.state_.terminalFailure == (error.code == "capture_expired") && c.id_ == id,
 				      "terminal capture HTTP error is distinguished from permission and temporary failures");
+			}
+			// Reject a corrupt retained journal before any HTTP; a retry must use this same session.
+			const auto retryDir = SessionStore(platformRoot.path() + "/queue").mediaDirectory(account, id);
+			QDir().mkpath(retryDir);
+			atomicJson(retryDir + "/remote-journal.json", {{"invalid", true}});
+			c.paused_ = true;
+			c.state_.terminalFailure = false;
+			c.state_.phase = Phase::Capturing;
+			c.state_.issue = "retained failure";
+			c.failures_ = 5;
+			c.cancelled_ = false; // Both corrupt journals reject before any HTTP.
+			c.refresh();
+			check(!c.paused_ && c.failures_ == 0 && c.id_ == id && !c.creating_ && c.owner_ == account,
+			      "operator recheck resumes the paused original capture without creating another");
+			check(QThreadPool::globalInstance()->waitForDone(5000), "retained journal retry completes");
+			bool localRejected = false;
+			try {
+				workerResult(c.job_.future());
+			} catch (const std::exception &e) {
+				localRejected = QByteArray(e.what()) == "Local recovery validation failed; files retained for inspection";
+			}
+			check(localRejected, "paused retry rejects missing local journal before remote sync or HTTP");
+			drain();
+			check(c.paused_ && c.id_ == id && !c.state_.issue.isEmpty(),
+			      "retry revalidates retained media and fails closed on a corrupt journal");
+			CaptureJournal saved;
+			saved.account = account;
+			saved.localId = id;
+			SessionStore retryStore(platformRoot.path() + "/queue");
+			retryStore.save(saved);
+			QFile localRetry(retryDir + "/journal.json");
+			check(localRetry.open(QIODevice::ReadOnly), "read typed retry checkpoint");
+			const auto typedLocal = QJsonDocument::fromJson(localRetry.readAll()).object();
+			localRetry.close();
+			for (const auto &invalidEnd : {QJsonValue(), QJsonValue("true")}) {
+				auto damaged = typedLocal;
+				damaged["stopIntent"] = true;
+				if (invalidEnd.isNull())
+					damaged.remove("normalEnd");
+				else
+					damaged["normalEnd"] = invalidEnd;
+				atomicJson(retryDir + "/journal.json", damaged);
+				c.paused_ = true;
+				c.refresh();
+				check(QThreadPool::globalInstance()->waitForDone(5000), "damaged Stop retry completes");
+				bool refusedBeforeSync = false;
+				try { workerResult(c.job_.future()); } catch (const std::exception &e) {
+					refusedBeforeSync = QByteArray(e.what()) == "Local recovery validation failed; files retained for inspection";
+				}
+				check(refusedBeforeSync, "damaged normalEnd never turns a retry into an abort request");
+				drain();
+			}
+			atomicJson(retryDir + "/journal.json", typedLocal);
+			c.paused_ = true;
+			c.refresh();
+			check(QThreadPool::globalInstance()->waitForDone(5000), "typed checkpoint retry completes");
+			bool reachedOriginalRemote = false;
+			try { workerResult(c.job_.future()); } catch (const std::exception &e) {
+				reachedOriginalRemote = QByteArray(e.what()) == "Unknown remote journal field";
+			}
+			check(reachedOriginalRemote && c.id_ == id,
+			      "valid local checkpoint proceeds to validation of the same remote journal");
+			drain();
+			QDir().mkpath(retryDir + "/480p");
+			QFile retainedMedia(retryDir + "/480p/init.mp4");
+			check(retainedMedia.open(QIODevice::WriteOnly) && retainedMedia.write("aaa") == 3,
+			      "create immutable retry media fixture");
+			retainedMedia.close();
+			saved.objects.append({"480p/init.mp4", 3,
+				QString::fromLatin1(QCryptographicHash::hash("aaa", QCryptographicHash::Sha256).toHex()), false});
+			retryStore.save(saved);
+			check(retainedMedia.open(QIODevice::WriteOnly) && retainedMedia.write("bbb") == 3,
+			      "change retained media without changing its size");
+			retainedMedia.close();
+			c.paused_ = true;
+			c.refresh();
+			check(QThreadPool::globalInstance()->waitForDone(5000), "changed media retry completes");
+			bool changedMediaRejected = false;
+			try { workerResult(c.job_.future()); } catch (const std::exception &e) {
+				changedMediaRejected = QByteArray(e.what()) == "Local recovery validation failed; files retained for inspection";
+			}
+			check(changedMediaRejected, "retry hashes retained media before HTTP, even for equal-length corruption");
+			drain();
+			c.owner_ = "another-account";
+			c.refresh();
+			check(c.paused_ && c.id_ == id, "recheck never resumes another account's retained capture");
+			drain();
+			c.owner_ = account;
+			c.state_.terminalFailure = true;
+			c.refresh();
+			check(c.paused_ && c.id_ == id, "recheck never resumes a terminal capture");
+			drain();
+			c.state_.terminalFailure = false;
+			QFile::remove(retryDir + "/remote-journal.json");
+			for (const auto &failure : {
+				 std::pair<const char *, const char *>{"Remote journal commit failed", "local_remote_journal_write_failed"},
+				 {"Queue document unavailable", "local_queue_unavailable"},
+				 {"Closed upload bytes changed", "local_media_changed"},
+				 {"Remote immutable object differs", "local_remote_media_conflict"},
+				 {"https://example.invalid/upload?signature=synthetic-secret", "local_sync_validation_failed"}}) {
+				c.paused_ = false;
+				c.launch([message = failure.first]() -> PlatformJob { throw std::runtime_error(message); });
+				drain();
+				QFile diagnostics(platformRoot.path() + "/sync-error.json");
+				check(diagnostics.open(QIODevice::ReadOnly), "safe sync error evidence saved");
+				const auto bytes = diagnostics.readAll();
+				const auto diagnostic = QJsonDocument::fromJson(bytes).object();
+				check(c.paused_ && c.state_.issue.contains(failure.second) &&
+					      diagnostic["code"] == failure.second && diagnostic["localId"] == id &&
+					      !bytes.contains("synthetic-secret") && !c.state_.issue.contains("synthetic-secret"),
+				      "local failures expose only fixed diagnostic codes and retain the original session");
 			}
 			c.paused_ = true;
 			c.state_.phase = Phase::Failed;

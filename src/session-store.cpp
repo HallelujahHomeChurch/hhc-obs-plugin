@@ -164,14 +164,19 @@ QVector<CaptureJournal> SessionStore::loadPending(const QString &account) const
 	require(report.issues.empty(), "session recovery issues require attention; media retained");
 	return report.sessions;
 }
-RecoveryReport SessionStore::scanPending(const QString &account, const std::atomic<bool> *cancelled) const
+RecoveryReport SessionStore::scanPending(const QString &account, const std::atomic<bool> *cancelled,
+				       const QString &localId) const
 {
 	identifiers(account, "probe");
 	checkCancellation(cancelled);
 	const auto accountDir = root_ + "/" + hash(account.toUtf8());
 	require(!QFileInfo(root_).isSymLink() && !QFileInfo(accountDir).isSymLink(), "account directory is a link");
 	RecoveryReport result;
-	for (const auto &id : QDir(accountDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+	if (!localId.isEmpty())
+		identifiers(account, localId);
+	const auto ids = localId.isEmpty() ? QDir(accountDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot)
+					 : QStringList{localId};
+	for (const auto &id : ids) {
 		checkCancellation(cancelled);
 		try {
 			const auto dir = mediaDirectory(account, id);
