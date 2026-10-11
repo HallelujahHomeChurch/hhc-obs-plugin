@@ -54,6 +54,59 @@ QString originalFile;
 QElapsedTimer overlap;
 qint64 overlapMs = 0;
 QJsonObject recordingStats;
+void armManualTransportFault()
+{
+	const auto path = qEnvironmentVariable("HHC_FIXTURE_TRANSPORT_TRIGGER");
+	if (path.isEmpty())
+		return;
+	const auto requested = qEnvironmentVariable("HHC_FIXTURE_TRANSPORT_SECONDS");
+	bool validSeconds = true;
+	const int seconds = requested.isEmpty() ? 65 : requested.toInt(&validSeconds);
+	if (!validSeconds || seconds < 1 || seconds > 300) {
+		hhc::tryObserverJson(path + ".json", {{"error", "Fault duration must be 1..300 seconds"}});
+		return;
+	}
+	const auto previous = QNetworkProxy::applicationProxy();
+	auto receipt = std::make_shared<QJsonObject>(QJsonObject{{"armedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+		{"seconds", seconds}, {"mechanism", "OBS-process Qt proxy; no OS network changes"}});
+	auto *server = new QTcpServer(QCoreApplication::instance());
+	auto *watch = new QTimer(QCoreApplication::instance());
+	const auto save = [path, receipt] { hhc::tryObserverJson(path + ".json", *receipt); };
+	const auto restore = [previous, receipt, server, watch, save] {
+		if (receipt->contains("restoredAt"))
+			return;
+		QNetworkProxy::setApplicationProxy(previous);
+		server->close();
+		watch->stop();
+		(*receipt)["restoredAt"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+		(*receipt)["proxyRestored"] = QNetworkProxy::applicationProxy() == previous;
+		save();
+	};
+	QObject::connect(server, &QTcpServer::newConnection, [server] {
+		while (server->hasPendingConnections()) {
+			auto *socket = server->nextPendingConnection();
+			socket->abort();
+			socket->deleteLater();
+		}
+	});
+	QObject::connect(watch, &QTimer::timeout, [path, receipt, server, watch, save, restore, seconds] {
+		if (!QFile::exists(path))
+			return;
+		watch->stop();
+		if (!server->listen(QHostAddress::LocalHost, 0)) {
+			(*receipt)["error"] = "Local fault listener unavailable";
+			restore();
+			return;
+		}
+		QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1", server->serverPort()));
+		(*receipt)["blockedAt"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+		save();
+		QTimer::singleShot(seconds * 1000, QCoreApplication::instance(), restore);
+	});
+	QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, restore);
+	watch->start(250);
+	save();
+}
 void answerStopForFixture(QMessageBox::StandardButton answer = QMessageBox::Yes)
 {
 	QTimer::singleShot(0, QCoreApplication::instance(), [answer] {
@@ -99,6 +152,8 @@ void recordingReceipt()
 }
 void finish()
 {
+	if (!capture && !localController && !source && !producer.joinable() && !originalRequested)
+		return; // A transport-only observer never owns or clears the Program scene.
 	blog(LOG_INFO, "[HHC fixture] Cleanup begin; stop synthetic producer");
 	running = false;
 	if (producer.joinable())
@@ -615,6 +670,8 @@ void begin()
 }
 void event(obs_frontend_event e, void *)
 {
+	if (e == OBS_FRONTEND_EVENT_FINISHED_LOADING)
+		armManualTransportFault();
 	if (originalRequested && e == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
 		originalStarted = true;
 		recordingReceipt();
