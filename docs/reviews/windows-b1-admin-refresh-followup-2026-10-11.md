@@ -2,7 +2,7 @@
 
 Observed on 2026-10-11, Asia/Taipei UTC+8. Windows product is `9cbeec04d79a09eee89c37f0a92460b80708a805`; CMS `hhc-web-api--0000183`, Asset `asset-api--0000090`, Website `hhc-web--0000200`. This is a browser Console result, separate from native OAuth refresh and OBS encoding/upload.
 
-Recording/broadcast `e496a04e-4e2e-4dad-9269-63a610dd7c06`, capture `bcccb147fbd332d73a9bae51097fa633`. It remains active for long acceptance; do not delete, abort, stop, seal or publish it from Mac.
+Recording/broadcast `e496a04e-4e2e-4dad-9269-63a610dd7c06`, capture `bcccb147fbd332d73a9bae51097fa633`. Windows has normally ended/stopped/sealed it for long acceptance. Keep it read-only from Mac; do not delete, abort, resend Stop/seal or manually publish. CMS changes from0183 to0184 during the field; Asset0090/Website0200 remain unchanged.
 
 Copyable handoff:
 
@@ -29,3 +29,13 @@ Sanitized evidence: ignored `artifacts/b1-recheck-long-20261011/preview-expired-
 > Please trace B1 live-cover metadata into the member-list DTO/client image loading and fallback behavior. Preserve permission checks, C1/B1 schemas and live/public-range semantics. Regression should use a newly announced/bound/started broadcast: actual live JPEG in Console and member list, then unchanged selected cover after automatic VOD publication. Check search/recommendation/poster separately. Report deployed versions, actual image bytes/hash and failures; provide a fixed-commit Windows continuation prompt after release. Do not mutate the active Windows endurance field from Mac.
 
 Sanitized list evidence: ignored `artifacts/b1-recheck-long-20261011/member-list-live-thumbnail.json` and `live-thumbnail.json`. The actual member follower continues decoding; a missing card thumbnail is not a playback failure or proof that upload/validation is broken.
+
+## Console End moves an active DVR viewer to the live tail
+
+> On Website `hhc-web--0000200`, the independent member DVR page46 is playing1x/Auto at its deliberately chosen earlier position. No reload, seek, quality change or Back to Live action is made around End. At **18:56:45.460 UTC+8**, it truly decodes1080p/currentTime7497.465265/errornull. At **18:56:50.462**, currentTime9429.45: a1931.985-second jump over5.002seconds. The browser seeking event is18:56:50.309. Console End was requested18:56:28.859; B1 accepts next common boundary327 and preserves public[10,327). HHC Stop occurs later18:57:28.636, so the observed DVR jump precedes SourceStop. The original follower is a separate unmodified page.
+>
+> Please trace player state preservation across End/end-pending/processing media reconstruction. Retain active DVR position, pause and playback speed; only a viewer who was following live may automatically follow the new edge. Keep B1/C1/public-range/media authorization unchanged. Do not use verified sequence as a substitute boundary or relax the public interval.
+>
+> Regression needs one original follower and independent active DVR, paused DVR and non1x viewer, without reload/manual live jump. Exercise Console End, then SourceStop, validating, ready and automatic publication. Verify actual decoded currentTime/duration,buffered/seekable,pause/rate and same URL at each stage; a final successful publication cannot overwrite this transition failure. Return a fixed-commit release prompt with actual deployed versions and UTC+8 evidence. Never include credentials or signed URLs.
+
+Sanitized five-second measurements and browser events are in ignored `dvr-end-transition.json`; current-time deltas are observed, not an implementation-root-cause diagnosis. Platform final validation/publication continues independently.
