@@ -2,6 +2,12 @@
 
 Acceptance is in progress. This report does not convert previous 379/388-second recovery failures into passes. All event times below are Asia/Taipei (UTC+8).
 
+## Follow-up readback at 15:59 and candidate installation
+
+This supersedes the intermediate pending source status below. All **373 objects are verified**, seal accepted, source **ready**, and liveState ended. Server uploadedAt is **15:09:38.332976**, readyAt **15:19:15.644646**; local integration observation **15:19:22.136** has pending0, Stop accepted and seal accepted. Recording remains draft/version1 and autoPublish cancelled, matching its unchanged false publish intent; no manual publication is applied. Fault-period member VOD remains unqualified. The Console's displayed live badge is not source or playback evidence. The roughly61-minute round remains **not a 2.5-hour pass**.
+
+Fixed product candidate **9cbeec04d79a09eee89c37f0a92460b80708a805** passes both native CI runs **38120068956** and **38120065914**. Unsigned local ZIP SHA-256: **025d7aab1e0eceb7dbefb88862d30e0e31bd83ec3be48e9b5f22df91b5fc1a69**. Installed into owned portable OBS at **16:09:01.526**; real OBS source readback after disabling the developer fixture's duplicate output registration is **16:10:14.657**. Installation and CI do not establish a new capture or long-run pass. Fresh acceptance is recorded separately.
+
 ## Fixed candidate and scope
 
 - Exercised product commit: `b259fa747f5454d0c1d9c4bab686484d36646a54`; unsigned local ZIP SHA-256 `18a5ace1a39b81d3c55797c609effa342c6965a63475ef3e81fd0f3102f2694d`.
