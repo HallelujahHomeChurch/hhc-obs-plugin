@@ -1,6 +1,14 @@
 # Current continuation status — 2026-10-11
 
-## Current fixed candidate work, 19:12 UTC+8
+## Completed Windows field and remaining gates, 19:40 UTC+8
+
+The installed9cbeec0 field below has now passed formal **991/991 verification → ready → automatic publication**. ReadyAt19:26:07.193480; autoPublishpublished/CMS version3 confirmed by19:29:06.225453848. Public[10,327),9519.51seconds,title and URL remain unchanged. First selected VOD auto-cover exactly matches the live JPEG hashbb854934…393dc. Original member pages are not reloaded: paused0/1.5x persists through publication, then explicit Play continues within the original replay期限; actual1080p decode and seek into the disconnected16:32 material pass. The480p tail naturally ends, Home→1080p→Auto retains full duration. Transient error-message presentation during VOD quality rebuild remains disclosed, not a completely clean UI pass.
+
+The Windows presentation fix **c2166da44da0d2fccbd4f84d82aa54a2fa03ad55** avoids showing cached End-pending control as current after source shutdown. It passes14/14 local tests, media-grid/watcher checks and both hosted CI runs38135586667/38135589088. Downloaded candidate product ZIP SHA-256 **daa2a94841fb9506e02ce761266bf00ddb4eb5820eb9460a6e63b95888021fe6**; local build ZIP **ff1f9d7686f52e6b28d79e7ed41601df8d95b6fb0ee39889c9915e5865df7762**. These are separate packages. See [candidate evidence](reviews/windows-b1-stopped-status-2026-10-11.md). The9cbe field does not qualify a newc2166da GPU/end-to-end run. No merge, production deployment or new capture is performed.
+
+Mac follow-up still requires long-lived Admin authorization renewal, member-list live thumbnail and the **active DVR jump at End**. Five-minute synthetic/global-recording stress recovery passes; actual church/YouTube load and physical network interruption remain unqualified. Keep all older failed pressure evidence. Nine original profile hashes match after shutdown. [Detailed field results](reviews/windows-b1-recheck-long-2026-10-11.md) separate local, CI, formal platform, playback and remaining limits. Formal whole-product acceptance remains incomplete; proceed with targeted retests after a fixed Mac release.
+
+## Earlier same-day field snapshot, 19:12 UTC+8 (historical)
 
 Installed product is `9cbeec04d79a09eee89c37f0a92460b80708a805`; both native CI runs and 14/14 local tests pass. Unsigned ZIP SHA-256: `025d7aab1e0eceb7dbefb88862d30e0e31bd83ec3be48e9b5f22df91b5fc1a69`. Actual CMS0183 changes to0184 during this capture; Website0200/Asset0090 and fixed B1/C1/media rules remain unchanged. This is a fixed-plugin long run spanning CMS revisions.
 

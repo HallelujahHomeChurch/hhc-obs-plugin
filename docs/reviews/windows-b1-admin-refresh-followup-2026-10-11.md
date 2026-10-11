@@ -1,4 +1,4 @@
-# Mac follow-up: Console renewal and member-list live thumbnail
+# Mac follow-up: Console renewal, live thumbnail and End DVR preservation
 
 Observed on 2026-10-11, Asia/Taipei UTC+8. Windows product is `9cbeec04d79a09eee89c37f0a92460b80708a805`; CMS `hhc-web-api--0000183`, Asset `asset-api--0000090`, Website `hhc-web--0000200`. This is a browser Console result, separate from native OAuth refresh and OBS encoding/upload.
 
@@ -39,3 +39,13 @@ Sanitized list evidence: ignored `artifacts/b1-recheck-long-20261011/member-list
 > Regression needs one original follower and independent active DVR, paused DVR and non1x viewer, without reload/manual live jump. Exercise Console End, then SourceStop, validating, ready and automatic publication. Verify actual decoded currentTime/duration,buffered/seekable,pause/rate and same URL at each stage; a final successful publication cannot overwrite this transition failure. Return a fixed-commit release prompt with actual deployed versions and UTC+8 evidence. Never include credentials or signed URLs.
 
 Sanitized five-second measurements and browser events are in ignored `dvr-end-transition.json`; current-time deltas are observed, not an implementation-root-cause diagnosis. Platform final validation/publication continues independently.
+
+## Final context for the next Mac action
+
+Windows normally completed the same field. CMS readyAt19:26:07.193480UTC+8;991/991 objects verified. By19:29:06.225453848,C1 autoPublishpublished and CMS statuspublished/version3. No manual publication or contract/media relaxation. Public[10,327),9519.51seconds remains fixed; first selected auto-cover bytes/hash exactly matchbb854934…393dc. The original member URL receives VOD and plays/seeks retained outage material; an independent paused0/1.5x viewer preserves its state across ready/publication and later resumes within replayUntil22:13:33.400868 without reload. These successes do not erase the active DVR End failure.
+
+Actual final revisions remain CMS0184/Asset0090/Website0200. Keep this published test field and original replay evidence read-only until Windows/Mac review is complete. The later Windowsc2166da presentation-only candidate does not change platform APIs/media or substitute for a Mac fix.
+
+Additional observation for triage: after publication, original page45 briefly exposes **無法播放媒體** during Home→1080p at19:29:41.896 and Auto at19:30:21.901. Actual video error isnull, successful decode/seek continues and the message is cleared by19:30:41.899 without reload. Network capture began too late to identify a first-request HTTP cause; do not invent an error code or classify this as a persistent decode outage. Trace the error/loading presentation while rebuilding media sources and preserve the last frame and chosen playback state. See [the final Windows report](windows-b1-recheck-long-2026-10-11.md) for precise scoped outcomes.
+
+Please finish fixes and appropriate CI, then provide a fixed-commit continuation prompt containing deployed revisions, enabled capabilities/health, changed behavior and targeted Windows acceptance cases. Preserve B1/C1, wire/digest/idempotency/permissions,29.97fps and900-frame segments. Windows will separately retest long-lived Console, active/paused/non1x DVR at End, live-cover surfaces and any changed quality-rebuild path; actual church/YouTube-load recovery remains an independent gate. Do not describe successful publication or platform CI as all these tests passing.
