@@ -1,6 +1,39 @@
 # Windows B1 normal long-field evidence
 
-Times are 2026-10-12 Asia/Taipei UTC+8. This report separates the current field, completed browser checks, native CI and historical failures. **Source recording has stopped normally and full local media QA passes; as of22:37 platform ready/publication remain pending.**
+Times are 2026-10-12 Asia/Taipei UTC+8. **The current synthetic long field passes normal End/Stop/seal, 943/943 formal verification, ready, automatic publication and the same-page VOD checks below.** Whole-product acceptance remains incomplete. Earlier timed progress snapshots are retained as history, not the final result.
+
+## Final formal result and same-page VOD checks
+
+CMS readyAt **23:12:23.392006**. Native readback **23:13:01.7186268** reports Ready/943 verified/no queued/no immutable mismatch/no terminal reason; autoPublish is still pending at that intermediate observation. First automatic-publication confirmation **23:18:53.6311151** reports published/recording version3; CMS **23:18:55.0914405** confirms published/version3/unchanged title/selectedCoverId **234898876b49aaf16d802ab9983b07a7-1**. These are first readback times, not invented server publication timestamps. No manual publish, retry or reseal. Original Console **23:20:10.676** is archived/revision15 with autoPublish=true; public sequences remain **[6,307)**. Boundary revision advances from4 during processing to5 after archive, without extending the public range.
+
+Original pages remain open without reload/login through End/Stop/processing/ready/publication, and ordinary “接續觀看會後影片” actions stay within replayUntil **2026-10-13 01:22:22.528096**:
+
+| Player | Actual same-page VOD result |
+| --- | --- |
+| Paused DVR | Continuation **23:20:46.036**; **23:21:10.655** actual1080p/4 new decoded frames, currentTime **4764.705135 unchanged**, paused **1.5x**, duration9039.03, no error/drop; buffered0–30/4744–4894 |
+| Active DVR | Continuation **23:21:17.656** from1353.800024; **23:23:11.448** actual1080p/currentTime1519.728921/4931 new frames, playing1.5x/duration9039.03/no error or forced live-edge jump. Explicit ordinary Home during processing **23:06:13.862** is disclosed; this is not passive position preservation across that viewer seek |
+| Original follower at EOS | Continuation **23:23:47.617** preserves ended position/paused1x. At23:24:47.504 new-source metadata is480p/currentTime9039.029999/**0 frames**: state evidence only. Subsequent ordinary Home yields actual480p frames and the tail regression below |
+
+These are explicit same-page continuation checks, not automatic source-transition decoding without operator action. Source public duration is9039.03s; follower began after public start, so approximately149minutes of actual following is not claimed as every source frame from time zero. Post-EOS wall-clock-minus-currentTime is not live latency.
+
+Current published VOD, ordinary UI only:
+
+- Actual480p playback of the final five seconds naturally ends **23:27:19.602**; measured **23:27:20.567**,854x480/currentTime=duration9039.062666/154decoded frames/no drops/error null. This is a **five-second tail regression**, not full150-minute480p browser decoding.
+- Ordinary Home →1080p choice **23:29:22.576** → actual1080p/4frames/currentTime0/paused1x/duration9039.03 by **23:30:02.578**; Auto **23:30:04.626** → actual1080p/4frames/same state/no error. Coarse final observations do not qualify individual switch latency.
+- Paused rapid480p/720p/1080p/Auto choices **23:32:51.663/54.670/57.698/23:33:00.717** restore actual post-gap frames within sampled upper bound **2.505seconds after final selection**. Final1080p/4frames/currentTime4764.705135/paused1.5x/duration9039.03/no error;25nonempty last-frame gap samples.
+- Playing rapid choices **23:39:49.886/52.910/55.939/58.937** restore actual480p/4frames/currentTime3026.977050/playing1.5x at **23:40:00.791**, sampled upper bound **1.854seconds after final selection**. Auto subsequently decodes1080p; **23:46:31.204** currentTime3612.595930/17559frames/no drops/playing1.5x/duration9039.03/error null. Four nonempty gap samples, no observed error events or false media-error text.
+
+Completion excludes old pre-rebuild frames. Metadata-zero/default-rate transients during loading are not final state failures. Strong-network results do not erase historical18.491-second VOD switching or32.730-second weak uncached seeking.
+
+Actual selected VOD first Auto JPEG **23:23:11.437**,HTTP200/image/jpeg/**64038bytes**, SHA-256 **52a42c15e8bf0d29ab24cf2e006778ff2929fbd71518d93ddbf1dce2d729ad75**, exactly matches measured live bytes. Admin Auto candidate1 is checked; title/URL persist. No manual thumbnail selection/publication. The missing original Console live image remains an independent UI finding, not publication cancellation.
+
+After securing online proofs, exact disposable recording deletion requested **23:47:41.366**; Admin absence **23:48:16.664**, fresh member-list absence **23:49:18.931**. Protected read-only e496a04e/e9c5ebb4 and real meeting recordings remain. All local media/journals/inventories/failure evidence remain. Browser screenshot capture is unavailable; visible DOM absence is verified, no successful cleanup screenshot claimed. Exported test pages close; no next field starts.
+
+Native journal **23:48:28.2551494** confirms normalEnd/stopIntent/confirmedReady=true and both durable ACK receipts accepted; dock shows “開始另一場收錄”. Observed normal UI Close exits OBS **23:49:01.2682355**, **exit0**. After exit **23:50:10.2748660**, all9 original profile/scene/settings hashes match the same-day10:14:28.3559928 baseline. Own observer/source-clock helpers have ended; no old profile restoration.
+
+## Historical progress snapshots
+
+The timed pending observations below precede the final ready/publication results above.
 
 ## Fixed identities and authorization
 
@@ -49,6 +82,14 @@ At22:37:24.4676077, the authenticated native readback still reports validating,9
 
 Read-only Azure diagnostics identify execution asset-recording-validation-29863576, started22:16:00 and still Running at22:37. Its capture-specific logs match03470f36a8686b42834682bee9a234f8: validation stage22:16:22.7527894/4735ms, stable_publication22:16:27.4506427/4697ms, playlists22:16:28.4189098/967ms, pointer22:16:28.7339546/315ms. These stage names establish partial progress, not final ready/publication or the cause of subsequent delay. Actual job image is alive.azurecr.io/alive/asset-recording@sha256:b4aa0750b6d6547a67196c625aab23905b6088668cb207ad575f92acf9a48345,4CPU/8Gi, scheduled execution/parallelism1/21600s replica timeout. Execution parallelism does not establish the number of in-process validation slots. No platform settings/jobs are changed. Only whitelisted times/stages/scalar metrics are retained, without raw logs or signed URLs.
 
+At23:09:44.217, the separate recording-management GET200 exposes pinned processingProgress: attempt2/package_validation/480p,775of943objects and768of936segments,5711170114of6217876837bytes. AttemptStartedAt22:44:20.672697; lastProgressAt23:09:20.601615681/heartbeatAt23:09:20.722396. Earlier current-attempt observations are275at22:56,434at23:01,503at23:03 and560at23:05. Advisory progress is distinct from live-fragment verification and not readiness. The earlier22:16execution ends Succeeded22:38:40; this exit does not establish successful package validation. A second reported attempt and subsequent forward progress are observed, but the first attempt's reason is unconfirmed. No manual retry/reseal/rebuild is issued.
+
+The same active DVR plays continuously through End/Stop/processing until23:05, without a forced jump. It is then explicitly sought to zero through ordinary slider Home around23:06 to keep an active replay available for ready/publication checks; the exact viewer-action timestamp and before-state are retained in active-dvr-processing-home-safe.json. At23:09:47.279 it actually decodes1080p, currentTime318.257120/263186frames, playing1.5x/error null. This intentional processing-stage seek is disclosed, not counted as passive state preservation. Original follower/EOS and paused4764.705135/1.5x pages are untouched.
+
+Report-only commit283f71e012c56154487e2877704e02bfea96b62c has successful Windows PUSH38264852875 and PR38264856836 native build/test/package jobs. Its artifacts are not installed and do not replace tested9c658ae. Actual platform revisions remain Account0162/CMS0187/Asset0090/Website0204 in **22:49:46** readback, Healthy-ready revision matching latest and running/provisioned; no intervening version change is inferred.
+
+Read-only diagnostic handling: an initial multiline Azure query returned unexpected raw columns. Its temporary artifact is discarded, not retained as sanitized evidence. Subsequent queries use single-line server-side projection, reject unexpected raw columns and retain only explicit scalar stage/progress fields. No raw diagnostics are part of the reports or retained evidence set.
+
 ## Two actual browser refresh cycles
 
 The original Console is not reloaded or relogged in. It records natural expired-bearer GET401 at **20:40:00.718**, refresh POST20:40:00.719 / HTTP20020:40:00.843; and GET401 at **20:56:04.982**, refresh POST20:56:04.983 / HTTP20020:56:05.124. Both actual response bodies have numeric expires_in900; access tokens are inspected only in memory and are never retained. Subsequent GETs and ordinary preview requests use renewed bearer claims with all three recording permissions.
@@ -69,22 +110,22 @@ Playing DVR at1.5×, the same four choices restore actual decoded media within s
 
 Continuous UI quality selections at20:59:43.450/46.472/49.486/52.484 choose480p/720p/1080p/Auto. Final actual1080p resumes20:59:55.563,3.079seconds after the final choice and12.113seconds after the first; currentTime4261.383066, playing1.5×/22frames/error null. No false media-error text is observed. This is strong-network **live DVR**, not a replacement for the historical18.491-second VOD switch or32.730-second uncached weak seek limits.
 
-The second player is subsequently paused at21:05:31.171, currentTime4764.705135,1080p/15107frames/rate1.5/error null. It remains paused at that position while the normal field continues; End→VOD state preservation is still pending for this field.
+The second player is subsequently paused at21:05:31.171, currentTime4764.705135,1080p/15107frames/rate1.5/error null. At this historical observation, End→VOD state preservation is pending; the final same-page result above completes it.
 
-A separate active DVR player opens around21:31 and uses ordinary UI Home plus1.5× playback, not programmatic seeking or forced follow-live. At21:32:39.596 it actually decodes1080p at25.312496, playing1.5×/1258frames/error null; at21:37:06.162 it advances to425.149597/13241frames without jumping to live. Its extra decoder load is disclosed. Same-page End/Stop/processing/ready/publication behavior for this active DVR remains pending, separately from the untouched follower and paused second player.
+A separate active DVR player opens around21:31 and uses ordinary UI Home plus1.5× playback, not programmatic seeking or forced follow-live. At21:32:39.596 it actually decodes1080p at25.312496, playing1.5×/1258frames/error null; at21:37:06.162 it advances to425.149597/13241frames without jumping to live. Its extra decoder load is disclosed. Subsequent End/Stop/processing/ready/publication and explicit continuation results are reported above, separately from the untouched follower and paused second player.
 
 ## Auto cover and tool-limited checks
 
 Current Auto-only live cover actually loads1280×720 in a separate member list. Authenticated observed cover readback20:26:42.722 returns64038JPEG bytes, SHA-256 **52a42c15e8bf0d29ab24cf2e006778ff2929fbd71518d93ddbf1dce2d729ad75**. Empty CDP binary bodies are discarded as hash evidence. Temporary service-worker bypass on the independent list was restored; no original Console/follower reload is used.
 
-The original Console still lacks the ready Auto cover image. See [Mac same-page follow-up](mac-auto-cover-original-page-followup-2026-10-12.md); this is independent from encoding. VOD byte inheritance is pending until this field is published.
+The original Console lacks the ready Auto cover image. See [Mac same-page follow-up](mac-auto-cover-original-page-followup-2026-10-12.md); this is independent from encoding. Later VOD publication and exact byte inheritance pass as detailed above.
 
 Direct same-capture member credential isolation probes return browser TypeError, including the public baseline; a separate media-origin diagnostic tab is blocked by the browser client and closed without weakening protections. Thus this field's staff-preview/beforeStart **HTTP rejection is unmeasured**, not a platform denial/pass or media failure. Prior scoped results remain attributed to their original field/deployment. Browser screenshot capture also times out; no successful cleanup screenshot is claimed. Actual decoded frame images are retained separately.
 
 ## Remaining finalization and retained failures
 
-Normal End/Stop/seal, fixed [6,307), all local hashes and full three-rendition/global-recording decodes pass their stated scopes; platform ready/publication remain pending. The validator refuses normalEnd=false or duration<9000; no inventory, duration, fps or operation keys are changed to manufacture readiness.
+Normal End/Stop/seal, fixed [6,307), all local hashes and full three-rendition/global-recording decodes, **943/943 formal ready, automatic publication and stated same-page VOD checks pass**. The validator refuses normalEnd=false or duration<9000; no inventory, duration, fps or operation keys are changed to manufacture readiness.
 
 The earlier c2166da field stalls around15:06, then reaches its10GB guard at17:14 after the intended End was missed. Its original capture is safely aborted with journals/media intact; no root cause is inferred from stale status timestamps. Source9c658ae adds safe HTTP pause/retry evidence, not a claimed stall fix. Historical379/388-second lag and the current pressure field's strict128-second ten-minute result remain failures; see [pressure report](windows-b1-pressure-2026-10-12.md).
 
-Physical disconnection, actual simultaneous YouTube/congregation load, native Safari/fullscreen and signing remain unqualified. Ignored raw-safe evidence is under artifacts/b1-normal-long-9c658ae-20261012; no token/cookie/password, signedURL or raw credential-bearing response is saved. Finished disposable pressure00c23cc8 is removed from Admin/member lists. The aborted old1a336a82draft is also deleted after evidence retention; at22:39:06.020 its title/ID are absent from Admin and the member recommendation list. Browser screenshot capture remains unavailable, so no successful cleanup screenshot is claimed. Current long, both explicitly read-only protected originals and all local failure evidence remain.
+Physical disconnection/current active crash, actual simultaneous YouTube/congregation load, complete current thumbnail/authorization matrix, native Safari/fullscreen and signing remain unqualified. Prior version-scoped crash/abort results are not attributed to this runtime. Ignored sanitized evidence is under artifacts/b1-normal-long-9c658ae-20261012; no token/cookie/password, signedURL or raw credential-bearing response is retained. Finished disposable pressure00c23cc8, aborted old1a336a82 and completed currentb0cd1c3b are removed from Admin/member lists after evidence retention. Both explicitly read-only protected originals, real meeting recordings and all local failure media/journals remain.

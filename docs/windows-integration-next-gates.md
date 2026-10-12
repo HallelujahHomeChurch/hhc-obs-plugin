@@ -1,4 +1,27 @@
-# Current continuation status — 2026-10-11
+# Current continuation status — 2026-10-12
+
+## Completed current field, 23:50 UTC+8
+
+Actual tested Windows source is **9c658aeb76e6fe9dc0b3b3ce37c7088a09e77e82**, installed unsigned PUSH ZIP SHA-256 **b598ac6fe45348de493da2ff69b80d82d19ed7108e9829ef017bba370df0a0e8**. Source native CI and earlier regressions pass; later report builds are not installed or substituted for the runtime. Actual platforms: Account0162/CMS0187/Asset0090/Website0204, loaded Adminb815519. B1/C1/inventory1 and30000/1001fps/900-frame30.03s boundaries remain unchanged.
+
+| Gate | Current evidence | Remaining limits |
+| --- | --- | --- |
+| Normal long source | Synthetic Program plus concurrent isolated recording; public[6,307)/9039.03s;943 real-object hashes and full3rendition/global decodes pass; normal End/Stop/seal; formal943/943 Ready23:12:23.392006; automatic published confirmed23:18:53.6311151 | Actual congregation/YouTube load is not qualified; old long-stall cause remains unproved |
+| Browser refresh | Same Console two actual expired-token GET401→refresh200→new-bearer retry cycles; renewed preview actual decode and End200 | Not a production401/retry for every Create/Start/End mutation |
+| Member End→VOD | Follower naturalEOS; paused4764.705135/1.5x and active1.5x preserved through processing/publication; same-page explicit continuation decodes within replay期限; title/URL persist | Active viewer Home during processing is disclosed; EOS metadata-only0frames is not decode; no automatic source-transition claim |
+| Auto/manual quality | Per-tab controlled Auto480p downgrade/720p→1080p recovery; paused/playing matrices; current VOD480p tailEOS→Home→1080p→Auto; rapid VOD restore upper bounds1.854s playing/2.505s paused with nonempty last frames |11.688s weak-transition waiting; old32.730s uncached seek/18.491s switch remain separately scoped limits |
+| Recovery pressure | Five-minute Qt upload fault; original backlog drains9m46.586s; functional automatic recovery/final ready/publication/VOD pass | Strict60–120s at ten-minute cutoff fails128.129s; physical/current active-crash and actual congregation/YouTube recovery unqualified |
+| Auto cover | Actual live and selected first VOD JPEG match64038bytes/SHA52a42c15…9ad75; candidate1 selected | Original Console image missing despite ready metadata; earlier custom/default matrix remains version-scoped; Mac UI follow-up |
+| Authorization | Prior field-scoped controls retained | Current direct member probes browser-blocked including positive baseline; denial HTTP status unmeasured; no protection bypass |
+| Local shutdown/cleanup | Native dock completed; normal OBS exit0 at23:49:01.2682355;9 original hashes match23:50:10.2748660; finished3disposable fields absent Admin/member | All local media/journals/evidence and protected originals retained; browser cleanup screenshot unavailable |
+
+Recordingb0cd1c3b-74db-4847-b62a-86ab8ae4bffa/capture03470f36a8686b42834682bee9a234f8 is completed and deleted after online proofs. Original Stop/seal/ACK keys, inventory and public bounds are unchanged. Earlier worker22:16execution Succeeded22:38:40 did not establish ready; advisory attempt2 starts22:44:20.672697 and advances before actual ready. First attempt's reason remains unconfirmed, no platform mutation/manual retry. No next field starts.
+
+Finished pressure00c23cc8, aborted old1a336a82 and completedb0cd1c3b are removed. Read-onlye496a04e/e9c5ebb4 and real meetings remain. Historical379/388s and strict pressure failure remain. Whole-product acceptance also lacks native Safari/fullscreen and signing. No merge/main push/deployment/YouTube changes.
+
+See [normal long evidence](reviews/windows-b1-normal-long-2026-10-12.md), [pressure](reviews/windows-b1-pressure-2026-10-12.md), [copyable Mac follow-up](reviews/mac-auto-cover-original-page-followup-2026-10-12.md).
+
+The following sections are historical2026-10-11 snapshots, not the current runtime or platform state.
 
 ## Completed Windows field and remaining gates, 19:40 UTC+8
 
