@@ -424,6 +424,7 @@ void PlatformController::recover(QString id)
 	capture_.reset();
 	broadcastId_ = broadcastId;
 	state_.broadcastBound = !broadcastId_.isEmpty();
+	state_.cancelPending = false;
 	creating_ = false;
 	state_.terminalFailure = false;
 	paused_ = false;
@@ -589,7 +590,8 @@ void PlatformController::completed()
 		state_.pendingBytes = remote.pendingBytes;
 		state_.liveState = remote.liveState;
 		state_.liveEnabled = remote.liveEnabled;
-		if (remote.autoPublish == "cancelled") {
+		// Bound publication belongs to Console; the C1 bridge reports cancellation.
+		if (!state_.broadcastBound && remote.autoPublish == "cancelled") {
 			state_.autoPublish = false;
 			state_.cancelPending = false;
 		}

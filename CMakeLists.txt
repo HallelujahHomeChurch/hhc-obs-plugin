@@ -128,7 +128,7 @@ target_link_libraries(hhc-obs-plugin PRIVATE hhc-platform-controller)
 add_executable(controller-lifecycle-test tests/controller-lifecycle-test.cpp)
 target_link_libraries(controller-lifecycle-test PRIVATE hhc-local-controller hhc-platform-controller)
 add_test(NAME controller-lifecycle COMMAND controller-lifecycle-test)
-set_tests_properties(controller-lifecycle PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;${CMAKE_SOURCE_DIR}/.deps/obs-build/rundir/RelWithDebInfo/bin/64bit\;${CMAKE_SOURCE_DIR}/.deps/prebuilt/bin\;$ENV{PATH};QT_QPA_PLATFORM=windows;QT_PLUGIN_PATH=${CMAKE_SOURCE_DIR}/.deps/qt/plugins")
+set_tests_properties(controller-lifecycle PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;${CMAKE_SOURCE_DIR}/.deps/obs-build/rundir/RelWithDebInfo/bin/64bit\;${CMAKE_SOURCE_DIR}/.deps/prebuilt/bin\;$ENV{PATH};QT_QPA_PLATFORM=windows;QT_PLUGIN_PATH=${CMAKE_SOURCE_DIR}/.deps/qt/plugins")
 
 add_executable(hhc-upload-helper src/upload-helper.cpp)
 target_link_libraries(hhc-upload-helper PRIVATE hhc-native-auth hhc-sync hhc-broadcast)

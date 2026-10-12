@@ -156,6 +156,53 @@ struct ControllerLifecycleTest {
 			check(!c.paused_ && c.state_.issue.isEmpty(), "observer cannot pause authoritative sync");
 			if (statusReader != INVALID_HANDLE_VALUE)
 				CloseHandle(statusReader);
+			QFile b1Fixture("tests/fixtures/b1.json");
+			check(b1Fixture.open(QIODevice::ReadOnly), "complete B1 publication fixture");
+			QJsonObject boundBroadcast;
+			for (const auto &entry : QJsonDocument::fromJson(b1Fixture.readAll()).array())
+				if (entry.toObject()["name"] == "view_draft")
+					boundBroadcast = entry.toObject()["value"].toObject()["data"].toObject();
+			check(!boundBroadcast.isEmpty(), "B1 draft fixture was found");
+			boundBroadcast["binding"] = QJsonObject{{"captureId", QString(32, 'a')}, {"epoch", 1}, {"actorId", account}};
+			c.broadcastId_ = boundBroadcast["recordingId"].toString();
+			c.state_.broadcastBound = true;
+			for (bool publish : {true, false}) {
+				auto policy = boundBroadcast["policy"].toObject();
+				policy["autoPublish"] = publish;
+				boundBroadcast["policy"] = policy;
+				c.launch([boundBroadcast] {
+					PlatformJob result;
+					result.broadcast = boundBroadcast;
+					result.sync.state = "uploading";
+					result.sync.autoPublish = "cancelled";
+					return result;
+				});
+				drain();
+				check(c.view_->selectedPublish() == publish,
+				      "bound OBS publication display follows Console policy despite C1 bridge cancellation");
+				c.launch([] {
+					PlatformJob result;
+					result.sync.state = "uploading";
+					result.sync.autoPublish = "cancelled";
+					return result;
+				});
+				drain();
+				check(c.view_->selectedPublish() == publish,
+				      "later C1-only synchronization retains the bound Console publication choice");
+			}
+			c.broadcastId_.clear();
+			c.state_.broadcastBound = false;
+			c.state_.autoPublish = true;
+			c.state_.cancelPending = true;
+			c.launch([] {
+				PlatformJob result;
+				result.sync.state = "uploading";
+				result.sync.autoPublish = "cancelled";
+				return result;
+			});
+			drain();
+			check(!c.view_->selectedPublish() && !c.state_.cancelPending,
+			      "standalone C1 cancellation still clears its own publication intent");
 			for (const auto &error : {RequestError(410, "capture_expired"), RequestError(403, "capture_forbidden"),
 						  RequestError(503, "capture_unavailable")}) {
 				c.state_.terminalFailure = false;
@@ -309,6 +356,22 @@ struct ControllerLifecycleTest {
 			c.recover(recovery.localId);
 			check(c.id_ == previousId && !c.jobBusy(),
 			      "corrupt B1 recovery never falls back to another C1 capture");
+			recovery.localId = "bound-recovery";
+			c.recoveryCache_.sessions.append(recovery);
+			const auto boundDir = SessionStore(platformRoot.path() + "/queue")
+						 .mediaDirectory(account, recovery.localId);
+			QDir().mkpath(boundDir);
+			atomicJson(boundDir + "/broadcast-journal.json",
+				   {{"account", account}, {"localId", recovery.localId}, {"protocolVersion", b1Version},
+				    {"recordingId", boundBroadcast["recordingId"]}});
+			c.broadcastId_.clear();
+			c.state_.broadcastBound = false;
+			c.state_.cancelPending = true;
+			c.cancelled_ = true; // Fence the synthetic recovery before any HTTP.
+			c.recover(recovery.localId);
+			check(c.id_ == recovery.localId && c.state_.broadcastBound && !c.state_.cancelPending,
+			      "adopting B1 recovery clears another session's cancellation warning");
+			drain();
 			std::function<std::optional<int>()> clock;
 			{
 				CaptureOutput output;

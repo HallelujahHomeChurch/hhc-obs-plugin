@@ -58,4 +58,16 @@ Both native hosted CI runs38208470865/38208467112 pass on report commitac1490569
 - Normal actual OBS/local recording/YouTube plus physical disconnection recovery. Synthetic and browser throttling cannot substitute for it.
 - Five-minute transport interruption/ten-minute catch-up, crash recovery and continuous-viewing results.
 
+### Additional observations through14:45 UTC+8
+
+The original follower remains on the same page without manual catch-up. At14:43:20.688 it decodes1920×1080, currentTime5475.146174/duration5525.561999, playing1x,152834 frames/dropped174/error=null, anchored delay176.608s. At14:44:50.700 delay is116.976s following automatic recovery. Short waiting events are retained; continuous decoding is not perfectly uninterrupted. Local source sequence189 is still uploading, with no Stop/seal, at14:43:32.176; ordinary segment closure temporarily contributes8678502 pending bytes.
+
+An independent paused DVR page has remained at11.578514, paused/1x, since14:15:03.471. At14:43:20.264 it retains that position/state,1025 frames/error=null and a growing5525.52s live duration. End-to-VOD preservation is not yet exercised in this field.
+
+Member search, recommendation and pre-Play poster decode the current auto JPEG into matching1280×720 pixels, SHA-2566b5afd96fb13d93d3dc695179e85e3d535e2664ddf345bbd1d451522ae3d5fc9. The original Console still lacks its current image while a fresh diagnostic Console shows it; the separate Mac follow-up remains open. A new unbound/unannounced draftadac2dce-f356-418c-aa12-e9b0baedd09d inherits restored auto default revision8, then is deleted HTTP204. Eight completed disposable test items are now absent from the loaded Admin/member lists; current/protected fields and local evidence remain.
+
+The long-open Console records a natural expired bearer GET401 at14:23:06.350, refresh200 at14:23:06.418 with numeric expires_in900, and retried GET200 with the renewed bearer at14:23:06.544. Later requests use another renewed bearer issued14:39:02, but the intervening refresh events were evicted before export; those requests alone do not prove the full second cycle. No reload or login is performed. A renewed staff preview decodes854×480 after the ordinary Load Preview button; its API refresh/retry chain was not captured and is not claimed.
+
+The OBS automatic-publication checkbox display bug is isolated and corrected in source with RED/GREEN native regression coverage and independent review; see windows-bound-publication-display-2026-10-12.md. Running product remainsc2166da. Both hosted CI runs38211335617/38211332678 passed on prior report commit518e04c; they do not cover the new source correction or requalify the ongoing binary.
+
 Historical379/388s lag, rapid-switch18.491s and weak uncached seek32.730s remain failures/limits. The separate short field has successful ready/automatic-publication, auto-cover byte inheritance, EOS/quality regression and scoped weak-media downgrade evidence; those do not certify the remaining gates here. No completion, merge or production deployment is claimed.
