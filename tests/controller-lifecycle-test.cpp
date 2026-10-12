@@ -212,6 +212,13 @@ struct ControllerLifecycleTest {
 				drain();
 				check(c.state_.terminalFailure == (error.code == "capture_expired") && c.id_ == id,
 				      "terminal capture HTTP error is distinguished from permission and temporary failures");
+				QFile requestEvidence(platformRoot.path() + "/sync-http-error.json");
+				check(requestEvidence.open(QIODevice::ReadOnly), "HTTP pause has diagnostic evidence");
+				const auto requestDiagnostic = QJsonDocument::fromJson(requestEvidence.readAll()).object();
+				check(requestDiagnostic["localId"] == id && requestDiagnostic["status"] == error.status &&
+					      requestDiagnostic["code"] == error.code &&
+					      requestDiagnostic["paused"].toBool() == c.paused_,
+				      "HTTP evidence identifies original session, error and retry decision");
 			}
 			// Reject a corrupt retained journal before any HTTP; a retry must use this same session.
 			const auto retryDir = SessionStore(platformRoot.path() + "/queue").mediaDirectory(account, id);

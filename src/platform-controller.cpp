@@ -666,6 +666,10 @@ void PlatformController::completed()
 			       std::chrono::milliseconds(QRandomGenerator::global()->bounded(1000));
 		if (!busy())
 			state_.phase = Phase::Failed;
+		tryObserverJson(root_ + "/sync-http-error.json",
+				{{"localId", id_}, {"status", e.status}, {"code", e.code}, {"paused", paused_},
+				 {"retryDelaySeconds", delay ? QJsonValue(*delay) : QJsonValue(QJsonValue::Null)},
+				 {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
 	} catch (const std::exception &e) {
 		// Only exact internal messages may select a public code; never emit raw exception text.
 		const auto reason = QByteArray(e.what());

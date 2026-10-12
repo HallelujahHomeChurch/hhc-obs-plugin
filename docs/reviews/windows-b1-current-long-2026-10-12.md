@@ -1,6 +1,6 @@
 # Current candidate long-field acceptance, 2026-10-12
 
-This run is ongoing. No two-and-a-half-hour, whole-source decode, final readiness or automatic publication pass is claimed yet. All event times are Asia/Taipei UTC+8; raw observers use UTC ISO timestamps with explicit offsets.
+This run failed to complete normally. No two-and-a-half-hour end-to-end, whole-source decode, final readiness or automatic publication pass is claimed. All event times are Asia/Taipei UTC+8; raw observers use UTC ISO timestamps with explicit offsets.
 
 ## Fixed inputs and scope
 
@@ -70,4 +70,22 @@ The long-open Console records a natural expired bearer GET401 at14:23:06.350, re
 
 The OBS automatic-publication checkbox display bug is isolated and corrected in source with RED/GREEN native regression coverage and independent review; see windows-bound-publication-display-2026-10-12.md. Running product remainsc2166da. Both hosted CI runs38211335617/38211332678 passed on prior report commit518e04c; they do not cover the new source correction or requalify the ongoing binary.
 
+### Failed extended field and preserved recovery,18:25 UTC+8
+
+The planned normal Console End/Stop was not executed at the intended150-minute boundary. The run continued until the10GB local capture guard stopped HHC output at **17:14:32.560**, with error `Local capture quota or disk reserve reached`. Actual retained local journal contains1488 objects totaling9881317570 bytes, last closed segment494; normalEnd=false and stopIntent=false. Source duration or elapsed time alone therefore cannot qualify a normal2.5-hour run. C drive still has322837049344 free bytes at18:23: the available evidence identifies the per-capture byte limit, not disk exhaustion. Do not enlarge the limit or rewrite normalEnd to obtain a pass.
+
+Upload/control observations stopped advancing much earlier: integration-status observed15:05:47.827/sequence235/pending0, broadcast-status15:06:13.932. At18:25:21.892 the actual platform detail remains phase=live/revision9, public[start5,end=null], health=interrupted, lastPublishedAt15:06:32.399959 and verifiedEndSeconds7117.11; queuedObjects=null remains unavailable. Original follower has been waiting at6966.949381 since15:07:22.116,1080p/error=null, with no manual catch-up. The earlier brief automatic recoveries do not qualify this prolonged failure. The reason for this earlier synchronization stall remains under investigation; the later quota stop must not be substituted as its root cause.
+
+The independently owned global HEVC recording is stopped normally at **18:23:19.311**; OBS reports568282 output frames. It is retained with the failed local source and original journals. No Console End, Stop/seal replay or manual publication is sent to manufacture readiness. Old OBS closes normally with no memory leaks. Background helper retained after shutdown is identified separately.
+
+Publication-display correction candidate79d9b664f54cbac14b43ee08d86258c71b588b02 has both hosted CI runs38214217633/38214213205 successful. Downloaded CI ZIP SHA-256 **5cebce38698b7a5e3aef8fe5bf32cfb44e0ee5bd418029e323417868b1026ad3** matches its sidecar and manifest source. Initial replacement of the helper/TLS backend encountered file locks from the old helper; those errors are retained and are not an installation pass. After terminating only the owned new idle OBS and old helper, all candidate runtime files are rechecked against the CI manifest before a visible isolated restart. Developer fixture remains excluded from the candidate ZIP; its300-second Qt fault trigger is armed but not fired.
+
 Historical379/388s lag, rapid-switch18.491s and weak uncached seek32.730s remain failures/limits. The separate short field has successful ready/automatic-publication, auto-cover byte inheritance, EOS/quality regression and scoped weak-media downgrade evidence; those do not certify the remaining gates here. No completion, merge or production deployment is claimed.
+
+### Recovery and diagnostic continuation,18:42 UTC+8
+
+After full local retained-media validation, the native candidate79d9b66 recovery chooser selects original b85118d1. The ordinary interrupted-capture confirmation is accepted. At18:38:01.907 the same capture0b4a109f78c45cdc0f06ab1b2c4d2541 reports **aborted**, live disabled, no Stop/seal. Nine selected immutable init/first/last objects retain their original hashes. All715 declare and715 confirm mutations in the pre-recovery journal had receipts, latest acceptedAt15:06:10.566424. This qualifies safe original-session abort/preservation, not continuation of an interrupted encoder or successful long VOD.
+
+The original long-open Console also captures a second natural expired-bearer GET401 at18:40:01.407, refreshPOST18:40:01.483/200 with numeric expires_in900, followed by renewed polling. Together with14:23, two real background renewal cycles are evidenced on this same page without reload/login. These are GET retry cycles; they do not demonstrate a second mutation or preview-specific401 retry chain.
+
+The earlier synchronization stall cannot be assigned a cause from stale status snapshots alone. A new optional sync-http-error.json snapshot records only original localId, sanitized RequestError status/code, pause decision, base retryDelaySeconds and timestamp after the unchanged retry decision. It never writes exception text, response bodies, bearer or URLs. Real Qt controller assertions first fail six times, then the complete14-test native suite passes. Independent review finds no actionable findings; its reviewer does not independently execute tests. This adds evidence for the next run and is not a claimed stall fix.
