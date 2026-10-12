@@ -38,9 +38,23 @@ Initial auto cover is ready, revision1, selection.mode=auto, coverId342408181862
 
 ## Outstanding gates
 
+### Follow-up observations through14:09 UTC+8
+
+The original member page remains open without reload or manual catch-up. At14:07:20.699 it decodes1920×1080, currentTime3380.318175/duration3393.423333, playing1x, readyState4,93752 frames/dropped61, error=null, anchored delay111.447s. Subsequent short waits and automatic seeks are retained in the passive event log; this is not a claim of uninterrupted playback. A second burned-clock sample at13:35:13.721 shows13:33:02.387, actual delay131.334s, anchor drift0.661s. At13:58 GPU RTX4060/driver617.14 reports40% GPU/44% encoder,1770MiB,51°C. These are point samples, not capacity guarantees.
+
+Current authorization tests have positive controls. Using the actual member media session, confirmed private sequence4 returns HTTP404 between two successful public sequence5 HTTP206 responses at13:44:33.604/.737–13:44:34.024. Sequence4 exists locally in all three renditions and each remote confirmation has acceptedAt; denial is not inferred from a missing upload. With an independently valid member grant temporarily scoped to the observed staff-preview path, actual preview returns HTTP401 between staff HTTP200 controls at13:48:55.912/.974–.56.174. Original staff cookie is immediately restored and member cookie unchanged. CORS fetch TypeError alone is not treated as the HTTP result; responseReceivedExtraInfo supplies the denial status. No grant values are saved.
+
+Per-field custom cover7606c37969518902d6d2ae4356b58da1 is ready, JPEG66573 bytes/SHA-2568100f4fb4678624252c6ab990de0b671616a88fbdf61dfff1c49dedfbd1ce5c4. Console/member-list decoded1280×720 pixels match. Switching back to auto retains original cover342408181862cc686c230be3e32e5ae5, revision3; JPEG64331 bytes/SHA-2562baa5ad611f92c84a92486926667c9e1058d84466fcc079e2f32769a6e33f358. Fresh Console/member list show matching decoded pixels. The original long-open Console does not show its current image after this switch, despite API ready and a successful fresh-page image; this is a separate Admin UI failure, not a plugin or media-validation failure. No intentionally late auto job was injected.
+
+Shared default is temporarily changed to custom revision7/covercedd4611569996865b679672b84ee6ab, then **restored to auto revision8/HTTP200**. The next pressure draft00c23cc8-2df6-4225-8099-5112ace21623 inherits revision7 and has no binding or announcement. A second shared-cover drafta39594ee-890b-4780-ab9d-7827ea9d69f4 is deleted HTTP204 after checking the same inherited asset. The retained pressure draft still returns ready, inheritedRevision7 and the identical66573-byte JPEG/hash. Shared-asset cleanup therefore preserves this other reference; no second active capture is created.
+
+Finished disposable recordingscb129c48-28ad-41bb-86e8-57250709e128,744f5b7e-f68a-478b-9670-b340260417c8,9983fe7b-3f70-4829-98cd-57e0e1c4fb80,9a39862a-1034-49c7-ba9b-ef9ca075e834,d48eeb42-bced-4e5b-9444-691a986fbdf1,22da5c33-0e08-4ac4-b973-891c06766a9a and the shared-cover draft are absent from loaded Admin/member lists. Local journals/failure evidence, current long/next pressure field and both protected e496a04e/e9c5ebb4 originals remain. Real meeting recordings are preserved.
+
+Both native hosted CI runs38208470865/38208467112 pass on report commitac14905696f35d0a6d726b7979091f83bbfad213. Installed product remainsc2166da and its original ZIP/DLL hashes; documentation CI does not requalify the running binary.
+
 - Continuous150-minute source/global recording, all-file inventory hashes, whole-source decode, Stop/seal/ready/automatic publication and public end boundary.
-- Current staff preview access denial for member scope and outside-public-range media.
-- Per-field fixed/auto cover final hash/selection/propagation; shared-default/new-field and shared-asset deletion matrix.
+- Public endExclusive denial after Console End; current staff-preview and before-start authorization checks above pass.
+- VOD cover inheritance and search/recommendation/poster matrix; per-field reuse, shared-default inheritance and shared-reference cleanup above are separately evidenced.
 - Normal actual OBS/local recording/YouTube plus physical disconnection recovery. Synthetic and browser throttling cannot substitute for it.
 - Five-minute transport interruption/ten-minute catch-up, crash recovery and continuous-viewing results.
 
