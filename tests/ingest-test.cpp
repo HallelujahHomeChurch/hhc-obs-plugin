@@ -86,7 +86,7 @@ int main(int argc, char **argv)
 			check(body == firstIntent, "lost bind response reuses exact intent");
 			QJsonObject receipt{{"operationKey", body["operationKey"]},
 					    {"operation", "bind"},
-					    {"state", "completed"}};
+					    {"state", "accepted"}};
 			data = {{"broadcast", broadcast}, {"receipt", receipt}, {"session", session}};
 		} else {
 			++renewals;

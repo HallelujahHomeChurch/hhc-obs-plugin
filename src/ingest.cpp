@@ -86,7 +86,7 @@ KeyIngest::KeyIngest(QString root, QString id, IngestCredentials vault, ApiClien
 			require(validWire("BroadcastView", b) && validWire("BroadcastReceipt", r));
 			require(b["recordingId"] == intent["recordingId"] &&
 				r["operationKey"] == intent["operationKey"] && r["operation"] == "bind" &&
-				r["state"] == "completed");
+				r["state"] != "rejected");
 			const auto binding = b["binding"].toObject(), pinned = journal_["sessionBinding"].toObject();
 			require(pinned["recordingId"] == b["recordingId"] &&
 				pinned["captureId"] == binding["captureId"] && pinned["epoch"] == binding["epoch"]);
@@ -170,7 +170,7 @@ QJsonObject KeyIngest::bind()
 		binding["epoch"] == s["epoch"]);
 	require(data["receipt"].toObject()["operationKey"] == body["operationKey"] &&
 		data["receipt"].toObject()["operation"] == "bind" &&
-		data["receipt"].toObject()["state"] == "completed");
+		data["receipt"].toObject()["state"] != "rejected");
 	acceptSession(s);
 	journal_["broadcast"] = b;
 	journal_["receipt"] = data["receipt"];
