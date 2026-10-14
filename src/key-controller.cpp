@@ -37,6 +37,8 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	  view_(new QWidget), audioTrackProvider_(std::move(audioTrack))
 {
 	auto *layout = new QVBoxLayout(view_);
+	layout->setAlignment(Qt::AlignTop);
+	view_->setMinimumWidth(240);
 	settings_ = new QWidget;
 	auto *settingsLayout = new QVBoxLayout(settings_);
 	key_ = new QLineEdit;
@@ -165,7 +167,7 @@ void KeyController::display()
 			    (id_.isEmpty() || released_ || running || starting_));
 	save_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ && !syncAwaiting_ && !controlAwaiting_);
 	key_->setEnabled(save_->isEnabled());
-	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；輸入新金鑰以更換") : QString::fromUtf8("串流金鑰"));
+	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；可更換金鑰") : QString::fromUtf8("串流金鑰"));
 	retry_->setVisible(paused_ && lease_->isLocked());
 	legacyButton_->setEnabled(id_.isEmpty());
 	titleLabel_->setText(title_);
