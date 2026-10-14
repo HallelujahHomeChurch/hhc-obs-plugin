@@ -1,5 +1,7 @@
 #include "key-controller.hpp"
 #include "ingest.hpp"
+#include "session-store.hpp"
+#include "broadcast-control.hpp"
 #include "async.hpp"
 #include "hls-muxer.hpp"
 #include "windows-path.hpp"
@@ -38,8 +40,9 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 {
 	auto *layout = new QVBoxLayout(view_);
 	layout->setAlignment(Qt::AlignTop);
-	view_->setMinimumWidth(240);
-	settings_ = new QWidget;
+	settings_ = new QDialog(view_);
+	settings_->setWindowTitle(QString::fromUtf8("HHC 串流設定"));
+	settings_->setMinimumWidth(300);
 	auto *settingsLayout = new QVBoxLayout(settings_);
 	key_ = new QLineEdit;
 	key_->setEchoMode(QLineEdit::Password);
@@ -49,10 +52,13 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	settingsLayout->addWidget(save_);
 	titleLabel_ = new QLabel;
 	titleLabel_->setWordWrap(true);
+	titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 	titleLabel_->setTextFormat(Qt::PlainText);
 	layout->addWidget(titleLabel_);
 	status_ = new QLabel;
 	status_->setWordWrap(true);
+	status_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+	status_->setTextFormat(Qt::PlainText);
 	layout->addWidget(status_);
 	action_ = new QPushButton;
 	layout->addWidget(action_);
@@ -60,16 +66,15 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	layout->addWidget(retry_);
 	settingsButton_ = new QPushButton(QString::fromUtf8("設定"));
 	layout->addWidget(settingsButton_);
-	layout->addWidget(settings_);
 	settings_->hide();
 	connect(settingsButton_, &QPushButton::clicked, this, [this] {
-		settings_->setVisible(settings_->isHidden());
-		if (settings_->isHidden()) key_->clear();
+		settings_->show();
+		settings_->raise();
+		settings_->activateWindow();
 	});
+	connect(settings_, &QDialog::finished, key_, &QLineEdit::clear);
 	auto *console = new QPushButton(QString::fromUtf8("管理直播"));
 	settingsLayout->addWidget(console);
-	legacyButton_ = new QPushButton(QString::fromUtf8("舊版資料恢復（進階）"));
-	settingsLayout->addWidget(legacyButton_);
 	connect(console, &QPushButton::clicked, this,
 		[] { QDesktopServices::openUrl(QUrl("https://admin.alive.org.tw/content/broadcasts")); });
 	connect(save_, &QPushButton::clicked, this, [this] {
@@ -79,7 +84,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			keyAvailable_ = true;
 			paused_ = false;
 			issue_ = QString::fromUtf8("串流金鑰已儲存。");
-			settings_->hide();
+			settings_->accept();
 		} catch (...) {
 			issue_ = QString::fromUtf8("無法儲存金鑰；請確認格式及 Credential Manager。");
 		}
@@ -91,14 +96,6 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 		next_ = nextControl_ = 0;
 		failures_ = 0;
 		tick();
-	});
-	connect(legacyButton_, &QPushButton::clicked, this, [this] {
-		if (!id_.isEmpty() || syncAwaiting_ || controlAwaiting_)
-			return;
-		if (!legacy_)
-			legacy_ = std::make_unique<PlatformController>(QDir(root_).absoluteFilePath(".."), this, true);
-		legacy_->view()->setWindowTitle(QString::fromUtf8("舊版 journal 恢復（不轉換為 K3）"));
-		legacy_->view()->show();
 	});
 	connect(&sync_, &QFutureWatcher<KeyJob>::finished, this, [this] { syncDone(); });
 	connect(&control_, &QFutureWatcher<KeyJob>::finished, this, [this] {
@@ -169,7 +166,6 @@ void KeyController::display()
 	key_->setEnabled(save_->isEnabled());
 	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；可更換金鑰") : QString::fromUtf8("串流金鑰"));
 	retry_->setVisible(paused_ && lease_->isLocked());
-	legacyButton_->setEnabled(id_.isEmpty());
 	titleLabel_->setText(title_);
 	titleLabel_->setVisible(!title_.isEmpty() && !released_);
 	status_->setText(issue_.isEmpty() ? QString::fromUtf8("未連線") : issue_);
@@ -205,18 +201,12 @@ void KeyController::startStop()
 	}
 	if (syncAwaiting_ || controlAwaiting_ || (!id_.isEmpty() && !released_))
 		return;
-	if (legacy_ && legacy_->busy()) {
-		issue_ = QString::fromUtf8("請先完成舊版收錄恢復。");
-		display();
-		return;
-	}
 	if (!keyAvailable_) {
 		issue_ = QString::fromUtf8("請先儲存串流金鑰。");
 		settings_->show();
 		display();
 		return;
 	}
-	legacy_.reset();
 	const auto selectedTrack = audioTrackProvider_ ? audioTrackProvider_() : 1u;
 	if (selectedTrack < 1 || selectedTrack > 6) {
 		issue_ = QString::fromUtf8("無法取得 OBS 串流音軌，請檢查 OBS 輸出設定。");
@@ -405,6 +395,5 @@ void KeyController::shutdown()
 	} catch (...) {
 	}
 	launchHelper();
-	legacy_.reset();
 }
 } // namespace hhc

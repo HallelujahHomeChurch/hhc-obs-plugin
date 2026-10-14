@@ -38,8 +38,11 @@ struct KeyControllerTest {
 		int failed = !c.settings_->isHidden() || !c.retry_->isHidden();
 		c.settingsButton_->click();
 		failed += c.settings_->isHidden();
+		failed += !c.settings_->isWindow();
+		c.view_->resize(160, 200);
+		failed += c.view_->width() > 160;
 		c.key_->setText("unsaved-secret");
-		c.settingsButton_->click();
+		c.settings_->close();
 		failed += !c.settings_->isHidden() || !c.key_->text().isEmpty();
 		c.paused_ = true;
 		c.display();

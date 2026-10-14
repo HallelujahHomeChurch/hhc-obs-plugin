@@ -15,3 +15,5 @@ Validation: key replacement regression observed failing before fix. Full RelWith
 This is local/unit evidence; existing real OBS 5af0fa4/Web208 passes remain historical. New audio adapter has not yet undergone live audio decoding or end-to-end capture. No new capture or platform changes required for UI inspection. Candidate is unsigned.
 
 Mac coordination: docs/reviews/mac-stream-ui-simplification-2026-10-14.md. Request evidence for existing single-key/event exclusion before proposing any new contract.
+
+2026-10-15 follow-up: Removed the 240px dock minimum. Key settings are now a separate owned non-modal dialog; closing it clears unsaved key text. Main labels wrap without imposing long-title widths. Removed legacy account recovery entry and controller ownership from K3, per user direction; no historic files deleted. Regression test first failed against inline settings, then verifies independent window, resize to 160px and secret clearing. This does not make controls usable at zero width; native button/text minima remain.

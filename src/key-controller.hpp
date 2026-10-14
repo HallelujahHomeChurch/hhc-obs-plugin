@@ -1,7 +1,8 @@
 #pragma once
 #include "capture-output.hpp"
 #include "key-transfer.hpp"
-#include "platform-controller.hpp"
+#include <QDialog>
+#include <QPointer>
 #include <QWidget>
 #include <QLabel>
 #include <QLineEdit>
@@ -32,13 +33,12 @@ private:
 	QLineEdit *key_;
 	unsigned audioTrack_ = 1;
 	std::function<unsigned()> audioTrackProvider_;
-	QWidget *settings_;
-	QPushButton *action_, *save_, *legacyButton_, *retry_, *settingsButton_;
+	QDialog *settings_;
+	QPushButton *action_, *save_, *retry_, *settingsButton_;
 	QLabel *status_, *titleLabel_;
 	QTimer timer_;
 	QFutureWatcher<KeyJob> sync_, control_;
 	std::unique_ptr<CaptureOutput> capture_;
-	std::unique_ptr<PlatformController> legacy_;
 	std::unique_ptr<QLockFile> lease_;
 	std::atomic<bool> cancelled_{false};
 	bool closing_ = false, starting_ = false, stopping_ = false, paused_ = false, syncAwaiting_ = false,
