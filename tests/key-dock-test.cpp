@@ -11,6 +11,48 @@
 #include <QDateTime>
 namespace hhc {
 struct KeyControllerTest {
+	static int settingsAfterRelease(KeyController &c)
+	{
+		c.timer_.stop();
+		c.id_ = "completed-session";
+		c.released_ = false;
+		c.display();
+		int failed = c.save_->isEnabled();
+		c.released_ = true;
+		c.display();
+		failed += !c.save_->isEnabled();
+		c.syncAwaiting_ = true;
+		c.display();
+		failed += c.save_->isEnabled();
+		c.syncAwaiting_ = false;
+		c.released_ = false;
+		c.id_.clear();
+		if (failed) std::cerr << "FAIL released input must allow key replacement only while idle\n";
+		return failed;
+	}
+	static int simpleControls(KeyController &c)
+	{
+		c.keyAvailable_ = true;
+		c.paused_ = false;
+		c.display();
+		int failed = !c.settings_->isHidden() || !c.retry_->isHidden();
+		c.settingsButton_->click();
+		failed += c.settings_->isHidden();
+		c.key_->setText("unsaved-secret");
+		c.settingsButton_->click();
+		failed += !c.settings_->isHidden() || !c.key_->text().isEmpty();
+		c.paused_ = true;
+		c.display();
+		failed += c.retry_->isHidden();
+		c.retry_->click(); // No active input: this must not create a capture.
+		failed += c.paused_ || !c.id_.isEmpty();
+		c.audioTrackProvider_ = [] { return 0u; };
+		c.startStop();
+		failed += !c.id_.isEmpty(); // Invalid OBS mixer must not silently fall back.
+		c.audioTrackProvider_ = {};
+		if (failed) std::cerr << "FAIL settings, recovery or audio selection behavior\n";
+		return failed;
+	}
 	static int uploadPacing(KeyController &c)
 	{
 		c.timer_.stop();
@@ -87,6 +129,8 @@ int main(int argc, char **argv)
 		if (button->text().contains(QString::fromUtf8("登入")) ||
 		    button->text().contains(QString::fromUtf8("登出")))
 			++failed;
+	failed += hhc::KeyControllerTest::settingsAfterRelease(controller);
+	failed += hhc::KeyControllerTest::simpleControls(controller);
 	failed += hhc::KeyControllerTest::uploadPacing(controller);
 	failed += hhc::KeyControllerTest::lifecycle(controller);
 	if (failed)

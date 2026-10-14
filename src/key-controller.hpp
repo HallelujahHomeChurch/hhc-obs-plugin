@@ -5,15 +5,15 @@
 #include <QWidget>
 #include <QLabel>
 #include <QLineEdit>
-#include <QComboBox>
 #include <QPushButton>
 #include <QTimer>
 #include <QFutureWatcher>
 #include <QLockFile>
+#include <functional>
 namespace hhc {
 class KeyController : public QObject {
 public:
-	explicit KeyController(QString root, QObject *parent = nullptr);
+	explicit KeyController(QString root, QObject *parent = nullptr, std::function<unsigned()> audioTrack = {});
 	~KeyController() override;
 	QWidget *view() const { return view_; }
 	void shutdown();
@@ -30,8 +30,10 @@ private:
 	QString root_, id_, actor_, title_, issue_;
 	QPointer<QWidget> view_;
 	QLineEdit *key_;
-	QComboBox *track_;
-	QPushButton *action_, *save_, *legacyButton_;
+	unsigned audioTrack_ = 1;
+	std::function<unsigned()> audioTrackProvider_;
+	QWidget *settings_;
+	QPushButton *action_, *save_, *legacyButton_, *retry_, *settingsButton_;
 	QLabel *status_, *titleLabel_;
 	QTimer timer_;
 	QFutureWatcher<KeyJob> sync_, control_;

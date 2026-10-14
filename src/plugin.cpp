@@ -5,6 +5,7 @@
 #include "key-controller.hpp"
 #include <obs-frontend-api.h>
 #include <util/bmem.h>
+#include <util/config-file.h>
 #include <QMainWindow>
 #include <QCoreApplication>
 namespace {
@@ -21,8 +22,15 @@ void frontendEvent(obs_frontend_event event, void *)
 		const auto root = QString::fromUtf8(path);
 		bfree(path);
 		controller = std::make_unique<hhc::KeyController>(
-			root, static_cast<QMainWindow *>(obs_frontend_get_main_window()));
-		if (!obs_frontend_add_dock_by_id("hhc.capture", "HHC 影音", controller->view()))
+			root, static_cast<QMainWindow *>(obs_frontend_get_main_window()), []() -> unsigned {
+				auto *config = obs_frontend_get_profile_config();
+				if (!config) return 0;
+				const auto *mode = config_get_string(config, "Output", "Mode");
+				if (!mode) return 0;
+				return QString::fromUtf8(mode).compare("Advanced", Qt::CaseInsensitive) == 0
+					? unsigned(config_get_uint(config, "AdvOut", "TrackIndex")) : 1u;
+			});
+		if (!obs_frontend_add_dock_by_id("hhc.capture", "HHC 串流", controller->view()))
 			controller.reset();
 		else
 			blog(LOG_INFO, "[HHC] Key-only ingest dock ready; credentials stay in Credential Manager");

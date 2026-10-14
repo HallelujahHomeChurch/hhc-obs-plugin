@@ -31,25 +31,20 @@ QJsonObject read(const QString &path)
 	return d.object();
 }
 } // namespace
-KeyController::KeyController(QString root, QObject *parent)
+KeyController::KeyController(QString root, QObject *parent, std::function<unsigned()> audioTrack)
 	: QObject(parent),
 	  root_(std::move(root) + "/k3"),
-	  view_(new QWidget)
+	  view_(new QWidget), audioTrackProvider_(std::move(audioTrack))
 {
 	auto *layout = new QVBoxLayout(view_);
-	auto *help = new QLabel(QString::fromUtf8("在 Console 準備直播；此處只需儲存一次串流金鑰。"));
-	help->setWordWrap(true);
-	layout->addWidget(help);
+	settings_ = new QWidget;
+	auto *settingsLayout = new QVBoxLayout(settings_);
 	key_ = new QLineEdit;
 	key_->setEchoMode(QLineEdit::Password);
 	key_->setPlaceholderText(QString::fromUtf8("串流金鑰"));
-	layout->addWidget(key_);
+	settingsLayout->addWidget(key_);
 	save_ = new QPushButton(QString::fromUtf8("儲存串流金鑰"));
-	layout->addWidget(save_);
-	track_ = new QComboBox;
-	for (int i = 1; i <= 6; ++i)
-		track_->addItem(QString::fromUtf8("音軌 %1").arg(i), i);
-	layout->addWidget(track_);
+	settingsLayout->addWidget(save_);
 	titleLabel_ = new QLabel;
 	titleLabel_->setWordWrap(true);
 	titleLabel_->setTextFormat(Qt::PlainText);
@@ -59,12 +54,20 @@ KeyController::KeyController(QString root, QObject *parent)
 	layout->addWidget(status_);
 	action_ = new QPushButton;
 	layout->addWidget(action_);
-	auto *retry = new QPushButton(QString::fromUtf8("重新檢查／恢復補傳"));
-	layout->addWidget(retry);
-	auto *console = new QPushButton(QString::fromUtf8("開啟 Console"));
-	layout->addWidget(console);
-	legacyButton_ = new QPushButton(QString::fromUtf8("處理舊版未完成收錄"));
-	layout->addWidget(legacyButton_);
+	retry_ = new QPushButton(QString::fromUtf8("重試"));
+	layout->addWidget(retry_);
+	settingsButton_ = new QPushButton(QString::fromUtf8("設定"));
+	layout->addWidget(settingsButton_);
+	layout->addWidget(settings_);
+	settings_->hide();
+	connect(settingsButton_, &QPushButton::clicked, this, [this] {
+		settings_->setVisible(settings_->isHidden());
+		if (settings_->isHidden()) key_->clear();
+	});
+	auto *console = new QPushButton(QString::fromUtf8("管理直播"));
+	settingsLayout->addWidget(console);
+	legacyButton_ = new QPushButton(QString::fromUtf8("舊版資料恢復（進階）"));
+	settingsLayout->addWidget(legacyButton_);
 	connect(console, &QPushButton::clicked, this,
 		[] { QDesktopServices::openUrl(QUrl("https://admin.alive.org.tw/content/broadcasts")); });
 	connect(save_, &QPushButton::clicked, this, [this] {
@@ -73,14 +76,15 @@ KeyController::KeyController(QString root, QObject *parent)
 			key_->clear();
 			keyAvailable_ = true;
 			paused_ = false;
-			issue_ = QString::fromUtf8("串流金鑰已儲存至 Windows Credential Manager。");
+			issue_ = QString::fromUtf8("串流金鑰已儲存。");
+			settings_->hide();
 		} catch (...) {
 			issue_ = QString::fromUtf8("無法儲存金鑰；請確認格式及 Credential Manager。");
 		}
 		display();
 	});
 	connect(action_, &QPushButton::clicked, this, [this] { startStop(); });
-	connect(retry, &QPushButton::clicked, this, [this] {
+	connect(retry_, &QPushButton::clicked, this, [this] {
 		paused_ = false;
 		next_ = nextControl_ = 0;
 		failures_ = 0;
@@ -136,7 +140,7 @@ KeyController::KeyController(QString root, QObject *parent)
 				id_ = a["localId"].toString();
 				stopping_ = a["stopping"].toBool();
 				starting_ = !a["started"].toBool() && !stopping_;
-				track_->setCurrentIndex(qBound(0, a["audioTrack"].toInt(1) - 1, 5));
+				audioTrack_ = unsigned(qBound(1, a["audioTrack"].toInt(1), 6));
 			}
 		} catch (...) {
 			paused_ = true;
@@ -155,16 +159,18 @@ KeyController::~KeyController()
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
-	action_->setText(running || starting_ ? QString::fromUtf8("停止 HHC 傳送")
-					      : QString::fromUtf8("開始 HHC 傳送"));
+	action_->setText(running || starting_ ? QString::fromUtf8("停止直播")
+					      : QString::fromUtf8("開始直播"));
 	action_->setEnabled(lease_->isLocked() && (running || starting_ || !paused_) &&
 			    (id_.isEmpty() || released_ || running || starting_));
-	save_->setEnabled(id_.isEmpty() && !syncAwaiting_);
+	save_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ && !syncAwaiting_ && !controlAwaiting_);
 	key_->setEnabled(save_->isEnabled());
-	track_->setEnabled(id_.isEmpty() || released_);
+	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；輸入新金鑰以更換") : QString::fromUtf8("串流金鑰"));
+	retry_->setVisible(paused_ && lease_->isLocked());
 	legacyButton_->setEnabled(id_.isEmpty());
-	titleLabel_->setText(title_.isEmpty() ? QString::fromUtf8("等待 Console 已準備的直播") : title_);
-	status_->setText(issue_);
+	titleLabel_->setText(title_);
+	titleLabel_->setVisible(!title_.isEmpty() && !released_);
+	status_->setText(issue_.isEmpty() ? QString::fromUtf8("未連線") : issue_);
 }
 bool KeyController::retireUnbound()
 {
@@ -204,10 +210,18 @@ void KeyController::startStop()
 	}
 	if (!keyAvailable_) {
 		issue_ = QString::fromUtf8("請先儲存串流金鑰。");
+		settings_->show();
 		display();
 		return;
 	}
 	legacy_.reset();
+	const auto selectedTrack = audioTrackProvider_ ? audioTrackProvider_() : 1u;
+	if (selectedTrack < 1 || selectedTrack > 6) {
+		issue_ = QString::fromUtf8("無法取得 OBS 串流音軌，請檢查 OBS 輸出設定。");
+		display();
+		return;
+	}
+	audioTrack_ = selectedTrack;
 	if (!id_.isEmpty())
 		launchHelper();
 	capture_.reset();
@@ -222,8 +236,8 @@ void KeyController::startStop()
 	atomicJson(root_ + "/active.json", {{"localId", id_},
 					    {"released", false},
 					    {"started", false},
-					    {"audioTrack", track_->currentData().toInt()}});
-	issue_ = QString::fromUtf8("等待 Console 準備直播…");
+					    {"audioTrack", int(audioTrack_)}});
+	issue_ = QString::fromUtf8("正在連線…");
 	tick();
 	display();
 }
@@ -294,16 +308,16 @@ void KeyController::syncDone()
 			starting_ = false;
 			atomicJson(dir + "/local-session.json", {{"title", title_},
 								 {"wireRevision", "c1-2026-10-08.2"},
-								 {"audioTrack", track_->currentData().toInt()},
+								 {"audioTrack", int(audioTrack_)},
 								 {"fpsNum", 30000},
 								 {"fpsDen", 1001}});
 			atomicJson(root_ + "/active.json", {{"localId", id_},
 							    {"released", false},
 							    {"started", true},
-							    {"audioTrack", track_->currentData().toInt()}});
+							    {"audioTrack", int(audioTrack_)}});
 			capture_ = std::make_unique<CaptureOutput>();
 			if (!capture_->start(
-				    {dir, unsigned(track_->currentData().toInt()), root_ + "/queue", actor_, id_})) {
+				    {dir, audioTrack_, root_ + "/queue", actor_, id_})) {
 				capture_.reset();
 				issue_ = QString::fromUtf8("NVENC 啟動失敗，保留資料並中止原 capture。");
 			}
@@ -314,9 +328,11 @@ void KeyController::syncDone()
 		if (released_)
 			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
 		// Bound publication belongs to Console; C1's cancellation is not the broadcast policy.
-		issue_ = QString::fromUtf8("HHC：%1；待傳 %2 bytes；發布狀態請見 Console")
-				 .arg(r.sync.state)
-				 .arg(r.sync.pendingBytes);
+		issue_ = capture_ && !capture_->finished() ? QString::fromUtf8("傳送中")
+			: r.sync.state == "ready" ? QString::fromUtf8("收錄完成")
+			: QString::fromUtf8("收尾中（%1）").arg(r.sync.state);
+		if (r.sync.pendingBytes)
+			issue_ += QString::fromUtf8("；待傳 %1 MB").arg(double(r.sync.pendingBytes) / 1048576, 0, 'f', 1);
 		if (r.sync.state == "aborted" || r.sync.state == "expired" || r.sync.state == "failed") {
 			if (capture_ && !capture_->finished())
 				capture_->stop(StopReason::EncoderFailure);
@@ -335,9 +351,10 @@ void KeyController::syncDone()
 			if (capture_)
 				capture_->stop(StopReason::EncoderFailure);
 			next_ = 0;
-		} else if (e.code == "broadcast_source_not_prepared")
+		} else if (e.code == "broadcast_source_not_prepared") {
+			issue_ = QString::fromUtf8("平台尚未準備接收，正在自動重試。");
 			next_ = QDateTime::currentMSecsSinceEpoch() + 5000 + QRandomGenerator::global()->bounded(1000);
-		else {
+		} else {
 			auto delay = e.retryDelay(failures_);
 			paused_ = !delay;
 			next_ = QDateTime::currentMSecsSinceEpoch() + 1000 * delay.value_or(0);
