@@ -81,3 +81,17 @@ Passed here: process-scoped >15-minute HTTP outage without host disconnection, c
 After the fixed field finished and isolated OBS was closed, removed the unconditional inter-object idle wait while `pendingBytes > 0` in the K3 dock and detached helper. Empty queues retain their prior 3-second / 10-second poll interval; terminal and HTTP error/backoff paths are unchanged. The controller regression failed on the previous code, then the complete 18-case CTest suite passed after the two-site change. This follow-up is not installed and has not yet established native throughput improvement; the measurements above remain exclusively the 6966356 fault variant. No parallel uploads, wire changes or additional network permissions were introduced.
 
 Original ended-live playback naturally reached EOS at 13:07:54.849 UTC+8: 1920x1080, time=duration 1411.434666, paused true, 1x, 40504 frames / 6 dropped, error null. The approximately 24.666 ms container tail is distinct from exact public segment duration 1411.41.
+
+## Published VOD completion (supersedes the pending publication checkpoint)
+
+At **13:10:53.804 UTC+8**, the original Console response reported phase archived / archive published / reason null, automatic publication true, unchanged `[0,47)`. No manual publish was used. Seal-to-published observation bound: **551.726310 seconds**; ready-observation-to-published bound: **277.564597 seconds**. This succeeds with automatic start and start sequence zero, so zero itself cannot explain every earlier stalled publication.
+
+Selected the original member page's continuation button without reload. Same title/URL, paused EOS position and 1x were retained. The published VOD then accepted a seek to **600 seconds**, within the simulated outage interval. At **13:12:03.221**, actual decode was 854x480, currentTime 609.779436 / duration 1411.434666, paused false, rate 1, readyState 4, 298 frames / 0 dropped, media error null. Buffered `[0,30.029999]`, `[570.57,750.749999]`, `[1381.38,1411.409999]`; seekable `[0,1411.434666]`. This proves the outage material remained playable and seekable in VOD.
+
+Admin selected Auto cover 1. Displayed VOD cover bytes match the live image exactly: 64259 bytes, 1280x720, SHA-256 `b0a8ff01b5a9741091e6b0a197cc7d9dbe4d3456565013cceee378c94bda989f`. Browser screenshot capture still timed out; retained DOM/network/media observations and native screenshot evidence instead of claiming a visual screenshot that was not obtained.
+
+Paused the completed playback and deleted only this disposable outage recording under standing authorization. Verified absence from loaded Admin and member listings; local media/journals/hash and test results remain. Mac's retained first/second comparison fields and protected originals were not deleted.
+
+This field now passes automatic publication, same-URL VOD, outage-interval playback/seek and selected cover-byte inheritance in addition to the local/transport checkpoint. It still does not pass steady live latency, physical-network failure, all ABR/DVR modes or a current-version 2.5-hour run.
+
+Separate pacing candidate: `5af0fa4a82c473df7bac780fa97779f5ebd57f49`; normal unsigned ZIP SHA-256 `9102cd7541cc4991cbb4e637763bac1bb1438d9ed36abc31943dbac5e2c22dfa`. Local 18/18 CTest pass. Its native throughput improvement has not been measured; do not transfer the older field's acceptance to this follow-up candidate.
