@@ -9,8 +9,8 @@ Native field plugin: `686dcfecba1a4e5cfc40995d40f219e32ff83964`. The follow-up `
 1. Recording `b7a8d3f4-54cc-4a69-88b6-ccda0d8b7136`, capture `63163a8265f4f2cc31f97bfddec93665`.
    Stop 2026-10-14 10:56:44.095812277 UTC+8; seal 10:57:51.836961; ready observed 10:59:46.401706689. Public `[0,14)`.
    At 11:14:51.653 the original Console GET reports phase processing, archive state ready, reason null, policy autoPublish true, auto cover ready, cover ID `677a2722adf24547d32ebbae1e4c0552`. Admin still draft at 11:17. No manual cancel/publish was sent.
-2. Recording `21edf722-0533-4081-a416-580ab69517f6`, capture `fd6df71873a5d2a4ac0384a155611ea5`.
-   Stop 11:11:17.152477929; seal 11:12:21.308683; ready observed 11:14:02.457813092. Public `[9,16)` = 210.21 seconds, policy autoPublish true; draft at 11:17.
+2. Successful comparison: recording `21edf722-0533-4081-a416-580ab69517f6`, capture `fd6df71873a5d2a4ac0384a155611ea5`.
+   Stop 11:11:17.152477929; seal 11:12:21.308683; ready observed 11:14:02.457813092. Public `[9,16)` = 210.21 seconds, policy autoPublish true; draft at 11:17, **naturally archived/published observed at 11:20:16.797** with ready auto cover `f680987b9103e3ffa4d5554e69130f92`. Do not label this second field a publication failure. Its approximately 7m55s seal-to-published observation bound may help compare the first field.
 
 Please correlate publication/thumbnail/archive reconciler logs and permissions, report exact ready/cover/published times and any blocked reason. C1 `autoPublish=cancelled` is the known B1 bridge value and is **not** itself a new platform failure. Both fields uploaded and sealed successfully; do not ask Windows to re-upload unchanged material.
 
