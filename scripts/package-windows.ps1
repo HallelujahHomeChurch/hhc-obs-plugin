@@ -3,6 +3,7 @@ $ErrorActionPreference='Stop'
 $taskRoot=Split-Path $PSScriptRoot -Parent
 Push-Location $taskRoot
 try {
+    if ((Test-Path build/CMakeCache.txt) -and (Select-String -Path build/CMakeCache.txt -Pattern '^HHC_NETWORK_TEST_FAULTS:BOOL=ON$' -Quiet)) {throw 'Network fault test builds cannot be packaged'}
     $revision=git rev-parse HEAD
     if ($LASTEXITCODE -ne 0) {throw 'Cannot identify source revision'}
     if (git status --porcelain --untracked-files=normal) {throw 'Commit source before packaging'}

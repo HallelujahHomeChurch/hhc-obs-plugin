@@ -44,6 +44,9 @@ bool obs_module_load(void)
 {
 #ifndef HHC_FIXTURE_BUILD
 	blog(LOG_INFO, "[HHC] compiled source %s", HHC_SOURCE_COMMIT);
+#ifdef HHC_NETWORK_TEST_FAULTS
+	blog(LOG_WARNING, "[HHC] NETWORK FAULT TEST BUILD - not a distribution candidate");
+#endif
 #endif
 #ifdef HHC_FIXTURE_BUILD
 	if (!qEnvironmentVariableIsSet("HHC_FIXTURE_NATIVE_SMOKE") &&

@@ -29,7 +29,11 @@ int main(int argc, char **argv)
 	options.addOption(QCommandLineOption(QStringList{"k3"}, "Resume original K3 session", "local-id"));
 	options.process(app);
 	if (options.isSet("build-info")) {
+#ifdef HHC_NETWORK_TEST_FAULTS
+		std::cout << HHC_SOURCE_COMMIT << "-network-faults\n";
+#else
 		std::cout << HHC_SOURCE_COMMIT << '\n';
+#endif
 		return 0;
 	}
 	auto root = options.value("root"), expected = options.value("account");

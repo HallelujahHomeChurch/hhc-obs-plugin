@@ -9,6 +9,9 @@
 #include <QSet>
 #include <QThread>
 #include <QDateTime>
+#ifdef HHC_NETWORK_TEST_FAULTS
+#include <QFileInfo>
+#endif
 namespace hhc {
 namespace {
 thread_local const std::atomic<bool> *cancellation = nullptr;
@@ -44,6 +47,13 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 	if (!url.isValid() || !url.userInfo().isEmpty() || url.hasFragment() ||
 	    (url.scheme() != "https" && !(url.scheme() == "http" && url.host() == "127.0.0.1")))
 		throw RequestError(0, "invalid_transport_origin");
+#ifdef HHC_NETWORK_TEST_FAULTS
+	const auto offlinePath = qEnvironmentVariable("HHC_TEST_NETWORK_OFFLINE_FILE");
+	auto offline = [&] { return !offlinePath.isEmpty() && QFileInfo::exists(offlinePath); };
+	if (offline())
+		throw RequestError(0, "transport_unavailable");
+	bool networkCut = false;
+#endif
 	QNetworkAccessManager manager;
 	QNetworkRequest request(url);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
@@ -60,6 +70,12 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 	QTimer cancelled;
 	cancelled.setInterval(100);
 	QObject::connect(&cancelled, &QTimer::timeout, reply, [&] {
+#ifdef HHC_NETWORK_TEST_FAULTS
+		if (offline()) {
+			networkCut = true;
+			reply->abort();
+		}
+#endif
 		if (cancellation && cancellation->load())
 			reply->abort();
 	});
@@ -76,6 +92,10 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 	deadline.start();
 	loop.exec();
 	checkCancellation();
+#ifdef HHC_NETWORK_TEST_FAULTS
+	if (networkCut)
+		throw RequestError(0, "transport_unavailable");
+#endif
 	response.body += reply->readAll();
 	response.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 	auto retry = reply->rawHeader("Retry-After");
