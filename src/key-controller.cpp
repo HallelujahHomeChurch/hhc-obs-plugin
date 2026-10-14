@@ -313,10 +313,10 @@ void KeyController::syncDone()
 		released_ = r.sync.stopAccepted && r.sync.sealAccepted;
 		if (released_)
 			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
-		issue_ = QString::fromUtf8("HHC：%1；待傳 %2 bytes；自動發布：%3")
+		// Bound publication belongs to Console; C1's cancellation is not the broadcast policy.
+		issue_ = QString::fromUtf8("HHC：%1；待傳 %2 bytes；發布狀態請見 Console")
 				 .arg(r.sync.state)
-				 .arg(r.sync.pendingBytes)
-				 .arg(r.sync.autoPublish);
+				 .arg(r.sync.pendingBytes);
 		if (r.sync.state == "aborted" || r.sync.state == "expired" || r.sync.state == "failed") {
 			if (capture_ && !capture_->finished())
 				capture_->stop(StopReason::EncoderFailure);
