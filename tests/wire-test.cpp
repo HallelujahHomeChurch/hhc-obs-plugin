@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 	check(b1.open(QIODevice::ReadOnly), "read pinned B1 fixtures");
 	const auto b1Bytes = b1.readAll();
 	check(QCryptographicHash::hash(b1Bytes, QCryptographicHash::Sha256).toHex() ==
-		  "bbd056e6e3bb7546caadd4a2ff913ca760341ca61cb6bdfb4e94425be9c82bcc",
+		      "bbd056e6e3bb7546caadd4a2ff913ca760341ca61cb6bdfb4e94425be9c82bcc",
 	      "B1 fixture hash");
 	for (const auto &v : QJsonDocument::fromJson(b1Bytes).array()) {
 		const auto o = v.toObject();
@@ -43,6 +43,18 @@ int main(int argc, char **argv)
 	check(!hhc::validWire("BroadcastControl",
 			      QJsonObject{{"revision", 1}, {"phase", "preview"}, {"pendingCommand", true}}),
 	      "B1 nullable object rejects boolean");
+	QFile k3("tests/fixtures/k3.json");
+	check(k3.open(QIODevice::ReadOnly), "read pinned K3 fixtures");
+	const auto k3Bytes = k3.readAll();
+	check(QCryptographicHash::hash(k3Bytes, QCryptographicHash::Sha256).toHex() ==
+		      "e46f1df639956e54fc0fd165b194f0bef53eb52641b8df1b498a1d8f2940961f",
+	      "K3 fixture hash");
+	for (const auto &v : QJsonDocument::fromJson(k3Bytes).object()["fixtures"].toArray()) {
+		const auto o = v.toObject();
+		check(hhc::validWire(o["schema"].toString(), o["value"]), qPrintable(o["name"].toString()));
+	}
+	check(!hhc::validWire("BroadcastIngestSession", QJsonObject{{"token", "opaque"}}),
+	      "K3 session requires event binding and expiry");
 	auto fixtures = QJsonDocument::fromJson(QByteArray("[]"));
 	QJsonObject token{{"access_token", "synthetic"},
 			  {"refresh_token", "synthetic-refresh"},

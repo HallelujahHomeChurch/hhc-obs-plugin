@@ -17,12 +17,13 @@
 #include <QRandomGenerator>
 #include <QScopeGuard>
 namespace hhc {
-PlatformController::PlatformController(QString root, QObject *parent)
+PlatformController::PlatformController(QString root, QObject *parent, bool recoveryOnly)
 	: QObject(parent),
 	  root_(std::move(root)),
 	  auth_(root_, this),
 	  view_(new Dock)
 {
+	recoveryOnly_ = recoveryOnly;
 	state_.autoPublish = false;
 	state_.phase = Phase::Unavailable;
 	view_->apply(state_);
@@ -30,7 +31,9 @@ PlatformController::PlatformController(QString root, QObject *parent)
 	view_->onAction = [this] {
 		action();
 	};
-	view_->onBroadcastRefresh = [this] { refreshBroadcasts(); };
+	view_->onBroadcastRefresh = [this] {
+		refreshBroadcasts();
+	};
 	view_->onRefresh = [this] {
 		refresh();
 	};
@@ -70,8 +73,7 @@ PlatformController::PlatformController(QString root, QObject *parent)
 		QDesktopServices::openUrl(QUrl::fromLocalFile(root_ + "/queue"));
 	};
 	view_->onOpenCleanup = [this](QString id) {
-		if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy() ||
-		    auth_.account().isEmpty())
+		if (closing_ || authenticating_ || busy() || jobBusy() || controlBusy() || auth_.account().isEmpty())
 			return;
 		SessionStore store(root_ + "/queue");
 		for (const auto &j : recoveryCache_.sessions) {
@@ -263,9 +265,8 @@ void PlatformController::refreshBroadcasts()
 }
 void PlatformController::pollControl()
 {
-	if (closing_ || authenticating_ || paused_ || controlPaused_ || controlBusy() ||
-	    broadcastId_.isEmpty() || !busy() || stopping_ || creating_ ||
-	    std::chrono::steady_clock::now() < nextControl_)
+	if (closing_ || authenticating_ || paused_ || controlPaused_ || controlBusy() || broadcastId_.isEmpty() ||
+	    !busy() || stopping_ || creating_ || std::chrono::steady_clock::now() < nextControl_)
 		return;
 	const auto directory = SessionStore(root_ + "/queue").mediaDirectory(owner_, id_);
 	const auto account = owner_, id = id_;
@@ -297,12 +298,11 @@ void PlatformController::controlCompleted()
 		controlFailures_ = 0;
 		controlIssue_.clear();
 		state_.broadcastPhase = control["phase"].toString();
-		tryObserverJson(
-		    root_ + "/broadcast-status.json",
-		    {{"localId", id_},
-		     {"recordingId", broadcastId_},
-		     {"control", control},
-		     {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
+		tryObserverJson(root_ + "/broadcast-status.json",
+				{{"localId", id_},
+				 {"recordingId", broadcastId_},
+				 {"control", control},
+				 {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
 		nextControl_ = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 	} catch (const RequestError &e) {
 		controlIssue_ = QString::fromUtf8("直播控制未完成，收錄與暫存持續：") + e.code;
@@ -335,8 +335,7 @@ void PlatformController::action()
 		nextAttempt_ = {};
 		return;
 	}
-	if (jobBusy() || controlBusy() || auth_.account().isEmpty() ||
-	    !auth_.permitted("cms:recordings:write"))
+	if (jobBusy() || controlBusy() || auth_.account().isEmpty() || !auth_.permitted("cms:recordings:write"))
 		return;
 	if (state_.phase == Phase::Published || state_.phase == Phase::DraftReady ||
 	    (state_.phase == Phase::Failed && state_.terminalFailure)) {
@@ -356,6 +355,11 @@ void PlatformController::action()
 	}
 	if (state_.phase != Phase::Ready)
 		return;
+	if (recoveryOnly_) {
+		state_.issue = QString::fromUtf8("此面板僅恢復既有舊版 journal；新直播請使用固定金鑰面板。");
+		view_->apply(state_);
+		return;
+	}
 	if (!id_.isEmpty())
 		helper();
 	capture_.reset();
@@ -405,7 +409,7 @@ void PlatformController::recover(QString id)
 		return;
 	QString broadcastId;
 	const auto broadcastPath =
-	    SessionStore(root_ + "/queue").mediaDirectory(auth_.account(), id) + "/broadcast-journal.json";
+		SessionStore(root_ + "/queue").mediaDirectory(auth_.account(), id) + "/broadcast-journal.json";
 	if (QFileInfo::exists(broadcastPath)) {
 		QFile f(broadcastPath);
 		if (QFileInfo(f).isSymLink() || f.size() > 8 * 1024 * 1024 || !openSharedJsonRead(f))
@@ -451,7 +455,8 @@ void PlatformController::submit(bool revalidateLocal)
 		if (revalidateLocal) {
 			const auto report = SessionStore(root_ + "/queue").scanPending(account, &cancelled_, id);
 			if (!report.issues.empty() || report.sessions.size() != 1 || report.sessions[0].localId != id)
-				throw std::runtime_error("Local recovery validation failed; files retained for inspection");
+				throw std::runtime_error(
+					"Local recovery validation failed; files retained for inspection");
 		}
 		ApiClient api(QUrl("https://admin.alive.org.tw/api"), [this, account](bool force) {
 			auto token = auth_.bearer(force);
@@ -517,8 +522,8 @@ void PlatformController::poll()
 	if (capture_ && capture_->finished()) {
 		bool normal = capture_->wait(1);
 		if (!normal && state_.issue.isEmpty())
-			state_.issue = QString::fromUtf8("編碼未正常完成；本機素材保留，將同步 abort。") +
-				       " " + capture_->error();
+			state_.issue = QString::fromUtf8("編碼未正常完成；本機素材保留，將同步 abort。") + " " +
+				       capture_->error();
 		capture_.reset();
 		state_.phase = paused_ ? Phase::Failed : Phase::Uploading;
 		nextAttempt_ = {};
@@ -549,11 +554,11 @@ void PlatformController::completed()
 			QStringList rows, ids, cleanupIds;
 			for (const auto &j : result.recovery.sessions) {
 				if (QFileInfo::exists(
-					SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
-					"/remote-journal.json") ||
+					    SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
+					    "/remote-journal.json") ||
 				    QFileInfo::exists(
-					SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
-					"/broadcast-journal.json")) {
+					    SessionStore(root_ + "/queue").mediaDirectory(j.account, j.localId) +
+					    "/broadcast-journal.json")) {
 					ids << j.localId;
 					const bool cleanup = SessionStore(root_ + "/queue")
 								     .mayCleanup(j, QDateTime::currentDateTimeUtc());
@@ -667,17 +672,20 @@ void PlatformController::completed()
 		if (!busy())
 			state_.phase = Phase::Failed;
 		tryObserverJson(root_ + "/sync-http-error.json",
-				{{"localId", id_}, {"status", e.status}, {"code", e.code}, {"paused", paused_},
+				{{"localId", id_},
+				 {"status", e.status},
+				 {"code", e.code},
+				 {"paused", paused_},
 				 {"retryDelaySeconds", delay ? QJsonValue(*delay) : QJsonValue(QJsonValue::Null)},
 				 {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
 	} catch (const std::exception &e) {
 		// Only exact internal messages may select a public code; never emit raw exception text.
 		const auto reason = QByteArray(e.what());
-		const QString code = reason == "Remote journal commit failed" ? "local_remote_journal_write_failed"
-				     : reason == "Queue document unavailable" ? "local_queue_unavailable"
-				     : reason == "Closed upload bytes changed" ? "local_media_changed"
+		const QString code = reason == "Remote journal commit failed"      ? "local_remote_journal_write_failed"
+				     : reason == "Queue document unavailable"      ? "local_queue_unavailable"
+				     : reason == "Closed upload bytes changed"     ? "local_media_changed"
 				     : reason == "Remote immutable object differs" ? "local_remote_media_conflict"
-										  : "local_sync_validation_failed";
+										   : "local_sync_validation_failed";
 		pauseSync(code);
 	} catch (...) {
 		pauseSync("local_sync_validation_failed");
@@ -693,7 +701,8 @@ void PlatformController::pauseSync(const QString &code)
 	if (!busy())
 		state_.phase = Phase::Failed;
 	tryObserverJson(root_ + "/sync-error.json",
-			{{"localId", id_}, {"code", code},
+			{{"localId", id_},
+			 {"code", code},
 			 {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
 }
 } // namespace hhc

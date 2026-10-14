@@ -189,8 +189,7 @@ SyncState CaptureSync::adopt(const QJsonObject &broadcast)
 		state_.captureId = binding["captureId"].toString();
 		save();
 	}
-	require(journal_["recordingId"] == broadcast["recordingId"] &&
-		    journal_["captureId"] == binding["captureId"],
+	require(journal_["recordingId"] == broadcast["recordingId"] && journal_["captureId"] == binding["captureId"],
 		"Existing capture differs from binding");
 	poll(); // C1 GET only, never create a parallel capture.
 	return state_;
@@ -226,8 +225,7 @@ void CaptureSync::save()
 		"Remote queue directory unavailable");
 	auto bytes = QJsonDocument(journal_).toJson(QJsonDocument::Compact);
 	require(bytes.size() <= 8 * 1024 * 1024, "Remote journal limit");
-	require(writeAtomicMetadata(directory() + "/remote-journal.json", bytes),
-		"Remote journal commit failed");
+	require(writeAtomicMetadata(directory() + "/remote-journal.json", bytes), "Remote journal commit failed");
 }
 void CaptureSync::apply(const QJsonObject &capture)
 {
@@ -381,6 +379,19 @@ SyncState CaptureSync::controlImpl(bool closeLive)
 	auto base = "/admin/recordings/" + state_.recordingId + "/captures/" + state_.captureId;
 	mutate(closeLive ? "close_live" : "cancel_auto_publish", "DELETE",
 	       base + (closeLive ? "/live" : "/auto-publish"), {}, closeLive ? "close_live" : "cancel_auto_publish");
+	return state_;
+}
+SyncState CaptureSync::abort()
+{
+	auto owner = lock();
+	require(!state_.captureId.isEmpty(), "Capture unavailable");
+	poll();
+	const auto pending = journal_["mutations"].toObject()["abort"].toObject();
+	if ((!pending.isEmpty() && !pending["receipt"].isObject()) ||
+	    !QStringList{"aborted", "failed", "expired"}.contains(state_.state))
+		mutate("abort", "POST",
+		       "/admin/recordings/" + state_.recordingId + "/captures/" + state_.captureId + "/abort",
+		       {{"reasonCode", "capture_incomplete"}}, "abort");
 	return state_;
 }
 SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)

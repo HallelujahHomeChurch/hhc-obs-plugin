@@ -97,23 +97,29 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 {
 	if (!path.startsWith('/') || path.startsWith("//") || path.contains('#'))
 		throw RequestError(0, "invalid_api_path");
-	QUrl url(origin_.toString() + path);
+	QUrl url(origin_.toString() + (route_ ? route_(method, path) : path));
 	HttpResponse result;
 	for (int attempt = 0; attempt < 2; ++attempt) {
-		QMap<QByteArray, QByteArray> headers{{"Authorization", "Bearer " + token_(attempt == 1)},
-						     {"Content-Type", "application/json"},
+		QMap<QByteArray, QByteArray> headers{{"Content-Type", "application/json"},
 						     {"Accept", "application/json"}};
+		const auto bearer = token_(attempt == 1);
+		if (!bearer.isEmpty())
+			headers["Authorization"] = "Bearer " + bearer;
 		if (!key.isEmpty())
 			headers["Idempotency-Key"] = key;
-		result = httpRequest(
-			method, url,
-			method == "GET" ? QByteArray{} : QJsonDocument(body).toJson(QJsonDocument::Compact), headers);
+		result = transport_(method, url,
+				    method == "GET" ? QByteArray{} : QJsonDocument(body).toJson(QJsonDocument::Compact),
+				    headers);
 		if (result.status != 401 || attempt == 1)
 			break;
 	}
 	if (result.status < 200 || result.status >= 300) {
 		const auto code = QJsonDocument::fromJson(result.body).object()["error"].toObject()["code"].toString();
-		static const QSet<QString> known{"capture_invalid",
+		static const QSet<QString> known{"broadcast_source_not_prepared",
+						 "broadcast_stream_key_invalid",
+						 "broadcast_ingest_session_invalid",
+						 "broadcast_ingest_revoked",
+						 "capture_invalid",
 						 "capture_unauthorized",
 						 "capture_forbidden",
 						 "capture_not_found",

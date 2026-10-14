@@ -19,7 +19,7 @@ struct PlatformJob {
 };
 class PlatformController : public QObject {
 public:
-	explicit PlatformController(QString root, QObject *parent = nullptr);
+	explicit PlatformController(QString root, QObject *parent = nullptr, bool recoveryOnly = false);
 	~PlatformController() override;
 	Dock *view() const { return view_; }
 	void shutdown();
@@ -53,6 +53,7 @@ private:
 	bool stopping_ = false;
 	bool publish_ = false, live_ = false, creating_ = false, closing_ = false, paused_ = false;
 	bool authenticating_ = false;
+	bool recoveryOnly_ = false;
 	bool awaitingResult_ = false;
 	unsigned failures_ = 0;
 	std::chrono::steady_clock::time_point nextAttempt_{};

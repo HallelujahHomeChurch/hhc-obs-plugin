@@ -26,6 +26,7 @@ public:
 	SyncState step(bool encoderActive, std::function<void()> beforeSeal = {});
 	BroadcastSyncResult broadcastStep(const QString &recordingId, bool encoderActive, bool creating);
 	SyncState control(bool closeLive);
+	SyncState abort();
 	QString directory() const;
 	static void persistControl(const QString &root, const QString &account, const QString &id, bool closeLive);
 

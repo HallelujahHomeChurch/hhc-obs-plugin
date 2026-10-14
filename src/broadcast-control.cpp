@@ -7,10 +7,8 @@
 #include <QLockFile>
 #include <QSet>
 #include <QUuid>
-namespace hhc
-{
-namespace
-{
+namespace hhc {
+namespace {
 void require(bool ok)
 {
 	if (!ok)
@@ -22,8 +20,12 @@ void fields(const QJsonObject &o, const QSet<QString> &allowed)
 		require(allowed.contains(it.key()));
 }
 } // namespace
-BroadcastControl::BroadcastControl(QString d, QString a, QString id, ApiClient &api)
-    : directory_(std::move(d)), account_(std::move(a)), id_(std::move(id)), api_(api)
+BroadcastControl::BroadcastControl(QString d, QString a, QString id, ApiClient &api, bool ingest)
+	: directory_(std::move(d)),
+	  account_(std::move(a)),
+	  id_(std::move(id)),
+	  api_(api),
+	  ingest_(ingest)
 {
 	require(!QUuid(account_).isNull() && !id_.isEmpty() && id_.size() <= 64);
 }
@@ -39,8 +41,8 @@ void BroadcastControl::load()
 	const auto doc = QJsonDocument::fromJson(f.readAll(), &error);
 	require(error.error == QJsonParseError::NoError && doc.isObject());
 	journal_ = doc.object();
-	fields(journal_, {"version", "protocolVersion", "account", "localId", "recordingId", "bind",
-			  "binding", "commands"});
+	fields(journal_,
+	       {"version", "protocolVersion", "account", "localId", "recordingId", "bind", "binding", "commands"});
 	require(journal_["version"] == 1 && journal_["protocolVersion"] == b1Version &&
 		journal_["account"] == account_ && journal_["localId"] == id_ &&
 		!QUuid(journal_["recordingId"].toString()).isNull());
@@ -65,8 +67,8 @@ void BroadcastControl::load()
 		require(!QUuid(it.key()).isNull() && (saved["kind"] == "start" || saved["kind"] == "end") &&
 			validWire("BroadcastMarkerAckInput", saved["body"]));
 		auto body = saved["body"].toObject(), binding = journal_["binding"].toObject();
-		require(body["operationKey"] == id_ + ".ack." + it.key() &&
-			body["captureId"] == binding["captureId"] && body["epoch"] == binding["epoch"]);
+		require(body["operationKey"] == id_ + ".ack." + it.key() && body["captureId"] == binding["captureId"] &&
+			body["epoch"] == binding["epoch"]);
 		if (!saved["receipt"].isNull())
 			require(validWire("BroadcastReceipt", saved["receipt"]) &&
 				saved["receipt"].toObject()["operationKey"] == body["operationKey"] &&
@@ -83,8 +85,8 @@ void BroadcastControl::save()
 QJsonArray BroadcastControl::selectable(ApiClient &api)
 {
 	auto capabilities =
-	    api.request("GET", "/admin/broadcast-capabilities", {}, "BroadcastCapabilitiesEnvelope")["data"]
-		.toObject();
+		api.request("GET", "/admin/broadcast-capabilities", {}, "BroadcastCapabilitiesEnvelope")["data"]
+			.toObject();
 	if (!capabilities["versions"].toArray().contains(b1Version))
 		throw RequestError(409, "broadcast_protocol_unsupported");
 	QJsonArray items;
@@ -121,16 +123,65 @@ void BroadcastControl::checkBinding(const QJsonObject &broadcast)
 }
 QJsonObject BroadcastControl::view()
 {
+	if (ingest_) {
+		const auto b = journal_["binding"].toObject();
+		return api_
+			.request("GET",
+				 "/admin/broadcasts/" + journal_["recordingId"].toString() +
+					 "/control?captureId=" + b["captureId"].toString() +
+					 "&epoch=" + QString::number(b["epoch"].toInteger()),
+				 {}, "BroadcastControlEnvelope")["data"]
+			.toObject();
+	}
 	auto v = api_.request("GET", "/admin/broadcasts/" + journal_["recordingId"].toString(), {},
 			      "BroadcastViewEnvelope")["data"]
-		     .toObject();
+			 .toObject();
 	checkBinding(v);
 	return v;
 }
+void BroadcastControl::adoptIngest(const QJsonObject &result, const QJsonObject &intent)
+{
+	require(ingest_ && QDir().mkpath(directory_));
+	QLockFile lock(lockFilePath(directory_ + "/broadcast.lock"));
+	lock.setStaleLockTime(0);
+	if (!lock.tryLock(0))
+		throw RequestError(409, "local_session_busy");
+	load();
+	const auto b = result["broadcast"].toObject();
+	require(validWire("BroadcastView", b) && b["binding"].isObject() && b["recordingId"] == intent["recordingId"] &&
+		b["binding"].toObject()["actorId"] == account_ && validWire("BroadcastReceipt", result["receipt"]) &&
+		result["receipt"].toObject()["operationKey"] == id_ + ".bind");
+	if (!journal_.isEmpty()) {
+		checkBinding(b);
+		return;
+	}
+	journal_ = {{"version", 1},
+		    {"protocolVersion", b1Version},
+		    {"account", account_},
+		    {"localId", id_},
+		    {"recordingId", b["recordingId"]},
+		    {"binding", b["binding"]},
+		    {"commands", QJsonObject{}},
+		    {"bind", QJsonObject{{"body", QJsonObject{{"operationKey", intent["operationKey"]},
+							      {"expectedRevision", intent["expectedRevision"]},
+							      {"protocolVersion", b1Version}}},
+					 {"receipt", result["receipt"]}}}};
+	save();
+}
+std::optional<int> BroadcastControl::acceptedEnd()
+{
+	load();
+	for (const auto &v : journal_["commands"].toObject()) {
+		const auto s = v.toObject();
+		const auto state = s["receipt"].toObject()["state"].toString();
+		if (s["kind"] == "end" && !s["cancelled"].toBool() && (state == "accepted" || state == "completed"))
+			return s["body"].toObject()["boundarySequence"].toInt();
+	}
+	return {};
+}
 QJsonObject BroadcastControl::bind(const QString &recordingId)
 {
-	require(!QUuid(recordingId).isNull() && QDir().mkpath(directory_) &&
-		!QFileInfo(directory_).isSymLink());
+	require(!QUuid(recordingId).isNull() && QDir().mkpath(directory_) && !QFileInfo(directory_).isSymLink());
 	QLockFile lock(lockFilePath(directory_ + "/broadcast.lock"));
 	lock.setStaleLockTime(0);
 	if (!lock.tryLock(0))
@@ -138,9 +189,8 @@ QJsonObject BroadcastControl::bind(const QString &recordingId)
 	load();
 	if (journal_.isEmpty()) {
 		// Console owns the recording/capture; never call the C1 create endpoints.
-		auto v = api_.request("GET", "/admin/broadcasts/" + recordingId, {},
-				      "BroadcastViewEnvelope")["data"]
-			     .toObject();
+		auto v = api_.request("GET", "/admin/broadcasts/" + recordingId, {}, "BroadcastViewEnvelope")["data"]
+				 .toObject();
 		require(v["recordingId"] == recordingId && v["binding"].isNull());
 		journal_ = {{"version", 1},
 			    {"protocolVersion", b1Version},
@@ -159,10 +209,9 @@ QJsonObject BroadcastControl::bind(const QString &recordingId)
 	auto intent = journal_["bind"].toObject();
 	if (intent["receipt"].isNull()) {
 		try {
-			auto data =
-			    api_.request("POST", "/admin/broadcasts/" + recordingId + "/bindings",
-					 intent["body"].toObject(), "BroadcastMutationResultEnvelope")["data"]
-				.toObject();
+			auto data = api_.request("POST", "/admin/broadcasts/" + recordingId + "/bindings",
+						 intent["body"].toObject(), "BroadcastMutationResultEnvelope")["data"]
+					    .toObject();
 			auto receipt = data["receipt"].toObject();
 			require(receipt["operationKey"] == id_ + ".bind" && receipt["operation"] == "bind" &&
 				receipt["state"] != "rejected");
@@ -182,10 +231,10 @@ QJsonObject BroadcastControl::ack(const QString &commandId, QJsonObject saved)
 {
 	try {
 		auto data = api_.request("POST",
-					 "/admin/broadcasts/" + journal_["recordingId"].toString() +
-					     "/commands/" + commandId + "/ack",
+					 "/admin/broadcasts/" + journal_["recordingId"].toString() + "/commands/" +
+						 commandId + "/ack",
 					 saved["body"].toObject(), "BroadcastMutationResultEnvelope")["data"]
-				.toObject();
+				    .toObject();
 		auto receipt = data["receipt"].toObject();
 		require(receipt["operationKey"] == saved["body"].toObject()["operationKey"] &&
 			receipt["operation"] == "ack" &&
@@ -264,10 +313,10 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 	try {
 		control = api_.request("GET",
 				       "/admin/broadcasts/" + journal_["recordingId"].toString() +
-					   "/control?captureId=" + binding["captureId"].toString() +
-					   "&epoch=" + QString::number(binding["epoch"].toInteger()),
+					       "/control?captureId=" + binding["captureId"].toString() +
+					       "&epoch=" + QString::number(binding["epoch"].toInteger()),
 				       {}, "BroadcastControlEnvelope")["data"]
-			      .toObject();
+				  .toObject();
 	} catch (const RequestError &e) {
 		if (e.status == 409 || e.status == 412)
 			view();
@@ -275,8 +324,7 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 	}
 	auto command = control["pendingCommand"].toObject(), commands = journal_["commands"].toObject();
 	const auto currentId = command["commandId"].toString();
-	if (commands.contains(currentId) &&
-	    (command["status"] == "cancelled" || command["status"] == "rejected")) {
+	if (commands.contains(currentId) && (command["status"] == "cancelled" || command["status"] == "rejected")) {
 		auto saved = commands[currentId].toObject();
 		saved["cancelled"] = true;
 		commands[currentId] = saved;
@@ -294,8 +342,7 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 				continue;
 			if (command["commandId"] == it.key())
 				require(command["captureId"] == binding["captureId"] &&
-					command["epoch"] == binding["epoch"] &&
-					command["kind"] == saved["kind"]);
+					command["epoch"] == binding["epoch"] && command["kind"] == saved["kind"]);
 			ack(it.key(), saved);
 		}
 	}

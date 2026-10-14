@@ -50,9 +50,15 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &, const QByteArra
 			 const QMap<QByteArray, QByteArray> &headers = {});
 class ApiClient {
 public:
-	ApiClient(QUrl origin, std::function<QByteArray(bool)> token)
+	using Transport = std::function<HttpResponse(const QByteArray &, const QUrl &, const QByteArray &,
+						     const QMap<QByteArray, QByteArray> &)>;
+	using Route = std::function<QString(const QByteArray &, const QString &)>;
+	ApiClient(QUrl origin, std::function<QByteArray(bool)> token, Transport transport = httpRequest,
+		  Route route = {})
 		: origin_(std::move(origin)),
-		  token_(std::move(token))
+		  token_(std::move(token)),
+		  transport_(std::move(transport)),
+		  route_(std::move(route))
 	{
 	}
 	QJsonObject request(const QByteArray &method, const QString &path, const QJsonObject &body = {},
@@ -61,5 +67,7 @@ public:
 private:
 	QUrl origin_;
 	std::function<QByteArray(bool)> token_;
+	Transport transport_;
+	Route route_;
 };
 } // namespace hhc

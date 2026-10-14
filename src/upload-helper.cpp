@@ -1,4 +1,5 @@
 #include "native-auth.hpp"
+#include "key-transfer.hpp"
 #include "capture-sync.hpp"
 #include "broadcast-control.hpp"
 #include "session-store.hpp"
@@ -25,6 +26,7 @@ int main(int argc, char **argv)
 	options.addOption(QCommandLineOption(QStringList{"account"}, "Expected human account", "UUID"));
 	options.addOption(QCommandLineOption(QStringList{"auth-check"}, "Developer auth evidence without secrets"));
 	options.addOption(QCommandLineOption(QStringList{"build-info"}, "Compiled source revision"));
+	options.addOption(QCommandLineOption(QStringList{"k3"}, "Resume original K3 session", "local-id"));
 	options.process(app);
 	if (options.isSet("build-info")) {
 		std::cout << HHC_SOURCE_COMMIT << '\n';
@@ -33,6 +35,37 @@ int main(int argc, char **argv)
 	auto root = options.value("root"), expected = options.value("account");
 	if (root.isEmpty())
 		return 2;
+	if (options.isSet("k3")) {
+		unsigned failures = 0;
+		bool validated = false;
+		const auto cutoff = std::chrono::steady_clock::now() + std::chrono::hours(24);
+		while (std::chrono::steady_clock::now() < cutoff) {
+			try {
+				const auto r =
+					hhc::keyTransferStep(root, options.value("k3"), false, false, false, validated);
+				failures = 0;
+				if (r.sync.state == "ready" && r.sync.autoPublish != "pending")
+					return 0;
+				if (QStringList{"aborted", "failed", "expired"}.contains(r.sync.state))
+					return 4;
+				QThread::sleep(10);
+			} catch (const hhc::RequestError &e) {
+				if (e.code == "broadcast_ingest_revoked") {
+					QThread::sleep(5);
+					continue;
+				}
+				if (e.code == "ingest_no_bind_intent")
+					return 0;
+				const auto delay = e.retryDelay(failures);
+				if (!delay)
+					return 5;
+				QThread::sleep(*delay);
+			} catch (...) {
+				return 6;
+			}
+		}
+		return 7;
+	}
 	try {
 		hhc::NativeAuth auth(root, nullptr, expected);
 		auto cutoff = std::chrono::steady_clock::now() + std::chrono::hours(24);
@@ -101,8 +134,7 @@ int main(int argc, char **argv)
 					hhc::CaptureSync sync(root + "/queue", account, j.localId, api);
 					auto state = sync.step(false, [&] {
 						if (QFileInfo::exists(dir + "/broadcast-journal.json"))
-							hhc::BroadcastControl(dir, account, j.localId, api)
-							    .replay();
+							hhc::BroadcastControl(dir, account, j.localId, api).replay();
 					});
 					terminalFailed |= state.state == "failed" || state.state == "expired";
 					pending |= state.state != "ready" && state.state != "aborted" &&

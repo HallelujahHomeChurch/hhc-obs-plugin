@@ -2,13 +2,13 @@
 #include "capture-output.hpp"
 #include <QtGlobal>
 #ifndef HHC_FIXTURE_BUILD
-#include "platform-controller.hpp"
+#include "key-controller.hpp"
 #include <obs-frontend-api.h>
 #include <util/bmem.h>
 #include <QMainWindow>
 #include <QCoreApplication>
 namespace {
-std::unique_ptr<hhc::PlatformController> controller;
+std::unique_ptr<hhc::KeyController> controller;
 void frontendEvent(obs_frontend_event event, void *)
 {
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING && !controller) {
@@ -20,13 +20,12 @@ void frontendEvent(obs_frontend_event event, void *)
 		char *path = obs_module_config_path("platform");
 		const auto root = QString::fromUtf8(path);
 		bfree(path);
-		controller = std::make_unique<hhc::PlatformController>(
+		controller = std::make_unique<hhc::KeyController>(
 			root, static_cast<QMainWindow *>(obs_frontend_get_main_window()));
 		if (!obs_frontend_add_dock_by_id("hhc.capture", "HHC 影音", controller->view()))
 			controller.reset();
 		else
-			blog(LOG_INFO,
-			     "[HHC] Native platform dock ready; OAuth credentials stay in Credential Manager");
+			blog(LOG_INFO, "[HHC] Key-only ingest dock ready; credentials stay in Credential Manager");
 	}
 	if (event == OBS_FRONTEND_EVENT_EXIT)
 		controller.reset();

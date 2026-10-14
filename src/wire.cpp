@@ -18,8 +18,12 @@ const QJsonObject schemaRoot = QJsonDocument::fromJson(QByteArray(
 				       .object();
 const QJsonObject b1Root = QJsonDocument::fromJson(QByteArray(
 #include "b1-schema.inc"
-						       ))
-			       .object();
+							   ))
+				   .object();
+const QJsonObject k3Root = QJsonDocument::fromJson(QByteArray(
+#include "k3-schema.inc"
+							   ))
+				   .object();
 QJsonObject resolve(const QJsonObject &root, const QString &ref)
 {
 	QJsonValue v(root);
@@ -202,8 +206,9 @@ qint64 measuredBandwidth(const QVector<double> &durations, const QVector<qint64>
 }
 bool validWire(const QString &schema, const QJsonValue &value)
 {
-	const auto &root =
-	    schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot : b1Root;
+	const auto &root = schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot
+			   : b1Root["components"].toObject()["schemas"].toObject().contains(schema)   ? b1Root
+												      : k3Root;
 	return validate(root, resolve(root, "#/components/schemas/" + schema), value);
 }
 QByteArray canonicalInventory(const QJsonObject &i)
