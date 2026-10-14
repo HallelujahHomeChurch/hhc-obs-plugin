@@ -7,8 +7,37 @@
 #include <limits>
 #include <QDir>
 #include <QFile>
+#include <QPromise>
+#include <QDateTime>
 namespace hhc {
 struct KeyControllerTest {
+	static int uploadPacing(KeyController &c)
+	{
+		c.timer_.stop();
+		c.id_ = "pacing-test";
+		int failed = 0;
+		for (auto pending : {quint64(1024), quint64(0)}) {
+			KeyJob result;
+			result.actor = "pacing-account";
+			result.sync.state = "uploading";
+			result.sync.pendingBytes = pending;
+			QPromise<KeyJob> promise;
+			promise.start();
+			promise.addResult(result);
+			promise.finish();
+			c.sync_.setFuture(promise.future());
+			c.syncDone();
+			const auto delay = c.next_ - QDateTime::currentMSecsSinceEpoch();
+			const bool ok = pending ? delay <= 100 : delay >= 2000;
+			if (!ok) {
+				std::cerr << "FAIL upload backlog must drain without idle polling delay\n";
+				++failed;
+			}
+		}
+		c.id_.clear();
+		c.actor_.clear();
+		return failed;
+	}
 	static int lifecycle(KeyController &c)
 	{
 		c.timer_.stop();
@@ -58,6 +87,7 @@ int main(int argc, char **argv)
 		if (button->text().contains(QString::fromUtf8("登入")) ||
 		    button->text().contains(QString::fromUtf8("登出")))
 			++failed;
+	failed += hhc::KeyControllerTest::uploadPacing(controller);
 	failed += hhc::KeyControllerTest::lifecycle(controller);
 	if (failed)
 		std::cerr << "FAIL key-only dock has unexpected credential or metadata controls\n";

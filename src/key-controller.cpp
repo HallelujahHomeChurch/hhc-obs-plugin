@@ -325,7 +325,7 @@ void KeyController::syncDone()
 			paused_ = false;
 			next_ = std::numeric_limits<qint64>::max();
 		} else
-			next_ = QDateTime::currentMSecsSinceEpoch() + 3000;
+			next_ = QDateTime::currentMSecsSinceEpoch() + (r.sync.pendingBytes ? 0 : 3000);
 		if (r.sync.state == "ready" && r.sync.autoPublish != "pending")
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {

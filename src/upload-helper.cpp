@@ -52,7 +52,8 @@ int main(int argc, char **argv)
 					return 0;
 				if (QStringList{"aborted", "failed", "expired"}.contains(r.sync.state))
 					return 4;
-				QThread::sleep(10);
+				if (!r.sync.pendingBytes)
+					QThread::sleep(10);
 			} catch (const hhc::RequestError &e) {
 				if (e.code == "broadcast_ingest_revoked") {
 					QThread::sleep(5);
