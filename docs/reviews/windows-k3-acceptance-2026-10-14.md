@@ -43,6 +43,24 @@ Qualification: the isolated OBS still loaded an old `hhc-obs-fixture.dll`, produ
 - Start acknowledged at encoder boundary 9 before the scheduled 11:30 time. Member original page initially showed the countdown, then automatically became a player without reload. At 11:09:26 the UI reported 109 seconds estimated latency; this badge alone does not establish decode or recovery success.
 - Isolated local OBS recording started around 11:08:19 for independent-output End testing. YouTube remains untouched.
 
+### Short-field completion checkpoint
+
+- Member true decode at 11:10:10.119: 1920×1080, currentTime 36.175312, duration 90.113999, playing at 1x, readyState 4, buffered `[0,90.089999]`, seekable `[0,90.113999]`. These are live-window coordinates, not source-time offsets or a recovery pass.
+- End accepted at boundary 16; public scope `[9,16)` = 210.21 seconds. HHC output stopped at 11:11:09.264. Stop accepted 11:11:17.152477929; seal accepted 11:12:21.308683; ready observed at serverNow 11:14:02.457813092 (101.149 seconds after seal, observation bound).
+- Separate OBS recording started 11:08:20.412, remained active after HHC stopped (screenshot at 11:11:50.705), and was stopped explicitly by the tester at 11:12:01.562. This proves local recording independence; YouTube streaming was not exercised.
+- Local three-rendition full hash/decode/codec/timeline QA passed: 17 source segments, 481.047233 seconds each, 30000/1001 fps. Source material outside `[9,16)` is not public duration.
+- Member original-page EOS at 11:15:14.108: 854×480, currentTime=duration=210.241999, paused=true, rate=1, 6304 decoded / 13 dropped frames, no media error; buffered `[32.032,210.241999]`, seekable `[0,210.241999]`. The approximately 32 ms container tail is separate from exact segment range.
+- EOS→Home→manual 1080p showed a transient **無法播放媒體** at 11:16:01.199 (0×0, duration unavailable). By 11:16:12.975 it recovered without reload: 1920×1080, time 0, duration 210.21, paused, 1x, readyState 4, error null. Selecting Auto repeated the transient error; by 11:17:48.524 it again decoded 1920×1080 at time 0, paused, 1x, error null. This is a failed no-false-error requirement, not an unrecoverable playback failure. It was ended-live replay, not published VOD; precise switch latency and retained-last-frame visual evidence were not obtained.
+- First field at 11:14:51.653: original Console still processing / archive ready / reason null, autoPublish=true, auto cover ready (`677a2722adf24547d32ebbae1e4c0552`). No publish action was substituted. Both fields still appeared as drafts in the Admin list at 11:17.
+
+## Candidate update and cleanup
+
+The display-only follow-up candidate is `33be386aed287098f23d8421acd0697887cf2c05`, ZIP SHA-256 `231cf1f1099d39105398f6283d9716f2b4e8386b607572464dbc0c37824c2637`. Local 16/16 tests and CI `38504843184` / `38504836041` passed. Installed its DLL/helper after both HHC fields stopped, drained and became ready; it has not been rerun through native capture. Field measurements above remain attributed to `686dcfe`.
+
+Both isolated HHC/local recordings are stopped, input released, isolated OBS gracefully closed and program clock stop marker created. Five original OBS profile/scene/encoder/service hashes match this run's preflight baseline. The unrelated original OBS instance remains untouched. Browser screenshot capture timed out; retained AX/network/media evidence and a native OBS screenshot instead.
+
+Deleted only the two explicitly disposable prior fields `ba4b1f22-12e8-4d7f-b2c6-5608992d15a2` and `8a43d04c-76d7-4504-843d-81f7689ca995`. Verified absence from Admin list, fresh member list and original member recommendations. Their local reports/journals/hash evidence remains. Protected originals, current K3 fields and real meeting recordings remain untouched.
+
 ## Evidence and remaining scope
 
 Ignored local evidence: `artifacts/k3-20261014/`, including fixed documents, builds/CTest, original profile hashes, candidate ZIP, first-status.json and first-local-validation.json. Durable intents and queue remain in the isolated OBS plugin configuration. Do not expose credentials or signed media URLs when sampling.
