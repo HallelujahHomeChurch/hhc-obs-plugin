@@ -36,6 +36,8 @@ public:
 	int status;
 	QString code;
 	int retryAfter;
+	bool outputOpening = false;
+	std::optional<qint64> retryDelayMs(unsigned &failures) const;
 	std::optional<int> retryDelay(unsigned &failures) const
 	{
 		if (!(status == 0 && code == "transport_unavailable" || status == 429 || status >= 500 ||

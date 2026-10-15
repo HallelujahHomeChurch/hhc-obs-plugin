@@ -37,7 +37,8 @@ QJsonObject read(const QString &path)
 KeyController::KeyController(QString root, QObject *parent, std::function<unsigned()> audioTrack)
 	: QObject(parent),
 	  root_(std::move(root) + "/k3"),
-	  view_(new QWidget), audioTrackProvider_(std::move(audioTrack))
+	  view_(new QWidget),
+	  audioTrackProvider_(std::move(audioTrack))
 {
 	auto *layout = new QVBoxLayout(view_);
 	layout->setAlignment(Qt::AlignTop);
@@ -138,7 +139,8 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			const auto a = read(root_ + "/active.json");
 			if (!a["released"].toBool()) {
 				id_ = a["localId"].toString();
-				stopping_ = a["stopping"].toBool();
+				stopping_ = a["stopping"].toBool() ||
+					    QFileInfo::exists(root_ + "/intents/" + id_ + ".stopping");
 				starting_ = !a["started"].toBool() && !stopping_;
 				audioTrack_ = unsigned(qBound(1, a["audioTrack"].toInt(1), 6));
 			}
@@ -159,13 +161,14 @@ KeyController::~KeyController()
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
-	action_->setText(running || starting_ ? QString::fromUtf8("停止直播")
-					      : QString::fromUtf8("開始直播"));
+	action_->setText(running || starting_ ? QString::fromUtf8("停止直播") : QString::fromUtf8("開始直播"));
 	action_->setEnabled(lease_->isLocked() && (running || starting_ || !paused_) &&
 			    (id_.isEmpty() || released_ || running || starting_));
-	save_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ && !syncAwaiting_ && !controlAwaiting_);
+	save_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ &&
+			  !syncAwaiting_ && !controlAwaiting_);
 	key_->setEnabled(save_->isEnabled());
-	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；可更換金鑰") : QString::fromUtf8("串流金鑰"));
+	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；可更換金鑰")
+					       : QString::fromUtf8("串流金鑰"));
 	retry_->setVisible(paused_ && lease_->isLocked());
 	titleLabel_->setText(title_);
 	titleLabel_->setVisible(!title_.isEmpty() && !released_);
@@ -174,6 +177,10 @@ void KeyController::display()
 bool KeyController::retireUnbound()
 {
 	if (syncAwaiting_ || id_.isEmpty() || QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
+		return false;
+	// Missing K4 metadata is a recovery fault, not evidence the server released an output.
+	if (QFileInfo::exists(root_ + "/active.json") &&
+	    read(root_ + "/active.json")["protocolVersion"] == "k4-2026-10-15.rc1")
 		return false;
 	atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
 	id_.clear();
@@ -192,10 +199,16 @@ void KeyController::startStop()
 		return;
 	}
 	if (starting_) {
+		if (QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
+			markIngestStopping(root_, id_);
 		starting_ = false;
 		stopping_ = true;
-		atomicJson(root_ + "/active.json",
-			   {{"localId", id_}, {"released", false}, {"started", false}, {"stopping", true}});
+		auto state = QFileInfo::exists(root_ + "/active.json") ? read(root_ + "/active.json") : QJsonObject{};
+		state["localId"] = id_;
+		state["released"] = false;
+		state["started"] = false;
+		state["stopping"] = true;
+		atomicJson(root_ + "/active.json", state);
 		retireUnbound();
 		display();
 		return;
@@ -219,6 +232,15 @@ void KeyController::startStop()
 		launchHelper();
 	capture_.reset();
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	try {
+		KeyIngest(root_ + "/intents", id_).prepareOpen();
+	} catch (...) {
+		id_.clear();
+		paused_ = true;
+		issue_ = QString::fromUtf8("無法保存開始紀錄；尚未送出連線請求。");
+		display();
+		return;
+	}
 	actor_.clear();
 	title_.clear();
 	recoveryValidated_ = false;
@@ -227,6 +249,7 @@ void KeyController::startStop()
 	end_.reset();
 	next_ = 0;
 	atomicJson(root_ + "/active.json", {{"localId", id_},
+					    {"protocolVersion", "k4-2026-10-15.rc1"},
 					    {"released", false},
 					    {"started", false},
 					    {"audioTrack", int(audioTrack_)}});
@@ -238,6 +261,13 @@ void KeyController::tick()
 {
 	if (closing_ || paused_ || !lease_->isLocked() || id_.isEmpty())
 		return;
+	if (!QFileInfo::exists(root_ + "/intents/" + id_ + ".json") && QFileInfo::exists(root_ + "/active.json") &&
+	    read(root_ + "/active.json")["protocolVersion"] == "k4-2026-10-15.rc1") {
+		paused_ = true;
+		issue_ = QString::fromUtf8("開始紀錄遺失；保留原輸出識別，請檢查本機資料。");
+		display();
+		return;
+	}
 	if (stopping_ && retireUnbound()) {
 		display();
 		return;
@@ -304,13 +334,14 @@ void KeyController::syncDone()
 								 {"audioTrack", int(audioTrack_)},
 								 {"fpsNum", 30000},
 								 {"fpsDen", 1001}});
-			atomicJson(root_ + "/active.json", {{"localId", id_},
-							    {"released", false},
-							    {"started", true},
-							    {"audioTrack", int(audioTrack_)}});
+			auto state = read(root_ + "/active.json");
+			state["localId"] = id_;
+			state["released"] = false;
+			state["started"] = true;
+			state["audioTrack"] = int(audioTrack_);
+			atomicJson(root_ + "/active.json", state);
 			capture_ = std::make_unique<CaptureOutput>();
-			if (!capture_->start(
-				    {dir, audioTrack_, root_ + "/queue", actor_, id_})) {
+			if (!capture_->start({dir, audioTrack_, root_ + "/queue", actor_, id_})) {
 				capture_.reset();
 				issue_ = QString::fromUtf8("NVENC 啟動失敗，保留資料並中止原 capture。");
 			}
@@ -318,15 +349,19 @@ void KeyController::syncDone()
 		if (r.end)
 			end_ = r.end;
 		released_ = r.sync.stopAccepted && r.sync.sealAccepted;
-		if (released_)
+		if (released_) {
+			starting_ = false;
 			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
+		}
 		// Bound publication belongs to Console; C1's cancellation is not the broadcast policy.
 		issue_ = capture_ && !capture_->finished() ? QString::fromUtf8("傳送中")
-			: r.sync.state == "ready" ? QString::fromUtf8("收錄完成")
-			: QString::fromUtf8("收尾中（%1）").arg(r.sync.state);
+			 : r.sync.state == "ready"         ? QString::fromUtf8("收錄完成")
+							   : QString::fromUtf8("收尾中（%1）").arg(r.sync.state);
 		if (r.sync.pendingBytes)
-			issue_ += QString::fromUtf8("；待傳 %1 MB").arg(double(r.sync.pendingBytes) / 1048576, 0, 'f', 1);
+			issue_ +=
+				QString::fromUtf8("；待傳 %1 MB").arg(double(r.sync.pendingBytes) / 1048576, 0, 'f', 1);
 		if (r.sync.state == "aborted" || r.sync.state == "expired" || r.sync.state == "failed") {
+			starting_ = false;
 			if (capture_ && !capture_->finished())
 				capture_->stop(StopReason::EncoderFailure);
 			released_ = true;
@@ -344,13 +379,19 @@ void KeyController::syncDone()
 			if (capture_)
 				capture_->stop(StopReason::EncoderFailure);
 			next_ = 0;
-		} else if (e.code == "broadcast_source_not_prepared") {
+		} else if (e.outputOpening && e.code == "broadcast_output_terminal") {
+			starting_ = stopping_ = paused_ = false;
+			released_ = true;
+			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
+			next_ = std::numeric_limits<qint64>::max();
+			issue_ = QString::fromUtf8("本次輸出已結束；再次按開始直播才會建立下一次輸出。");
+		} else if (!e.outputOpening && e.code == "broadcast_source_not_prepared") {
 			issue_ = QString::fromUtf8("平台尚未準備接收，正在自動重試。");
 			next_ = QDateTime::currentMSecsSinceEpoch() + 5000 + QRandomGenerator::global()->bounded(1000);
 		} else {
-			auto delay = e.retryDelay(failures_);
+			auto delay = e.retryDelayMs(failures_);
 			paused_ = !delay;
-			next_ = QDateTime::currentMSecsSinceEpoch() + 1000 * delay.value_or(0);
+			next_ = QDateTime::currentMSecsSinceEpoch() + delay.value_or(0);
 		}
 	} catch (...) {
 		paused_ = true;
@@ -389,6 +430,17 @@ void KeyController::shutdown()
 		return;
 	closing_ = true;
 	timer_.stop();
+	if (starting_ && QFileInfo::exists(root_ + "/active.json")) {
+		try {
+			if (QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
+				markIngestStopping(root_, id_);
+			auto state = read(root_ + "/active.json");
+			state["stopping"] = true;
+			atomicJson(root_ + "/active.json", state);
+		} catch (...) {
+			blog(LOG_ERROR, "[HHC] Cannot save stopping intent; original output retained");
+		}
+	}
 	cancelled_ = true;
 	if (capture_) {
 		capture_->stop(StopReason::User);

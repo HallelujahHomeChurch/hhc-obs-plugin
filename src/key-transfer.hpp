@@ -1,5 +1,6 @@
 #pragma once
 #include "capture-sync.hpp"
+#include "ingest.hpp"
 #include <atomic>
 namespace hhc {
 struct KeyJob {
@@ -9,6 +10,8 @@ struct KeyJob {
 	std::optional<int> end;
 };
 KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool revoked, bool preparing,
-		       bool &validated, const std::atomic<bool> *cancelled = nullptr);
+		       bool &validated, const std::atomic<bool> *cancelled = nullptr, IngestCredentials vault = {},
+		       ApiClient::Transport transport = httpRequest);
+void markIngestStopping(const QString &root, const QString &id);
 void markIngestRevoked(const QString &root, const QString &id);
 } // namespace hhc

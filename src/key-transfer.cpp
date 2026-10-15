@@ -17,18 +17,31 @@ void markIngestRevoked(const QString &root, const QString &id)
 	if (!writeAtomicMetadata(revokePath(root, id), QJsonDocument(QJsonObject{{"revoked", true}}).toJson()))
 		throw RequestError(409, "ingest_local_conflict");
 }
+void markIngestStopping(const QString &root, const QString &id)
+{
+	if (!writeAtomicMetadata(root + "/intents/" + id + ".stopping", "{\"stopping\":true}"))
+		throw RequestError(409, "ingest_local_conflict");
+}
 KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool revoked, bool preparing,
-		       bool &validated, const std::atomic<bool> *cancelled)
+		       bool &validated, const std::atomic<bool> *cancelled, IngestCredentials vault,
+		       ApiClient::Transport transport)
 {
 	QDir().mkpath(root + "/intents");
 	QLockFile lock(lockFilePath(root + "/intents/" + id + ".work.lock"));
 	lock.setStaleLockTime(0);
 	if (!lock.tryLock(0))
 		throw RequestError(409, "local_session_busy");
-	KeyIngest ingest(root + "/intents", id);
+	KeyIngest ingest(root + "/intents", id, std::move(vault), std::move(transport));
 	if (!preparing && ingest.metadata().isEmpty())
 		throw RequestError(409, "ingest_no_bind_intent");
+	if (ingest.metadata()["version"] == "k4-2026-10-15.rc1" && !active && !preparing)
+		markIngestStopping(root, id);
+	preparing = preparing && !QFileInfo::exists(root + "/intents/" + id + ".stopping");
 	const auto result = ingest.bind(), b = result["broadcast"].toObject();
+	// A late open response can describe an already ended event, but its transport still needs cleanup.
+	const bool canStart =
+		preparing && b["boundaries"].toObject()["endSequenceExclusive"].isNull() &&
+		!QStringList{"processing", "archived", "cancelled", "failed"}.contains(b["phase"].toString());
 	KeyJob out;
 	out.id = id;
 	out.actor = b["binding"].toObject()["actorId"].toString();
@@ -51,7 +64,7 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		out.end = control.acceptedEnd();
 		if (revoked || QFileInfo::exists(revokePath(root, id)))
 			out.sync = sync.abort();
-		else if (!(preparing && store.isPrepared(out.actor, id))) {
+		else if (!(canStart && store.isPrepared(out.actor, id))) {
 			if (!active && !validated && !out.sync.sealAccepted) {
 				const auto recovery = store.scanPending(out.actor, cancelled, id);
 				if (!recovery.issues.empty())
@@ -65,7 +78,9 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			markIngestRevoked(root, id);
 		throw;
 	}
-	out.bound = preparing && store.isPrepared(out.actor, id);
+	out.bound = canStart && store.isPrepared(out.actor, id) &&
+		    !QStringList{"aborted", "failed", "expired", "ready"}.contains(out.sync.state) &&
+		    !out.sync.stopAccepted;
 	return out;
 }
 } // namespace hhc

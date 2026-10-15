@@ -21,7 +21,8 @@ int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
 	const auto tlsPath = hhc::helperTlsPath(QCoreApplication::applicationDirPath());
-	if (!tlsPath.isEmpty()) QCoreApplication::addLibraryPath(tlsPath);
+	if (!tlsPath.isEmpty())
+		QCoreApplication::addLibraryPath(tlsPath);
 	QCommandLineParser options;
 	options.addOption(QCommandLineOption(QStringList{"root"}, "Native settings root", "path"));
 	options.addOption(QCommandLineOption(QStringList{"account"}, "Expected human account", "UUID"));
@@ -62,10 +63,22 @@ int main(int argc, char **argv)
 				}
 				if (e.code == "ingest_no_bind_intent")
 					return 0;
-				const auto delay = e.retryDelay(failures);
+				if (e.outputOpening && e.code == "broadcast_output_terminal")
+					return 0;
+				const auto delay = e.retryDelayMs(failures);
 				if (!delay)
 					return 5;
-				QThread::sleep(*delay);
+				const auto retryAt =
+					std::chrono::steady_clock::now() + std::chrono::milliseconds(*delay);
+				while (std::chrono::steady_clock::now() < retryAt) {
+					if (std::chrono::steady_clock::now() >= cutoff)
+						return 7;
+					const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+								       retryAt - std::chrono::steady_clock::now())
+								       .count();
+					QThread::msleep(static_cast<unsigned long>(
+						std::max<qint64>(0, std::min<qint64>(remaining, 1000))));
+				}
 			} catch (...) {
 				return 6;
 			}

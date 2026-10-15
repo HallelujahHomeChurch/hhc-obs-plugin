@@ -48,9 +48,16 @@ void BroadcastControl::load()
 		!QUuid(journal_["recordingId"].toString()).isNull());
 	auto bind = journal_["bind"].toObject();
 	fields(bind, {"body", "receipt"});
-	require(validWire("BroadcastBindInput", bind["body"]) &&
-		bind["body"].toObject()["operationKey"] == id_ + ".bind" &&
-		bind["body"].toObject()["protocolVersion"] == b1Version);
+	const bool opened = bind["body"].toObject()["protocolVersion"] == "k4-2026-10-15.rc1";
+	if (opened) {
+		auto input = bind["body"].toObject();
+		input["streamKey"] = "hhc_stream_" + QString(43, 'A');
+		require(ingest_ && validWire("BroadcastOutputOpenInput", input) && input["outputSessionId"] == id_ &&
+			bind["receipt"].toObject()["state"] == "completed" && journal_["binding"].isObject());
+	} else
+		require(validWire("BroadcastBindInput", bind["body"]) &&
+			bind["body"].toObject()["operationKey"] == id_ + ".bind" &&
+			bind["body"].toObject()["protocolVersion"] == b1Version);
 	if (!bind["receipt"].isNull())
 		require(validWire("BroadcastReceipt", bind["receipt"]) &&
 			bind["receipt"].toObject()["operationKey"] == id_ + ".bind" &&
@@ -148,7 +155,16 @@ void BroadcastControl::adoptIngest(const QJsonObject &result, const QJsonObject 
 		throw RequestError(409, "local_session_busy");
 	load();
 	const auto b = result["broadcast"].toObject();
-	require(validWire("BroadcastView", b) && b["binding"].isObject() && b["recordingId"] == intent["recordingId"] &&
+	const bool opened = intent["protocolVersion"] == "k4-2026-10-15.rc1";
+	if (opened) {
+		auto input = intent;
+		input["streamKey"] = "hhc_stream_" + QString(43, 'A');
+		require(validWire("BroadcastOutputOpenInput", input) && input["outputSessionId"] == id_ &&
+			result["receipt"].toObject()["operation"] == "bind" &&
+			result["receipt"].toObject()["state"] == "completed");
+	}
+	require(validWire("BroadcastView", b) && b["binding"].isObject() &&
+		(opened || b["recordingId"] == intent["recordingId"]) &&
 		b["binding"].toObject()["actorId"] == account_ && validWire("BroadcastReceipt", result["receipt"]) &&
 		result["receipt"].toObject()["operationKey"] == id_ + ".bind");
 	if (!journal_.isEmpty()) {
@@ -162,9 +178,10 @@ void BroadcastControl::adoptIngest(const QJsonObject &result, const QJsonObject 
 		    {"recordingId", b["recordingId"]},
 		    {"binding", b["binding"]},
 		    {"commands", QJsonObject{}},
-		    {"bind", QJsonObject{{"body", QJsonObject{{"operationKey", intent["operationKey"]},
-							      {"expectedRevision", intent["expectedRevision"]},
-							      {"protocolVersion", b1Version}}},
+		    {"bind", QJsonObject{{"body", opened ? intent
+							 : QJsonObject{{"operationKey", intent["operationKey"]},
+								       {"expectedRevision", intent["expectedRevision"]},
+								       {"protocolVersion", b1Version}}},
 					 {"receipt", result["receipt"]}}}};
 	save();
 }
