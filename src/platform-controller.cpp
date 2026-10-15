@@ -1,3 +1,4 @@
+#include "runtime-paths.hpp"
 #include "async.hpp"
 #include "windows-path.hpp"
 #include "platform-controller.hpp"
@@ -190,10 +191,11 @@ void PlatformController::shutdown()
 }
 void PlatformController::helper()
 {
-	auto program = QDir(QCoreApplication::applicationDirPath())
-			       .absoluteFilePath("../../obs-plugins/64bit/hhc-upload-helper.exe");
-	if (!QFileInfo::exists(program))
+	const auto program = uploadHelperPath(currentModuleFile());
+	if (program.isEmpty()) {
+		blog(LOG_ERROR, "[HHC] Background helper missing; journal retained for next OBS start");
 		return;
+	}
 	QProcess p;
 	p.setProgram(program);
 	p.setArguments({"--root", root_, "--account", owner_});
@@ -206,7 +208,8 @@ void PlatformController::helper()
 		args->startupInfo->dwFlags |= STARTF_USESHOWWINDOW;
 		args->startupInfo->wShowWindow = SW_HIDE;
 	});
-	p.startDetached();
+	if (!p.startDetached())
+		blog(LOG_ERROR, "[HHC] Background helper could not start; journal retained for next OBS start");
 }
 void PlatformController::refresh()
 {

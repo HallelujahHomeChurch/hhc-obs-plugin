@@ -1,3 +1,4 @@
+#include "runtime-paths.hpp"
 #include "key-controller.hpp"
 #include "ingest.hpp"
 #include "session-store.hpp"
@@ -363,9 +364,13 @@ void KeyController::launchHelper()
 {
 	if (id_.isEmpty() || !QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
 		return;
+	const auto program = uploadHelperPath(currentModuleFile());
+	if (program.isEmpty()) {
+		blog(LOG_ERROR, "[HHC] Background helper missing; journal retained for next OBS start");
+		return;
+	}
 	QProcess p;
-	p.setProgram(QDir(QCoreApplication::applicationDirPath())
-			     .absoluteFilePath("../../obs-plugins/64bit/hhc-upload-helper.exe"));
+	p.setProgram(program);
 	p.setArguments({"--root", root_, "--k3", id_});
 	auto env = QProcessEnvironment::systemEnvironment();
 	env.insert("PATH", QCoreApplication::applicationDirPath() + ";" + env.value("PATH"));
@@ -375,7 +380,8 @@ void KeyController::launchHelper()
 		a->startupInfo->dwFlags |= STARTF_USESHOWWINDOW;
 		a->startupInfo->wShowWindow = SW_HIDE;
 	});
-	p.startDetached();
+	if (!p.startDetached())
+		blog(LOG_ERROR, "[HHC] Background helper could not start; journal retained for next OBS start");
 }
 void KeyController::shutdown()
 {

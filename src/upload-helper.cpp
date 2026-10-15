@@ -1,3 +1,4 @@
+#include "runtime-paths.hpp"
 #include "native-auth.hpp"
 #include "key-transfer.hpp"
 #include "capture-sync.hpp"
@@ -19,8 +20,8 @@
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
-	QCoreApplication::addLibraryPath(QDir(QCoreApplication::applicationDirPath())
-						 .absoluteFilePath("../../data/obs-plugins/hhc-obs-plugin/qt-plugins"));
+	const auto tlsPath = hhc::helperTlsPath(QCoreApplication::applicationDirPath());
+	if (!tlsPath.isEmpty()) QCoreApplication::addLibraryPath(tlsPath);
 	QCommandLineParser options;
 	options.addOption(QCommandLineOption(QStringList{"root"}, "Native settings root", "path"));
 	options.addOption(QCommandLineOption(QStringList{"account"}, "Expected human account", "UUID"));

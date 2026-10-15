@@ -24,3 +24,15 @@ Program 收錄維持 1920×1080、30000/1001 fps、NV12、BT.709／有限範圍�
 正常退出後背景補傳最多 24 小時，仍受平台期限限制。程序中斷不代表正常結束。移除外掛時保留 queue、journal、設定和原錄影。
 
 固定契約：K3 k3-2026-10-14.rc1、B1 b1-2026-10-10.rc1、C1 c1-2026-10-08.2、inventory 1。
+
+## OBS 升級與目錄相容性
+
+目前正式 OBS 維持 32.2.2。一般 ZIP（legacy）沿用上述安裝方式；檔名含 `-modern` 的 ZIP 是新目錄封裝，不能依此宣稱 OBS 33/34 已驗收。
+
+新目錄封裝的 `hhc-obs-plugin` 整個資料夾安裝至 `C:\ProgramData\obs-studio\plugins\`；新版免安裝 OBS 則放在其根目錄 `plugins` 下。DLL 與 `hhc-upload-helper.exe` 必須並排，TLS 元件放在 `data/qt-plugins/tls`。不要只搬 DLL，也不要同時留下兩份有效版本。
+
+背景補傳以實際載入的外掛 DLL 位置尋找 helper，不依賴 OBS 安裝位置；helper 同時支援新舊 TLS 資料目錄。缺少 helper 或無法啟動時，記錄不含憑證的錯誤並保留 journal，下一次 OBS 啟動繼續恢復，不搜尋其他位置的可執行檔。
+
+升級前先完成補傳、正常關閉 OBS，備份設定與原外掛。先在隔離環境驗證新版 OBS/Qt、NVENC、音訊、背景補傳與 YouTube 共用負載，再更換正式環境；不要覆蓋 OBS 本身的 Qt/FFmpeg DLL。新目錄程式相容性不等於未來 OBS 的二進位相容性。
+
+官方目錄規則：https://obsproject.com/kb/legacy-plugin-locations
