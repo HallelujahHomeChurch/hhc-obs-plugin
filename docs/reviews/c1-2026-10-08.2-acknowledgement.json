@@ -1,0 +1,109 @@
+{
+  "wireRevision": "c1-2026-10-08.2",
+  "manifestSHA256": "f702477236ba184853c119ffa9c4da0cc9f6d44cf7911785f85f3aa6d94e8be9",
+  "handoffCommit": "e5a2dc0f370ddc4a90944d09015dca9ef1ef8540",
+  "inventorySchemaVersion": 1,
+  "artifacts": [
+    {
+      "repository": "HallelujahHomeChurch/hhc-web-api",
+      "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+      "path": "openapi.yaml",
+      "sha256": "2aa542f7aaa30d6e12ca02e26de7a02d94e1226378184f147ccf809f897ffec9",
+      "bytes": 452674
+    },
+    {
+      "repository": "HallelujahHomeChurch/hhc-web-api",
+      "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+      "path": "docs/obs-capture/fixtures.json",
+      "sha256": "84d4074550e24f93a747a67b60e3ce3e49894fd2e409d23367a3e2d285c5f794",
+      "bytes": 51118
+    },
+    {
+      "repository": "HallelujahHomeChurch/hhc-web-api",
+      "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+      "path": "tools/obs-capture-mock/main.go",
+      "sha256": "eb802bb9622954e24b25e12e4a72bf1c708273abf1ec0c6def26f8d1dfb14680",
+      "bytes": 4823
+    },
+    {
+      "repository": "HallelujahHomeChurch/hhc-web-api",
+      "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+      "path": "tools/obs-capture-mock/main_test.go",
+      "sha256": "5dbcabd4e5b71244a53f33f8889bad23f43150a318bd9cd6c24ae58dd43e3670",
+      "bytes": 2862
+    },
+    {
+      "repository": "HallelujahHomeChurch/hhc-web-api",
+      "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+      "path": "go.mod",
+      "sha256": "ee2eaecb84d01ef0e701ba7e3f79f822ac117b491902944ab5f426ef4e7d9b1f",
+      "bytes": 2399
+    },
+    {
+      "repository": "HallelujahHomeChurch/hhc-web-api",
+      "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+      "path": "go.sum",
+      "sha256": "282dc7a2aadbf0054df0f0ff9fcb2518cf7fe764bddcb3dd36c28bab3f045df0",
+      "bytes": 12159
+    },
+    {
+      "repository": "HallelujahHomeChurch/asset-api",
+      "commit": "52efad00367d0101e9882519bdbbd0fa6aa8acd6",
+      "path": "docs/openapi.yaml",
+      "sha256": "0d063e31e95e0d426905470bf9cd8f1cf4cca3b22966a28cc82a092d9fbfcfaa",
+      "bytes": 160892
+    },
+    {
+      "repository": "HallelujahHomeChurch/account-api",
+      "commit": "433176e706c257fe1e484537cef7a05e181de264",
+      "path": "docs/openapi.yaml",
+      "sha256": "8d18660fda96ebcb8380df2e3daa2ccaf8cea3c4074264a9b737f3528b69948c",
+      "bytes": 234423
+    },
+    {
+      "repository": "HallelujahHomeChurch/account-api",
+      "commit": "433176e706c257fe1e484537cef7a05e181de264",
+      "path": "docs/obs-capture/oauth-client-preview.json",
+      "sha256": "7010fd0d84d79d652d1966a3d40183cdd6f863b5af1e8b3f15632fa5ba78f5ee",
+      "bytes": 382
+    },
+    {
+      "repository": "HallelujahHomeChurch/account-api",
+      "commit": "433176e706c257fe1e484537cef7a05e181de264",
+      "path": "docs/obs-capture/handoff.md",
+      "sha256": "56084b3117d5abcc5bb91595d68de121a5dbe0267e027d93026ac333e979366e",
+      "bytes": 1728
+    },
+    {
+      "repository": "HallelujahHomeChurch/api-gateway",
+      "commit": "ac06d18c11d94dd484b0995e09f1cd1a099be2ab",
+      "path": "docs/openapi.yaml",
+      "sha256": "9a90002e956f2d9eb4dc7d79915b9d10b3909434fbc09fc84ce1ba9dca249e7d",
+      "bytes": 336977
+    }
+  ],
+  "verified": true,
+  "wireTests": "passed: 36 fixed fixtures; existing canonical digest/29.97 tests; all 10 CTest cases",
+  "scope": "C1 byte and wire-test acknowledgement; ready/playback/publication acceptance remains separate",
+  "acknowledgedAt": "2026-10-08T10:37:50.830694+00:00",
+  "openapiVersion": "3.1.0",
+  "apiInfoVersions": {
+    "CMS": "0.2.0",
+    "Asset": "1.0.0"
+  },
+  "compatibility": "RecordingRendition segmentCount description changed; validation fields and constraints unchanged; actual segment count preserved",
+  "originalCaptureReadback": {
+    "captureId": "5d68171bc2e63cd5f9cae36eef7032b7",
+    "state": "aborted",
+    "terminalReason": "recording_deleted",
+    "sealRetried": false,
+    "reason": "authoritative terminal state prevents retry; deleted recording not recreated automatically"
+  },
+  "platformDeploymentEvidence": {
+    "source": "user notification and immutable platform release handoff; no Windows deployment performed",
+    "assetRevision": "asset-api--0000084",
+    "assetCommit": "52efad00367d0101e9882519bdbbd0fa6aa8acd6",
+    "cmsRevision": "hhc-web-api--0000149",
+    "recordingJobImageDigest": "sha256:7128459c8a63b5f5bc2609e5e82a407b7c5c03eb2e6177e6e8a22debe61bbcba"
+  }
+}

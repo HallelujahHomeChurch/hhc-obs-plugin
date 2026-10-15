@@ -1,0 +1,243 @@
+{
+  "observedAt": "2026-10-08T14:30:01.550594+00:00",
+  "pluginCommit": "864bf3b3d6228f712d8c53f4a121d52fbfce000a",
+  "scope": "Local unit/mock/loopback, current native historical ready readback and hosted CI; fresh current capture E2E remains incomplete",
+  "c1Recheck": {
+    "observedAt": "2026-10-08T14:17:08.649913+00:00",
+    "revision": "c1-2026-10-08.2",
+    "manifestSHA256": "f702477236ba184853c119ffa9c4da0cc9f6d44cf7911785f85f3aa6d94e8be9",
+    "verified": true,
+    "artifacts": [
+      {
+        "repository": "HallelujahHomeChurch/hhc-web-api",
+        "path": "openapi.yaml",
+        "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+        "sha256": "2aa542f7aaa30d6e12ca02e26de7a02d94e1226378184f147ccf809f897ffec9",
+        "bytes": 452674,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/hhc-web-api",
+        "path": "docs/obs-capture/fixtures.json",
+        "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+        "sha256": "84d4074550e24f93a747a67b60e3ce3e49894fd2e409d23367a3e2d285c5f794",
+        "bytes": 51118,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/hhc-web-api",
+        "path": "tools/obs-capture-mock/main.go",
+        "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+        "sha256": "eb802bb9622954e24b25e12e4a72bf1c708273abf1ec0c6def26f8d1dfb14680",
+        "bytes": 4823,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/hhc-web-api",
+        "path": "tools/obs-capture-mock/main_test.go",
+        "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+        "sha256": "5dbcabd4e5b71244a53f33f8889bad23f43150a318bd9cd6c24ae58dd43e3670",
+        "bytes": 2862,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/hhc-web-api",
+        "path": "go.mod",
+        "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+        "sha256": "ee2eaecb84d01ef0e701ba7e3f79f822ac117b491902944ab5f426ef4e7d9b1f",
+        "bytes": 2399,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/hhc-web-api",
+        "path": "go.sum",
+        "commit": "0277a9f8002f54e58063e9590561dec97c596b73",
+        "sha256": "282dc7a2aadbf0054df0f0ff9fcb2518cf7fe764bddcb3dd36c28bab3f045df0",
+        "bytes": 12159,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/asset-api",
+        "path": "docs/openapi.yaml",
+        "commit": "52efad00367d0101e9882519bdbbd0fa6aa8acd6",
+        "sha256": "0d063e31e95e0d426905470bf9cd8f1cf4cca3b22966a28cc82a092d9fbfcfaa",
+        "bytes": 160892,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/account-api",
+        "path": "docs/openapi.yaml",
+        "commit": "433176e706c257fe1e484537cef7a05e181de264",
+        "sha256": "8d18660fda96ebcb8380df2e3daa2ccaf8cea3c4074264a9b737f3528b69948c",
+        "bytes": 234423,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/account-api",
+        "path": "docs/obs-capture/oauth-client-preview.json",
+        "commit": "433176e706c257fe1e484537cef7a05e181de264",
+        "sha256": "7010fd0d84d79d652d1966a3d40183cdd6f863b5af1e8b3f15632fa5ba78f5ee",
+        "bytes": 382,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/account-api",
+        "path": "docs/obs-capture/handoff.md",
+        "commit": "433176e706c257fe1e484537cef7a05e181de264",
+        "sha256": "56084b3117d5abcc5bb91595d68de121a5dbe0267e027d93026ac333e979366e",
+        "bytes": 1728,
+        "verified": true
+      },
+      {
+        "repository": "HallelujahHomeChurch/api-gateway",
+        "path": "docs/openapi.yaml",
+        "commit": "ac06d18c11d94dd484b0995e09f1cd1a099be2ab",
+        "sha256": "9a90002e956f2d9eb4dc7d79915b9d10b3909434fbc09fc84ce1ba9dca249e7d",
+        "bytes": 336977,
+        "verified": true
+      }
+    ],
+    "scope": "Fresh GitHub immutable C1 byte checks; not deployed service or media acceptance"
+  },
+  "candidate": {
+    "verified": true,
+    "sourceCommit": "864bf3b3d6228f712d8c53f4a121d52fbfce000a",
+    "sha256": "f01e246b15608579af3743f44049cf848f395e016abb2cd6bdc7eeb367aa6f97",
+    "bytes": 624633,
+    "manifestFiles": 7,
+    "installedFiles": 3,
+    "developerFixtureExcluded": true,
+    "signed": false,
+    "scope": "Local immutable candidate archive/installation checks; not E2E acceptance"
+  },
+  "nativeExistingReadyReadback": {
+    "observedAt": "2026-10-08T14:26:01.310707+00:00",
+    "pluginCommit": "864bf3b3d6228f712d8c53f4a121d52fbfce000a",
+    "recordingId": "7d4ca4d0-3989-40f5-89d5-b2bb71336f2d",
+    "captureId": "1f13f5a6ff0af956cc1d03cce61c65cf",
+    "localId": "02b9f520-37bf-4de0-8dcb-20ef3d351722",
+    "packageId": "1f13f5a6ff0af956cc1d03cce61c65cf",
+    "firstReadyObservedAt": "2026-10-08T14:23:48.482Z",
+    "ready": true,
+    "published": true,
+    "normalEnd": true,
+    "stopIntent": true,
+    "sealAcknowledged": true,
+    "confirmedReady": true,
+    "objects": 70,
+    "mutationsUnchanged": true,
+    "inventoryUnchanged": true,
+    "allObjectIdentitiesUnchanged": true,
+    "obsExitCode": 0,
+    "encoderStarted": false,
+    "nativeElapsedMs": 35503,
+    "scope": "New native candidate authenticates and reads existing historical producer ready/publication; not fresh current-candidate capture/upload/seal/long-run E2E",
+    "original8SegmentInventoryUnchanged": true
+  },
+  "ci": [
+    {
+      "conclusion": "success",
+      "databaseId": 37791841433,
+      "event": "push",
+      "headSha": "864bf3b3d6228f712d8c53f4a121d52fbfce000a",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 37791848127,
+      "event": "pull_request",
+      "headSha": "864bf3b3d6228f712d8c53f4a121d52fbfce000a",
+      "status": "completed"
+    }
+  ],
+  "hostedArtifacts": [
+    {
+      "id": 11556931986,
+      "name": "hhc-obs-windows-x64-unverified",
+      "sizeInBytes": 621487,
+      "expired": false,
+      "digest": "sha256:cae7036b4c3d94a48923faa5f9d72198c692299654ee7b580ffe48d827cbcd4f",
+      "scope": "CI artifact envelope; not the local candidate ZIP hash"
+    }
+  ],
+  "originalCapture": {
+    "autoPublish": "cancelled",
+    "captureId": "5d68171bc2e63cd5f9cae36eef7032b7",
+    "declaredBytes": 159681257,
+    "declaredObjects": 31,
+    "expiresAt": "2026-10-09T03:01:49.773548427Z",
+    "liveEnabled": false,
+    "liveState": "aborted",
+    "objectStates": {
+      "queued": 4,
+      "verified": 27
+    },
+    "packageId": null,
+    "recordingId": "28a3c057-4885-4036-ac1c-0437c1495206",
+    "recordingVersion": 2,
+    "replayUntil": null,
+    "serverNow": "2026-10-08T14:10:31.222856406Z",
+    "state": "aborted",
+    "stopAcceptedAt": "2026-10-08T03:05:51.113514461Z",
+    "terminalReason": "recording_deleted",
+    "sealRetried": false,
+    "readyAccepted": false,
+    "publishAccepted": false,
+    "inventoryUnchanged": true,
+    "segmentCountPerRendition": 8,
+    "durationSeconds": 240.206633,
+    "fpsNum": 30000,
+    "fpsDen": 1001,
+    "inventoryDigest": "f50005b13e8f25e585424f8d93c8428a7da50f39dcd7ff57058e120c75b3dcef",
+    "operationKey": "439db0a4-560d-4156-ac00-aeafad6742a7.seal"
+  },
+  "localTests": {
+    "passed": 10,
+    "failed": 0,
+    "redObserved": true,
+    "postPackageSeconds": 2.49,
+    "scope": "unit/mock/loopback; not GPU or E2E"
+  },
+  "remaining": [
+    "Exact test12 cleanup authorization/quota release",
+    "Fresh current-candidate capture/upload/stop/seal/freezing/ready/automatic publication/member playback",
+    "Controlled sustained live/outage/catch-up and current2.5h production run",
+    "Member-player quality/backward-seek failure",
+    "Ordinary crash dialog/native keyboard/display and deliberately authorized YouTube concurrency"
+  ],
+  "pendingCleanup": {
+    "recording": {
+      "id": "5edca3a5-c1e0-48f1-9465-e50a345cc952",
+      "readyAt": null,
+      "selectedCoverId": null,
+      "status": "draft",
+      "title": "[HHC OBS SYNTHETIC TEST] 2026-10-08T09:41:46Z 7bb0f64-mid-encoding-crash-recovery",
+      "uploadedAt": null,
+      "version": 1
+    },
+    "capture": {
+      "autoPublish": "cancelled",
+      "captureId": "cd829ce268bfa10494a0ab36154c43dc",
+      "declaredBytes": 91136695,
+      "declaredObjects": 16,
+      "expiresAt": "2026-10-09T09:41:46.588409564Z",
+      "liveEnabled": false,
+      "liveState": "aborted",
+      "objectStates": {
+        "declared": 1,
+        "verified": 15
+      },
+      "packageId": null,
+      "recordingId": "5edca3a5-c1e0-48f1-9465-e50a345cc952",
+      "recordingVersion": 1,
+      "replayUntil": null,
+      "serverNow": "2026-10-08T14:30:42.465224746Z",
+      "state": "aborted",
+      "stopAcceptedAt": null,
+      "terminalReason": "capture_incomplete"
+    },
+    "authorized": false,
+    "deleteRequested": false,
+    "scope": "Actual read-only22:30Taipei preconditions; not an implicit cleanup authorization"
+  }
+}

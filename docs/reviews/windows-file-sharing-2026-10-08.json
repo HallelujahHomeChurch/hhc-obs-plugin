@@ -1,0 +1,80 @@
+{
+  "scope": "Actual Windows sharing denial on local OBS queue commit; no HTTP or production acceptance",
+  "runs": [
+    {
+      "sourceCommit": "c1c81b8dbcca96d7cd85cd04eec5a497cc030090",
+      "fixtureSha256": "6c4ecca9f3f1b31f28e0a676e822aaf4414e2595d57d5c424db2a52a1ff8b89e",
+      "blockedAt": "2026-10-08T20:17:18.9009137+08:00",
+      "scope": "Actual local OBS/NVENC dock with Windows exclusive file sharing denial; not ACL revocation, physical disk failure or E2E",
+      "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\.deps\\portable\\config\\obs-studio\\logs\\2026-10-08 20-16-41.txt",
+      "expectedCaptureFailure": true,
+      "blockedObjectDeclared": false,
+      "normalEnd": false,
+      "retainedObjects": 6,
+      "pid": 13880,
+      "stopIntent": true,
+      "confirmedReady": false,
+      "stopReason": 2,
+      "completed": "2026-10-08T20:17:48.5549101+08:00",
+      "exitCode": 0,
+      "sealAcknowledged": false,
+      "previousHashesRetained": true,
+      "previousObjects": 6,
+      "journalSha256": "5b3039dc4872557fb6b134b355a79c0c0f736b47b920d623bb71c932b4b08cb2",
+      "inventorySha256": "fa950cadb33b5ceaf26e1f87472e24751ee3f48efcc113807495cdfeda7cab7c",
+      "dockFailurePngSha256": "808fcb1def1f06b8cb644adbb694a7feaa673cda8d8986db4bce3d3bfbd8b3bc"
+    },
+    {
+      "sourceCommit": "c1c81b8dbcca96d7cd85cd04eec5a497cc030090",
+      "fixtureSha256": "6c4ecca9f3f1b31f28e0a676e822aaf4414e2595d57d5c424db2a52a1ff8b89e",
+      "blockedAt": "2026-10-08T20:20:34.8178817+08:00",
+      "scope": "Actual local OBS/NVENC dock with Windows exclusive file sharing denial; not ACL revocation, physical disk failure or E2E",
+      "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\.deps\\portable\\config\\obs-studio\\logs\\2026-10-08 20-19-59.txt",
+      "expectedCaptureFailure": true,
+      "blockedObjectDeclared": false,
+      "normalEnd": false,
+      "retainedObjects": 6,
+      "pid": 37988,
+      "stopIntent": true,
+      "confirmedReady": false,
+      "stopReason": 2,
+      "completed": "2026-10-08T20:21:04.5623407+08:00",
+      "exitCode": 0,
+      "sealAcknowledged": false,
+      "previousHashesRetained": true,
+      "previousObjects": 6,
+      "journalSha256": "efe22adafb0a187d0b868b97a58251d91189e353ab0d23df753a2939454fa72b",
+      "inventorySha256": "64e44331e678cf202c75dc39c81d9db3e5adb35bee0bb3448f4bbdc15b9cf3a4",
+      "dockFailurePngSha256": "808fcb1def1f06b8cb644adbb694a7feaa673cda8d8986db4bce3d3bfbd8b3bc"
+    }
+  ],
+  "retainedMediaCheck": {
+    "scope": "Previously closed fragments after actual Windows sharing denial; incomplete capture, not final full-event QA or E2E",
+    "renditions": [
+      {
+        "height": 1080,
+        "width": 1920,
+        "fps": "30000/1001",
+        "hashSizeAndFullDecode": true
+      },
+      {
+        "height": 720,
+        "width": 1280,
+        "fps": "30000/1001",
+        "hashSizeAndFullDecode": true
+      },
+      {
+        "height": 480,
+        "width": 854,
+        "fps": "30000/1001",
+        "hashSizeAndFullDecode": true
+      }
+    ]
+  },
+  "testScriptSha256": "7ac3de1bdfef69b8c9f01bedb2eed6210c5f00076b01e240d27bd3fa02373117",
+  "originalProfileHashes": {
+    "basic.ini": "032fa776e9860ba8a49b462f6cecc1ad1c63151cc0bb752349479fe473a83e58",
+    "recordEncoder.json": "d8cafa0e35349e5118a5774aa357f6a857067a3472c410625e34e71c01a963b5",
+    "streamEncoder.json": "744c36a156342e9c014af13b2d5eca964cc29c26e374bb748fb4048d5d3a9fc9"
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "scope": "Actual local OBS/NVENC NTFS ACL queue-write denial, retained media decode and separate SessionStore recovery; not physical disk failure, platform permission revocation or E2E",
+  "captureSource": "f009725b49a7ea8cb24745f9df660d5f6351da4a",
+  "testBaseCommit": "62fecd4d8c007e59c9730cd7f5d5feac01767698",
+  "checkedAt": "2026-10-08T13:40:38.817526+00:00",
+  "aclRun": {
+    "stopReason": 2,
+    "sourceCommit": "62fecd4d8c007e59c9730cd7f5d5feac01767698",
+    "blockedAt": "2026-10-08T21:28:14.3100125+08:00",
+    "previousObjects": 6,
+    "confirmedReady": false,
+    "aclRestored": true,
+    "scope": "Actual local OBS/NVENC queue write denial; not physical disk failure, platform permission revocation or E2E",
+    "fixtureSha256": "6c4ecca9f3f1b31f28e0a676e822aaf4414e2595d57d5c424db2a52a1ff8b89e",
+    "stopIntent": true,
+    "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\.deps\\portable-concurrent\\config\\obs-studio\\logs\\2026-10-08 21-27-38.txt",
+    "failure": "acl",
+    "completed": "2026-10-08T21:28:43.6778006+08:00",
+    "retainedObjects": 6,
+    "accessDeniedProbeConfirmed": true,
+    "expectedCaptureFailure": true,
+    "pid": 33312,
+    "sealAcknowledged": false,
+    "exitCode": 0,
+    "blockedObjectDeclared": false,
+    "normalEnd": false,
+    "previousHashesRetained": true
+  },
+  "sharingRegression": {
+    "stopReason": 2,
+    "sourceCommit": "62fecd4d8c007e59c9730cd7f5d5feac01767698",
+    "blockedAt": "2026-10-08T21:31:28.3801562+08:00",
+    "previousObjects": 6,
+    "confirmedReady": false,
+    "aclRestored": false,
+    "scope": "Actual local OBS/NVENC queue write denial; not physical disk failure, platform permission revocation or E2E",
+    "fixtureSha256": "6c4ecca9f3f1b31f28e0a676e822aaf4414e2595d57d5c424db2a52a1ff8b89e",
+    "stopIntent": true,
+    "log": "C:\\Users\\IT\\Projects\\hhc-obs-plugin\\.worktrees\\windows-capture\\.deps\\portable-concurrent\\config\\obs-studio\\logs\\2026-10-08 21-30-50.txt",
+    "failure": "sharing",
+    "completed": "2026-10-08T21:31:58.0339345+08:00",
+    "retainedObjects": 6,
+    "accessDeniedProbeConfirmed": false,
+    "expectedCaptureFailure": true,
+    "pid": 30028,
+    "sealAcknowledged": false,
+    "exitCode": 0,
+    "blockedObjectDeclared": false,
+    "normalEnd": false,
+    "previousHashesRetained": true
+  },
+  "aclRestoration": {
+    "restored": true,
+    "scope": "Original DACL restored on the exact owned 1080p queue directory",
+    "checked": "2026-10-08T21:40:38.2246323+08:00"
+  },
+  "retainedMedia": {
+    "scope": "Actual retained closed fragments after local NTFS ACL denial; incomplete capture, not full-event or E2E acceptance",
+    "journalSha256": "47f38b4ba01d2df8017f1055b822675f043d3e57296bc4bdebd34c81b0e90934",
+    "objects": 6,
+    "renditions": [
+      {
+        "height": 1080,
+        "width": 1920,
+        "fps": "30000/1001",
+        "hashSizeFormatFullDecode": true
+      },
+      {
+        "height": 720,
+        "width": 1280,
+        "fps": "30000/1001",
+        "hashSizeFormatFullDecode": true
+      },
+      {
+        "height": 480,
+        "width": 854,
+        "fps": "30000/1001",
+        "hashSizeFormatFullDecode": true
+      }
+    ]
+  },
+  "recoveryModes": {
+    "cases": [
+      {
+        "actual": 0,
+        "root": "artifacts/obs-acl-denial-62fecd4/queue",
+        "expected": 0,
+        "mode": "--recover-stopped"
+      },
+      {
+        "actual": 17,
+        "root": "artifacts/obs-acl-denial-62fecd4/queue",
+        "expected": 17,
+        "mode": "--recover"
+      },
+      {
+        "actual": 0,
+        "root": "artifacts/normal-single-instance-crash-28bcb5d/queue",
+        "expected": 0,
+        "mode": "--recover"
+      },
+      {
+        "actual": 17,
+        "root": "artifacts/normal-single-instance-crash-28bcb5d/queue",
+        "expected": 17,
+        "mode": "--recover-stopped"
+      }
+    ],
+    "checked": "2026-10-08T21:49:27.4205793+08:00",
+    "harnessSha256": "12bf3c3aab1904531f179fd31ba2c11456b05b3deac03591a33718de73f21b13"
+  },
+  "ctest": {
+    "passed": 10,
+    "failed": 0,
+    "scope": "unit/mock/loopback; recovery modes and actual OBS fault checks are separate",
+    "log": "artifacts/acl-recovery-final-ctest.log"
+  },
+  "operatorPackageChanged": false,
+  "reportedAllocationsAtExit": 1,
+  "allocationCauseQualified": false,
+  "capture-file-sharing-test.ps1Sha256": "63560f142e2e3a8339753878e1722b7ea5a28896826a29600a98faae540c236e",
+  "obs-capture-test.cppSha256": "62b28c3d7cbf11a065ce0b87aaaf4a923dadabb338ec78bfbc98950fcf72325f",
+  "originalProfileHashes": {
+    "basic.ini": "032fa776e9860ba8a49b462f6cecc1ad1c63151cc0bb752349479fe473a83e58",
+    "recordEncoder.json": "d8cafa0e35349e5118a5774aa357f6a857067a3472c410625e34e71c01a963b5",
+    "streamEncoder.json": "744c36a156342e9c014af13b2d5eca964cc29c26e374bb748fb4048d5d3a9fc9"
+  }
+}
