@@ -72,6 +72,12 @@ struct KeyControllerTest {
 		c.id_.clear();
 		c.paused_ = c.stopping_ = false;
 		QFile::remove(c.root_ + "/active.json");
+		QDir().mkpath(c.root_ + "/active.json"); // Force the active pointer commit to fail.
+		c.keyAvailable_ = true;
+		c.startStop();
+		failed += !c.id_.isEmpty() || c.starting_ || !c.paused_ || c.syncAwaiting_;
+		QDir().rmdir(c.root_ + "/active.json");
+		c.paused_ = false;
 		if (failed)
 			std::cerr << "FAIL K4 cancellation, terminal or missing-intent recovery\n";
 		return failed;

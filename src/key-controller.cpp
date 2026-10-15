@@ -234,6 +234,11 @@ void KeyController::startStop()
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	try {
 		KeyIngest(root_ + "/intents", id_).prepareOpen();
+		atomicJson(root_ + "/active.json", {{"localId", id_},
+						    {"protocolVersion", "k4-2026-10-15.rc1"},
+						    {"released", false},
+						    {"started", false},
+						    {"audioTrack", int(audioTrack_)}});
 	} catch (...) {
 		id_.clear();
 		paused_ = true;
@@ -248,11 +253,6 @@ void KeyController::startStop()
 	stopping_ = released_ = revoked_ = paused_ = false;
 	end_.reset();
 	next_ = 0;
-	atomicJson(root_ + "/active.json", {{"localId", id_},
-					    {"protocolVersion", "k4-2026-10-15.rc1"},
-					    {"released", false},
-					    {"started", false},
-					    {"audioTrack", int(audioTrack_)}});
 	issue_ = QString::fromUtf8("正在連線…");
 	tick();
 	display();
