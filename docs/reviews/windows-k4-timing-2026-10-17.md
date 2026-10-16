@@ -32,11 +32,20 @@ Source media: seven segments per quality, six30.03s plus14.481133s tail,total194
 
 ## Final state
 
-At02:02:16.749 recording remains draft/version3, capture autoPublish pending. No publication is claimed yet. Original Console route transitioned to recording management after auto End (observed without an agent navigation action); a newly opened event route also redirects to recording management. Member original page remains ended replay. Capture ready is independently proven above; it does not establish publication.
+At02:02:16.749 recording remains draft/version3, capture autoPublish pending. This was an intermediate observation; publication subsequently succeeded below. Original Console route transitioned to recording management after auto End (observed without an agent navigation action); a newly opened event route also redirects to recording management. Member original page remains ended replay. Capture ready is independently proven above; it does not establish publication.
 
 ## Scope and retained limits
 
 No manual End/publication, original Stop/seal resends, recording deletion or key reset. HHC uses isolated fixture; no meeting/YouTube/ordinary recording load test. Previous first Continue VOD failure is retained regardless of this timing-only platform update. Historical379/388s recovery lag, weak-network/32.730s seek and other untested load remain unchanged. Existing two report-head native checks from previous turn re-read passing; this report does not replace installed-binary CI evidence.
 
 
-Final local state: active released=true, synthetic clock stopped. No new capture or reupload scheduled. Natural publication is **pending/unverified**, not a declared permanent failure or a passed result. No publication SLA was invented. At last observation it was300.184s after ready /366.795s after seal. Platform must correlate exact End,attempt finish and publish-reconciler results. Browser screenshot API timed out; DOM/API/media evidence retained.
+Final local state: active released=true, synthetic clock stopped. No new capture or reupload scheduled. Natural publication was pending at that observation and subsequently succeeded below. No publication SLA was invented. At last observation it was300.184s after ready /366.795s after seal. Platform must correlate exact End,attempt finish and publish-reconciler results. Browser screenshot API timed out; DOM/API/media evidence retained.
+
+
+## Completed publication / VOD observation
+
+Authenticated recording GET remained draft/version3 at02:03:13.555 and first returned published/version4 at02:03:18.975 (HTTP response timestamps; publication lies within this5.420s observation window, not claimed as exact server publishAt). Capture autoPublish also published. Thus seal-to-first-published-observation429.020692s and ready-to-first-published-observation362.410357s. No manual publish or retry mutation. Mac should correlate publisher/cover/reconciler timing, not classify the intermediate pending state as permanent failure.
+
+Original member page offered Continue VOD. First click succeeded in this run, no visible error and no recorded HTTP>=400/loadingFailed during transition. No reload. At02:04:29.255 same URL VOD decoded1920x1080,currentTime14.422108,duration194.687999,frames289,readyState4,paused=false,rate1,MediaError=null; buffered[0,150.149999],[180.18,194.661132],seekable[0,194.687999]. The26.866ms difference from nominal194.661133s is recorded. This single successful transition does not rewrite the previous failed first transition or prove a player fix (this release was timing-only).
+
+Result: normal direct output/Stop/seal/automatic public End/ready/natural publish/same-URL VOD passed for this one short fixture. Exact public End and worker attempt finish/duration remain Mac server-log correlation items. Local output released, clock stopped; formal OBS not modified.

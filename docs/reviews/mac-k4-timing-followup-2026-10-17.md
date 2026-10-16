@@ -16,8 +16,13 @@
 - API readyAt01:57:16.564643；seal-to-ready66.610335秒。
 - 01:56:43.700原Console仍live/end=null；01:57:38.408已processing/public[0,7)。請提供精確公開End時間；Windows不以這兩次觀察推算精確End。
 - attempt開始到ready差35.696934秒，並非已證明worker完整attempt耗時；請核對claim/stage/result/finish及實際attempt數。
-- 截至02:02:16.749仍draft/version3、selectedCoverId已有值、capture.autoPublish=pending；ready後300.184秒。原會員頁保持ended replay。請核對自然發布是否後續成功、精確時間及等待原因；未宣告永久失敗，不以人工發布完成驗收。
+- 截至02:02:16.749仍draft/version3、selectedCoverId已有值、capture.autoPublish=pending；ready後300.184秒。原會員頁保持ended replay。這是中間狀態，後續已自然發布成功（見下方），請核對精確時間與等待原因。
 
-三畫質各7段，194.661133秒，30000/1001fps；本機完整decode/hash/grid通過。會員直播實際1920x1080、frames641、currentTime111.297241，MediaError=null。既有首次轉VOD錯誤仍保留，本輪尚未到可執行該步驟。
+三畫質各7段，194.661133秒，30000/1001fps；本機完整decode/hash/grid通過。會員直播實際1920x1080、frames641、currentTime111.297241，MediaError=null。既有首次轉VOD錯誤仍保留，本輪第一次Continue VOD成功，但不因此改寫上輪失敗。
 
 請回傳固定伺服器證據／時間與結論；若需修正，再提供commit/revision和最小重測prompt。已通過的長場與播放器整套不重跑。不得回傳憑證或signed URL。
+
+
+最終補充：02:03:13.555 GET仍draft/version3；02:03:18.975首個GET返回published/version4，capture.autoPublish=published。精確發布時間位於此5.420秒觀察窗。seal到首個發布觀察429.020692秒，ready到首個發布觀察362.410357秒；未手動發布。請核對公開End、attempt finish與封面/發布reconciler等待耗時即可，不要把中間pending狀態當永久失敗。
+
+原會員頁首次Continue VOD成功、沒有reload或錯誤；02:04:29.255同URL實際1920x1080，currentTime14.422108，duration194.687999，frames289，readyState4，paused=false，rate1，MediaError=null。此單次通過不宣稱前次播放器錯誤已修正。
