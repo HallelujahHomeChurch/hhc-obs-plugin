@@ -41,7 +41,8 @@ QString ingestRoute(const QByteArray &method, const QString &path, const QJsonOb
 	}
 	const auto broadcast = "/admin/broadcasts/" + recording;
 	if (url.path() == broadcast + "/control" && method == "GET") {
-		require(query.queryItems().size() == 2 && query.queryItemValue("captureId") == capture &&
+		const bool d1 = query.queryItems().size()==3 && query.queryItemValue("controlVersion")=="d1-2026-10-17.rc2";
+		require((query.queryItems().size() == 2 || d1) && query.queryItemValue("captureId") == capture &&
 			query.queryItemValue("epoch") == QString::number(s["epoch"].toInteger()));
 		return "/ingest/broadcasts/" + recording + "/control?" + url.query();
 	}
@@ -103,12 +104,14 @@ KeyIngest::KeyIngest(QString root, QString id, IngestCredentials vault, ApiClien
 				auto fakeSession = pinned;
 				fakeSession["token"] = "hhc_ingest_placeholder.placeholder";
 				fakeSession["expiresAt"] = "2026-10-15T00:00:00Z";
-				checkOpened({{"protocolVersion", journal_["version"]},
+				QJsonObject saved{{"protocolVersion", journal_["version"]},
 					     {"outputSessionId", id_},
 					     {"sourceId", journal_["sourceId"]},
 					     {"broadcast", b},
 					     {"receipt", r},
-					     {"session", fakeSession}});
+					     {"session", fakeSession}};
+				if(intent.contains("mediaProfile")) saved["mediaProfile"]=intent["mediaProfile"];
+				checkOpened(saved);
 			}
 		}
 	}
@@ -207,10 +210,11 @@ QJsonObject KeyIngest::bind()
 	data.remove("session");
 	return data;
 }
-void KeyIngest::prepareOpen()
+void KeyIngest::prepareOpen(const QString &mediaProfile)
 {
 	require(journal_.isEmpty() && session_.isEmpty());
 	QJsonObject intent{{"protocolVersion", "k4-2026-10-15.rc1"}, {"outputSessionId", id_}};
+	if (!mediaProfile.isEmpty()) intent["mediaProfile"] = mediaProfile;
 	auto check = intent;
 	check["streamKey"] = "hhc_stream_" + QString(43, 'A');
 	require(validWire("BroadcastOutputOpenInput", check));
@@ -219,6 +223,8 @@ void KeyIngest::prepareOpen()
 }
 void KeyIngest::checkOpened(const QJsonObject &data) const
 {
+	if (data.value("mediaProfile") != journal_.value("intent").toObject().value("mediaProfile"))
+		throw RequestError(422, "broadcast_protocol_unsupported");
 	require(validWire("BroadcastOutputOpened", data) && data["outputSessionId"] == id_);
 	const auto b = data["broadcast"].toObject(), binding = b["binding"].toObject(), s = data["session"].toObject();
 	require(data["receipt"].toObject()["operationKey"] == id_ + ".bind" && b["recordingId"] == s["recordingId"] &&

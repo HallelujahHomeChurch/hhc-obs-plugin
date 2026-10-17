@@ -54,7 +54,7 @@ struct HlsMuxer::Impl {
 		}
 	}
 };
-HlsMuxer::HlsMuxer(const QString &root, unsigned r, obs_encoder_t *video, obs_encoder_t *audio)
+HlsMuxer::HlsMuxer(const QString &root, unsigned r, obs_encoder_t *video, obs_encoder_t *audio, unsigned segmentFrames)
 	: d(std::make_unique<Impl>())
 {
 	d->root = root;
@@ -100,7 +100,8 @@ HlsMuxer::HlsMuxer(const QString &root, unsigned r, obs_encoder_t *video, obs_en
 	AVDictionary *options = nullptr;
 	// HLS cuts on a cumulative grid: 900 frames at 30000/1001 must stay 30.03s,
 	// otherwise the 60-frame GOP produces a 28.028s interior fragment after ~33 minutes.
-	av_dict_set(&options, "hls_time", "30.03", 0);
+	require(segmentFrames == 300 || segmentFrames == 900, "unsupported segment profile");
+	av_dict_set(&options, "hls_time", segmentFrames == 300 ? "10.01" : "30.03", 0);
 	av_dict_set(&options, "hls_segment_type", "fmp4", 0);
 	av_dict_set(&options, "hls_playlist_type", "vod", 0);
 	av_dict_set(&options, "hls_flags", "temp_file+independent_segments", 0);

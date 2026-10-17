@@ -85,7 +85,7 @@ CaptureJournal parse(const QJsonObject &o)
 }
 void validateObjects(const QString &root, const CaptureJournal &j, const std::atomic<bool> *cancelled = nullptr)
 {
-	require(j.objects.size() <= 10000, "object count limit");
+	require(j.objects.size() <= 13000, "object count limit");
 	QSet<QString> paths;
 	qint64 total = 0;
 	const auto canonicalRoot = QFileInfo(root).canonicalFilePath() + "/";
@@ -273,7 +273,7 @@ void SessionStore::checkpointLocal(const QString &account, const QString &localI
 	}
 	validateObjects(dir, added);
 	qint64 total = 0;
-	require(j.objects.size() <= 10000, "object count limit");
+	require(j.objects.size() <= 13000, "object count limit");
 	for (const auto &o : j.objects) {
 		require(o.size > 0 && o.size <= 134217728 && total <= 10000000000LL - o.size, "package size limit");
 		total += o.size;

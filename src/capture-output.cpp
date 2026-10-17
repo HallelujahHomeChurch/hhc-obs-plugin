@@ -16,6 +16,7 @@
 namespace hhc {
 struct CaptureOutput::Impl {
 	struct MarkerClock {
+		unsigned segmentFrames = 900;
 		std::array<std::atomic<int64_t>, 3> frames{{-1, -1, -1}};
 		std::atomic<bool> active{true};
 	};
@@ -68,6 +69,7 @@ struct CaptureOutput::Impl {
 	std::atomic<StopReason> reason{StopReason::Shutdown};
 	std::atomic<int64_t> firstVideoSys{0}, cutoffPts{0};
 	std::atomic<int64_t> stopDeadline{0};
+	std::atomic<int64_t> commonStopPts{0};
 	std::atomic<unsigned> endedVideo{0};
 	QString error;
 	void fail(const char *message)
@@ -131,7 +133,8 @@ struct CaptureOutput::Impl {
 		auto &s = *static_cast<Impl *>(data);
 		s.stopRequested = true;
 		s.stopDeadline = std::chrono::steady_clock::now().time_since_epoch().count();
-		if (ts && s.firstVideoSys > 0)
+		if (s.commonStopPts > 0) s.cutoffPts = s.commonStopPts.load();
+		else if (ts && s.firstVideoSys > 0)
 			s.cutoffPts =
 				((static_cast<int64_t>(ts / 1000) - s.firstVideoSys) * 30000 / (1000000LL * 1001)) *
 				1001;
@@ -214,7 +217,7 @@ struct CaptureOutput::Impl {
 			if (seenVideo != 7)
 				throw std::runtime_error("All three video headers required");
 			for (unsigned i = 0; i < 3; ++i)
-				mux[i] = std::make_unique<HlsMuxer>(config.directory, i, video[i], audio);
+				mux[i] = std::make_unique<HlsMuxer>(config.directory, i, video[i], audio, marker->segmentFrames);
 			while (true) {
 				const auto now = std::chrono::steady_clock::now();
 				if (!failed && !stopRequested && now - began > std::chrono::seconds(10)) {
@@ -226,7 +229,7 @@ struct CaptureOutput::Impl {
 				if (stopDeadline > 0 &&
 				    now - std::chrono::steady_clock::time_point(
 						  std::chrono::steady_clock::duration(stopDeadline.load())) >
-					    std::chrono::seconds(5) &&
+					    std::chrono::seconds(commonStopPts > 0 ? 40 : 5) &&
 				    !deactivated)
 					throw std::runtime_error("Encoder stop timed out; capture incomplete");
 				if (!failed && now - lastDiskCheck >= std::chrono::seconds(1)) {
@@ -244,7 +247,7 @@ struct CaptureOutput::Impl {
 							count += static_cast<unsigned>(m->objects().size());
 					const auto limit =
 						runtimeLimit(available, encodedBytes, count,
-							     std::chrono::duration<double>(now - began).count());
+							     std::chrono::duration<double>(now - began).count(), marker->segmentFrames);
 					if (limit) {
 						reason = *limit;
 						fail("Local capture quota or disk reserve reached");
@@ -328,6 +331,7 @@ struct CaptureOutput::Impl {
 				    {"stopReason", static_cast<int>(reason.load())},
 				    {"objects", inventory},
 				    {"fpsNum", 30000},
+				    {"mediaProfile", config.mediaProfile},
 				    {"fpsDen", 1001},
 				    {"audioTrack", static_cast<int>(config.audioTrack)},
 				    {"sampleRate", 48000},
@@ -391,6 +395,11 @@ void CaptureOutput::registerOutput()
 }
 bool CaptureOutput::start(const CaptureConfig &config)
 {
+	if (!config.mediaProfile.isEmpty() && config.mediaProfile != "obs-hls-10s-v1") {
+		d->fail("Unsupported media profile");
+		return false;
+	}
+	d->marker->segmentFrames = config.mediaProfile.isEmpty() ? 900 : 300;
 	if (d->output) {
 		d->fail("CaptureOutput is single-use");
 		return false;
@@ -513,6 +522,15 @@ void CaptureOutput::stop(StopReason reason)
 	}
 	obs_output_stop(d->output);
 }
+bool CaptureOutput::stopAtCommonBoundary()
+{
+	if(d->stopRequested) return true;
+	const auto boundary=boundaryClock()();
+	if(!boundary) return false;
+	d->commonStopPts=int64_t(*boundary)*d->marker->segmentFrames*1001;
+	stop(StopReason::User);
+	return true;
+}
 bool CaptureOutput::active() const
 {
 	return !d->done && !d->failed;
@@ -527,7 +545,7 @@ std::function<std::optional<int>()> CaptureOutput::boundaryClock() const
 		std::array<int64_t, 3> frames;
 		for (unsigned i = 0; i < 3; ++i)
 			frames[i] = marker->frames[i].load();
-		return marker->active ? nextCommonBoundary(frames) : std::nullopt;
+		return marker->active ? nextCommonBoundary(frames, marker->segmentFrames) : std::nullopt;
 	};
 }
 bool CaptureOutput::finished() const

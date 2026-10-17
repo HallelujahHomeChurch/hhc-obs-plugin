@@ -74,5 +74,6 @@ private:
 	unsigned failures_ = 0;
 	qint64 next_ = 0, nextControl_ = 0;
 	std::optional<int> end_;
+	std::optional<int> serverEnd_;
 };
 } // namespace hhc

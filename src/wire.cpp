@@ -12,6 +12,12 @@
 #include <stdexcept>
 namespace hhc {
 namespace {
+const QJsonObject d1Root = QJsonDocument::fromJson(QByteArray(
+#include "d1-schema.inc"
+)).object();
+const QJsonObject s10Root = QJsonDocument::fromJson(QByteArray(
+#include "s10-schema.inc"
+)).object();
 const QJsonObject schemaRoot = QJsonDocument::fromJson(QByteArray(
 #include "c1-schema.inc"
 							       ))
@@ -212,7 +218,9 @@ qint64 measuredBandwidth(const QVector<double> &durations, const QVector<qint64>
 }
 bool validWire(const QString &schema, const QJsonValue &value)
 {
-	const auto &root = schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot
+	const auto &root = d1Root["components"].toObject()["schemas"].toObject().contains(schema) ? d1Root
+			   : s10Root["components"].toObject()["schemas"].toObject().contains(schema) ? s10Root
+			   : schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot
 			   : b1Root["components"].toObject()["schemas"].toObject().contains(schema)   ? b1Root
 			   : k3Root["components"].toObject()["schemas"].toObject().contains(schema)   ? k3Root
 												      : k4Root;
@@ -273,7 +281,7 @@ QJsonObject buildInventory(const QString &dir)
 					      {"segmentCount", count}});
 	}
 	QJsonObject result{{"schemaVersion", 1},
-			   {"presetVersion", "hhc-obs-v1"},
+			   {"presetVersion", local.value("mediaProfile").toString().isEmpty() ? QString("hhc-obs-v1") : local["mediaProfile"].toString()},
 			   {"objects", objects},
 			   {"renditions", renditions}};
 	result["inventoryDigest"] = QString::fromLatin1(

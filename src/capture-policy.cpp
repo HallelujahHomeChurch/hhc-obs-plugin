@@ -2,11 +2,11 @@
 #include <algorithm>
 #include <limits>
 namespace hhc {
-std::optional<int> nextCommonBoundary(const std::array<std::int64_t, 3> &frames)
+std::optional<int> nextCommonBoundary(const std::array<std::int64_t, 3> &frames, unsigned segmentFrames)
 {
-	if (*std::min_element(frames.begin(), frames.end()) < 0)
+	if ((segmentFrames != 300 && segmentFrames != 900) || *std::min_element(frames.begin(), frames.end()) < 0)
 		return std::nullopt;
-	const auto sequence = *std::max_element(frames.begin(), frames.end()) / 900 + 1;
+	const auto sequence = *std::max_element(frames.begin(), frames.end()) / segmentFrames + 1;
 	return sequence <= std::numeric_limits<int>::max() ? std::optional<int>(int(sequence)) : std::nullopt;
 }
 StopReason failureReason(StopReason current, StopReason failure)
@@ -31,9 +31,9 @@ bool normalEnd(StopReason reason, const std::array<bool, 3> &tails, bool failed)
 {
 	return reason == StopReason::User && !failed && tails[0] && tails[1] && tails[2];
 }
-std::optional<StopReason> runtimeLimit(std::uint64_t free, std::uint64_t bytes, unsigned objects, double seconds)
+std::optional<StopReason> runtimeLimit(std::uint64_t free, std::uint64_t bytes, unsigned objects, double seconds, unsigned segmentFrames)
 {
-	if (free < 2147483648ULL || bytes >= 10000000000ULL - 134217728ULL || objects >= 9996 || seconds >= 43200)
+	if (free < 2147483648ULL || bytes >= 10000000000ULL - 134217728ULL || objects >= (segmentFrames == 300 ? 12996u : 9996u) || seconds >= 43200)
 		return StopReason::DiskLimit;
 	return {};
 }

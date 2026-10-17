@@ -6,8 +6,9 @@ def local_path(root):
         return pathlib.Path(chr(92)*2+'?'+chr(92)+str(root.resolve()))
     return root
 
-def check_segment_grid(times):
-    regular = 900 * 1001 / 30000
+def check_segment_grid(times, frames=900):
+    assert frames in (300,900)
+    regular = frames * 1001 / 30000
     assert times and 0 < times[-1] <= regular + 0.000002, ('invalid tail', times[-1:] )
     bad = [(i, duration) for i, duration in enumerate(times[:-1]) if abs(duration - regular) > 0.000002]
     assert not bad, ('invalid interior frame grid', bad)
@@ -24,6 +25,9 @@ def verify(root, expected):
     inventory=json.loads((root/'inventory.json').read_text(encoding='utf-8'))
     assert inventory['normalEnd'], 'not a normal end'
     assert inventory['fpsNum']==30000 and inventory['fpsDen']==1001
+    profile=inventory.get('mediaProfile','')
+    assert profile in ('','obs-hls-10s-v1')
+    frames=300 if profile else 900
     objects={o['path']:o for o in inventory['objects']}
     assert len(objects)==len(inventory['objects']), 'duplicate inventory object'
     for key, meta in objects.items():
@@ -45,8 +49,8 @@ def verify(root, expected):
         segments=re.findall(r'^(?:segment-\d{5}|seg-\d{6})\.m4s$',playlist,re.M)
         times=[float(x) for x in re.findall(r'#EXTINF:([0-9.]+)',playlist)]
         assert len(times)==len(segments)
-        check_segment_grid(times)
-        assert len(times)==3 if expected==61 else len(times)>0
+        check_segment_grid(times,frames)
+        assert len(times)>0
         assert abs(sum(times)-expected)<0.2, (height,'duration',sum(times))
         if timeline is None: timeline=times
         else: assert times==timeline,(height,'unaligned rendition',times,timeline)

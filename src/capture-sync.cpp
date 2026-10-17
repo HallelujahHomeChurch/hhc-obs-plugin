@@ -356,7 +356,7 @@ QJsonObject CaptureSync::poll()
 			require(!paths.contains(v.toObject()["path"].toString()), "Repeated object in status pages");
 			paths.insert(v.toObject()["path"].toString());
 			objects.append(v);
-			require(objects.size() <= 10000, "Status object limit");
+			require(objects.size() <= 13000, "Status object limit");
 		}
 		cursor = page["nextCursor"].toString();
 		if (!cursor.isEmpty()) {

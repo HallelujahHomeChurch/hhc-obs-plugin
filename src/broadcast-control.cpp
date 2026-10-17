@@ -42,7 +42,7 @@ void BroadcastControl::load()
 	require(error.error == QJsonParseError::NoError && doc.isObject());
 	journal_ = doc.object();
 	fields(journal_,
-	       {"version", "protocolVersion", "account", "localId", "recordingId", "bind", "binding", "commands"});
+	       {"version", "protocolVersion", "account", "localId", "recordingId", "bind", "binding", "commands", "controlD1"});
 	require(journal_["version"] == 1 && journal_["protocolVersion"] == b1Version &&
 		journal_["account"] == account_ && journal_["localId"] == id_ &&
 		!QUuid(journal_["recordingId"].toString()).isNull());
@@ -66,6 +66,11 @@ void BroadcastControl::load()
 		require(validWire("BroadcastBinding", journal_["binding"]) &&
 			journal_["binding"].toObject()["actorId"] == account_);
 	require(journal_["commands"].isObject());
+	if (journal_.contains("controlD1")) {
+		const auto c=journal_["controlD1"].toObject(), b=journal_["binding"].toObject();
+		require(validWire("BroadcastControlD1",c) && c["recordingId"]==journal_["recordingId"] &&
+			c["captureId"]==b["captureId"] && c["epoch"]==b["epoch"]);
+	}
 	const auto commands = journal_["commands"].toObject();
 	for (auto it = commands.begin(); it != commands.end(); ++it) {
 		auto saved = it.value().toObject();
@@ -196,6 +201,34 @@ std::optional<int> BroadcastControl::acceptedEnd()
 	}
 	return {};
 }
+QJsonObject BroadcastControl::acceptControl(const QJsonObject &c)
+{
+	const auto binding=journal_["binding"].toObject(), bounds=c["boundaries"].toObject();
+	require(validWire("BroadcastControlD1",c) && c["recordingId"]==journal_["recordingId"] &&
+		c["captureId"]==binding["captureId"] && c["epoch"]==binding["epoch"]);
+	require(bounds["startSequence"].isNull() || bounds["endSequenceExclusive"].isNull() ||
+		bounds["startSequence"].toInteger() <= bounds["endSequenceExclusive"].toInteger());
+	const auto old=journal_["controlD1"].toObject(), previous=old["boundaries"].toObject();
+	if (!old.isEmpty()) {
+		if(c["revision"].toInteger()<old["revision"].toInteger() || bounds["revision"].toInteger()<previous["revision"].toInteger()) return old;
+		if(c["revision"]==old["revision"]) require(c==old);
+		for(const auto *field : {"startSequence","endSequenceExclusive"})
+			require(previous[field].isNull() || bounds[field]==previous[field]);
+		if(bounds["revision"]==previous["revision"]) require(bounds==previous);
+	}
+	journal_["controlD1"]=c;
+	save();
+	return c;
+}
+std::optional<int> BroadcastControl::serverEnd()
+{
+	load();
+	const auto c=journal_["controlD1"].toObject(), bounds=c["boundaries"].toObject();
+	if (!c.isEmpty() && !bounds["endSequenceExclusive"].isNull() &&
+	    QStringList{"end_pending","processing","archived"}.contains(c["phase"].toString()))
+		return bounds["endSequenceExclusive"].toInt();
+	return {};
+}
 QJsonObject BroadcastControl::bind(const QString &recordingId)
 {
 	require(!QUuid(recordingId).isNull() && QDir().mkpath(directory_) && !QFileInfo(directory_).isSymLink());
@@ -317,7 +350,7 @@ void BroadcastControl::replay()
 		ack(it.key(), saved); // Reconcile only saved markers; never choose a new inactive marker.
 	}
 }
-QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBoundary)
+QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBoundary, bool d1)
 {
 	QLockFile lock(lockFilePath(directory_ + "/broadcast.lock"));
 	lock.setStaleLockTime(0);
@@ -331,13 +364,18 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 		control = api_.request("GET",
 				       "/admin/broadcasts/" + journal_["recordingId"].toString() +
 					       "/control?captureId=" + binding["captureId"].toString() +
-					       "&epoch=" + QString::number(binding["epoch"].toInteger()),
-				       {}, "BroadcastControlEnvelope")["data"]
+					       "&epoch=" + QString::number(binding["epoch"].toInteger()) +
+					       (d1 ? "&controlVersion=d1-2026-10-17.rc2" : ""),
+				       {}, d1 ? "BroadcastControlD1Envelope" : "BroadcastControlEnvelope")["data"]
 				  .toObject();
 	} catch (const RequestError &e) {
 		if (e.status == 409 || e.status == 412)
 			view();
 		throw;
+	}
+	if(d1) {
+		control=acceptControl(control);
+		if(!control["boundaries"].toObject()["endSequenceExclusive"].isNull()) return control;
 	}
 	auto command = control["pendingCommand"].toObject(), commands = journal_["commands"].toObject();
 	const auto currentId = command["commandId"].toString();
