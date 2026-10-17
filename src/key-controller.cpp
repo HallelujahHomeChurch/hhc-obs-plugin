@@ -9,6 +9,9 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include <QVBoxLayout>
 #include <QFormLayout>
+#include <QGroupBox>
+#include <QSettings>
+#include <QMessageBox>
 #include <QHBoxLayout>
 #include <QDir>
 #include <QFile>
@@ -24,6 +27,7 @@
 #include <windows.h>
 namespace hhc {
 namespace {
+const char *optionKeys[] = {"WarnBeforeStartingStream", "WarnBeforeStoppingStream", "RecordWhenStreaming", "KeepRecordingWhenStreamStops"};
 QJsonObject read(const QString &path)
 {
 	QFile f(path);
@@ -74,6 +78,28 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	settingsMessage_ = new QLabel(QString::fromUtf8("金鑰儲存於 Windows Credential Manager。"));
 	settingsMessage_->setWordWrap(true);
 	settingsLayout->addWidget(settingsMessage_);
+	auto *output = new QGroupBox(QString::fromUtf8("輸出"));
+	auto *outputLayout = new QFormLayout(output);
+	outputLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	outputLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	auto margins = outputLayout->contentsMargins();
+	outputLayout->setContentsMargins(margins.left(), 2, margins.right(), margins.bottom());
+	outputLayout->setItem(0, QFormLayout::LabelRole, new QSpacerItem(170, 5, QSizePolicy::Fixed, QSizePolicy::Fixed));
+	const char *labels[] = {"啟動 HHC 串流時顯示確認對話方塊", "停止 HHC 串流時顯示確認對話方塊", "HHC 串流時自動錄製", "HHC 串流停止時繼續錄製"};
+	QSettings preferences(root_ + "/output.ini", QSettings::IniFormat);
+	for (size_t i = 0; i < outputOptions_.size(); ++i) {
+		savedOptions_[i] = preferences.value(optionKeys[i], false).toBool();
+		outputOptions_[i] = new QCheckBox(QString::fromUtf8(labels[i]));
+		outputOptions_[i]->setObjectName(QString::fromLatin1(optionKeys[i]));
+		outputOptions_[i]->setChecked(savedOptions_[i]);
+		outputLayout->setWidget(int(i), QFormLayout::FieldRole, outputOptions_[i]);
+		connect(outputOptions_[i], &QCheckBox::toggled, this, [this] {
+			outputOptions_[3]->setEnabled(outputOptions_[2]->isChecked());
+			if (settingsEdited) settingsEdited();
+		});
+	}
+	outputOptions_[3]->setEnabled(savedOptions_[2]);
+	settingsLayout->addWidget(output);
 	settingsLayout->addStretch();
 	status_ = new QLabel;
 	status_->setWordWrap(true);
@@ -190,9 +216,30 @@ bool KeyController::validateSettings()
 		return false;
 	}
 }
+bool KeyController::settingsModified() const
+{
+	if (key_->isModified()) return true;
+	for (size_t i = 0; i < outputOptions_.size(); ++i)
+		if (outputOptions_[i]->isChecked() != savedOptions_[i]) return true;
+	return false;
+}
+void KeyController::recordWithStream(bool start)
+{
+	// Match OBS StartStreaming/StopStreaming: the native recorder is shared, not owned by a stream.
+	if (recording && savedOptions_[2] && (start || !savedOptions_[3])) recording(start);
+}
 bool KeyController::applySettings()
 {
 	if (!validateSettings()) return false;
+	QSettings preferences(root_ + "/output.ini", QSettings::IniFormat);
+	for (size_t i = 0; i < outputOptions_.size(); ++i)
+		preferences.setValue(optionKeys[i], outputOptions_[i]->isChecked());
+	preferences.sync();
+	if (preferences.status() != QSettings::NoError) {
+		settingsMessage_->setText(QString::fromUtf8("無法儲存 HHC 輸出設定。"));
+		return false;
+	}
+	for (size_t i = 0; i < outputOptions_.size(); ++i) savedOptions_[i] = outputOptions_[i]->isChecked();
 	if (!key_->isModified() || key_->text().isEmpty()) { key_->setModified(false); return true; }
 	try {
 		KeyIngest(root_ + "/intents", "settings").saveKey(key_->text().toUtf8());
@@ -220,6 +267,7 @@ void KeyController::beginSettings()
 }
 void KeyController::discardSettings()
 {
+	for (size_t i = 0; i < outputOptions_.size(); ++i) outputOptions_[i]->setChecked(savedOptions_[i]);
 	key_->clear();
 	key_->setModified(false);
 	key_->setEchoMode(QLineEdit::Password);
@@ -245,9 +293,18 @@ void KeyController::startStop()
 {
 	if (closing_ || !lease_->isLocked())
 		return;
+	const bool stopping = starting_ || (capture_ && !capture_->finished());
+	if (savedOptions_[stopping ? 1 : 0] && view_->isVisible()) {
+		if (QMessageBox::question(view_->window(), QString::fromUtf8(stopping ? "停止 HHC 串流" : "開始 HHC 串流"),
+		    QString::fromUtf8(stopping ? "確定要停止 HHC 串流嗎？" : "確定要開始 HHC 串流嗎？"),
+		    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+		// Control polling can finish this output while the modal confirmation is open.
+		if (stopping != (starting_ || (capture_ && !capture_->finished()))) return;
+	}
 	if (capture_ && !capture_->finished()) {
 		stopping_ = true;
 		capture_->stop(StopReason::User);
+		recordWithStream(false);
 		display();
 		return;
 	}
@@ -263,6 +320,7 @@ void KeyController::startStop()
 		state["stopping"] = true;
 		atomicJson(root_ + "/active.json", state);
 		retireUnbound();
+		recordWithStream(false);
 		display();
 		return;
 	}
@@ -398,7 +456,7 @@ void KeyController::syncDone()
 			if (!capture_->start({dir, audioTrack_, root_ + "/queue", actor_, id_})) {
 				capture_.reset();
 				issue_ = QString::fromUtf8("NVENC 啟動失敗，保留資料並中止原 capture。");
-			}
+			} else recordWithStream(true);
 		}
 		if (r.end)
 			end_ = r.end;

@@ -72,6 +72,23 @@ int main(int argc, char **argv) {
   check(dialog->nativeCalls != 1 || !controller.keyField()->text().isEmpty(), __LINE__);
   dialog->box->button(QDialogButtonBox::Ok)->click();
   check(dialog->nativeCalls != 2, __LINE__); // Empty HHC field preserves key and forwards original settings.
+  auto *autoRecord = controller.settingsPage()->findChild<QCheckBox *>("RecordWhenStreaming");
+  dialog->box->button(QDialogButtonBox::Apply)->setEnabled(false);
+  autoRecord->setChecked(true);
+  check(!controller.settingsModified() || !dialog->box->button(QDialogButtonBox::Apply)->isEnabled(), __LINE__);
+  dialog->rejectApply = true;
+  dialog->box->button(QDialogButtonBox::Apply)->click();
+  check(!controller.settingsModified(), __LINE__);
+  dialog->rejectApply = false;
+  dialog->box->button(QDialogButtonBox::Apply)->click();
+  check(controller.settingsModified(), __LINE__);
+  autoRecord->setChecked(false);
+  answerNextPrompt(QMessageBox::Discard);
+  QKeyEvent discardOptions(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+  QApplication::sendEvent(dialog, &discardOptions);
+  check(!autoRecord->isChecked() || controller.settingsModified(), __LINE__);
+  autoRecord->setChecked(false);
+  dialog->box->button(QDialogButtonBox::Apply)->click();
   delete dialog;
   check(controller.settingsPage()->parentWidget() != controller.view(), __LINE__);
  }

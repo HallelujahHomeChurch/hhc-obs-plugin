@@ -21,6 +21,7 @@ public:
  ~NativeUi() override {
   qApp->removeEventFilter(this);
   controller_.openSettings = {};
+  controller_.settingsEdited = {};
   if (dialog_) {
    controller_.settingsPage()->hide();
    controller_.settingsPage()->setParent(controller_.view());
@@ -57,12 +58,15 @@ public:
   auto *item = new QListWidgetItem(QString::fromUtf8("HHC"), list);
   item->setIcon(list->item(0)->icon());
   connect(list, &QListWidget::currentRowChanged, pages, &QStackedWidget::setCurrentIndex);
+  controller_.settingsEdited = [box] {
+   if (auto *apply = box->button(QDialogButtonBox::Apply)) apply->setEnabled(true);
+  };
   connect(controller_.keyField(), &QLineEdit::textEdited, dialog, [box](const QString &) {
    if (auto *apply = box->button(QDialogButtonBox::Apply)) apply->setEnabled(true);
   });
   connect(box, &QDialogButtonBox::clicked, this, [this, dialog, box, list, index](QAbstractButton *button) {
    auto role = box->buttonRole(button);
-   if ((role == QDialogButtonBox::ApplyRole || role == QDialogButtonBox::AcceptRole) && controller_.keyField()->isModified()) {
+   if ((role == QDialogButtonBox::ApplyRole || role == QDialogButtonBox::AcceptRole) && controller_.settingsModified()) {
     if (!applyChanges(dialog, box)) { list->setCurrentRow(index); return; }
     if (role == QDialogButtonBox::ApplyRole) return;
    }
@@ -70,6 +74,7 @@ public:
    QMetaObject::invokeMethod(dialog, "on_buttonBox_clicked", Qt::DirectConnection, Q_ARG(QAbstractButton*, button));
   });
   connect(dialog, &QObject::destroyed, this, [this] {
+   controller_.settingsEdited = {};
    controller_.discardSettings();
    controller_.settingsPage()->hide();
    controller_.settingsPage()->setParent(controller_.view());
@@ -81,10 +86,10 @@ public:
  }
 protected:
  bool eventFilter(QObject *object, QEvent *event) override {
-  if (object == dialog_ && controller_.keyField()->isModified() &&
+  if (object == dialog_ && controller_.settingsModified() &&
       (event->type() == QEvent::Close || (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape))) {
    const auto answer = QMessageBox::question(dialog_, QString::fromUtf8("尚未儲存的 HHC 變更"),
-       QString::fromUtf8("是否儲存 HHC 金鑰及目前的 OBS 設定？"), QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
+       QString::fromUtf8("是否儲存 HHC 及目前的 OBS 設定？"), QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
    if (answer == QMessageBox::Discard) controller_.discardSettings();
    else if (answer != QMessageBox::Save || !applyChanges(dialog_, dialog_->findChild<QDialogButtonBox *>("buttonBox"))) {
     if (event->type() == QEvent::Close) static_cast<QCloseEvent *>(event)->ignore();
