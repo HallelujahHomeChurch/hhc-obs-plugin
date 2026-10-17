@@ -133,6 +133,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 		try {
 			auto r = workerResult(control_.future());
 			end_ = r.end;
+			if(r.serverEnd) serverEnd_=r.serverEnd;
 			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 2000;
 		} catch (const RequestError &e) {
 			if (e.code == "broadcast_ingest_revoked") {
@@ -384,7 +385,7 @@ void KeyController::startStop()
 	capture_.reset();
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	try {
-		KeyIngest(root_ + "/intents", id_).prepareOpen();
+		KeyIngest(root_ + "/intents", id_).prepareOpen("obs-hls-10s-v1");
 		atomicJson(root_ + "/active.json", {{"localId", id_},
 						    {"protocolVersion", "k4-2026-10-15.rc1"},
 						    {"released", false},
@@ -403,6 +404,7 @@ void KeyController::startStop()
 	starting_ = true;
 	stopping_ = released_ = revoked_ = paused_ = false;
 	end_.reset();
+	serverEnd_.reset();
 	next_ = 0;
 	issue_ = QString::fromUtf8("正在連線…");
 	tick();
@@ -423,7 +425,11 @@ void KeyController::tick()
 		display();
 		return;
 	}
-	if (capture_ && end_ && !stopping_) {
+	if(capture_ && serverEnd_ && !stopping_) {
+		// Public cutoff is independent of retained media. Stop at the next actual encoder grid.
+		stopping_=capture_->stopAtCommonBoundary();
+	}
+	if (capture_ && end_ && !serverEnd_ && !stopping_) {
 		// Wait until all public segments are closed; the chosen marker is ahead of the encoder.
 		const auto dir = SessionStore(root_ + "/queue").mediaDirectory(actor_, id_);
 		bool complete = true;
@@ -461,9 +467,10 @@ void KeyController::pollControl()
 		auto api = ingest.api();
 		BroadcastControl control(SessionStore(root_ + "/queue").mediaDirectory(actor, id), actor, id, api,
 					 true);
-		control.poll(boundary);
+		control.poll(boundary, true);
 		KeyJob out;
 		out.end = control.acceptedEnd();
+		out.serverEnd = control.serverEnd();
 		return out;
 	}));
 }
@@ -493,13 +500,14 @@ void KeyController::syncDone()
 			state["audioTrack"] = int(audioTrack_);
 			atomicJson(root_ + "/active.json", state);
 			capture_ = std::make_unique<CaptureOutput>();
-			if (!capture_->start({dir, audioTrack_, root_ + "/queue", actor_, id_})) {
+			if (!capture_->start({dir, audioTrack_, root_ + "/queue", actor_, id_, r.mediaProfile})) {
 				capture_.reset();
 				issue_ = QString::fromUtf8("NVENC 啟動失敗，保留資料並中止原 capture。");
 			} else recordWithStream(true);
 		}
 		if (r.end)
 			end_ = r.end;
+		if(r.serverEnd) serverEnd_=r.serverEnd;
 		released_ = r.sync.stopAccepted && r.sync.sealAccepted;
 		if (released_) {
 			starting_ = false;

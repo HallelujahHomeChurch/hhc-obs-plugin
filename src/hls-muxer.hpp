@@ -7,7 +7,7 @@
 namespace hhc {
 class HlsMuxer {
 public:
-	HlsMuxer(const QString &root, unsigned rendition, obs_encoder_t *video, obs_encoder_t *audio);
+	HlsMuxer(const QString &root, unsigned rendition, obs_encoder_t *video, obs_encoder_t *audio, unsigned segmentFrames = 900);
 	~HlsMuxer();
 	void write(const encoder_packet &);
 	void close();

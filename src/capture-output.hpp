@@ -10,6 +10,7 @@ struct CaptureConfig {
 	unsigned audioTrack = 1;
 	// Empty only for standalone media fixtures. Real queue sessions bind all three.
 	QString queueRoot, account, localId;
+	QString mediaProfile;
 };
 class CaptureOutput {
 public:
@@ -20,6 +21,7 @@ public:
 	static void registerOutput();
 	bool start(const CaptureConfig &);
 	void stop(StopReason);
+	bool stopAtCommonBoundary();
 	bool active() const;
 	bool finished() const;
 	bool wait(unsigned timeoutMs);

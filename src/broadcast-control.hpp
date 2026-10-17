@@ -9,15 +9,17 @@ public:
 	BroadcastControl(QString directory, QString account, QString localId, ApiClient &api, bool ingest = false);
 	void adoptIngest(const QJsonObject &result, const QJsonObject &intent);
 	std::optional<int> acceptedEnd();
+	std::optional<int> serverEnd();
 	static QJsonArray selectable(ApiClient &);
 	QJsonObject bind(const QString &recordingId);
-	QJsonObject poll(std::function<std::optional<int>()> nextBoundary = {});
+	QJsonObject poll(std::function<std::optional<int>()> nextBoundary = {}, bool d1 = false);
 	void replay();
 
 private:
 	void load();
 	void save();
 	void checkBinding(const QJsonObject &);
+	QJsonObject acceptControl(const QJsonObject &);
 	QJsonObject view();
 	QJsonObject ack(const QString &, QJsonObject);
 	QJsonObject journal_;

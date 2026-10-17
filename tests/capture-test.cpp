@@ -16,6 +16,11 @@ int main()
 	check(hhc::nextCommonBoundary({7200, 7180, 7199}) == 9,
 	      "markers use encoder progress, not verified watermarks");
 	check(!hhc::nextCommonBoundary({-1, 0, 0}), "all three renditions required");
+	check(hhc::nextCommonBoundary({299,298,297},300)==1, "S10 common frame boundary");
+	check(hhc::nextCommonBoundary({300,299,298},300)==2, "S10 never select crossed boundary");
+	check(!hhc::nextCommonBoundary({0,0,0},0), "reject unsupported grid");
+	check(!hhc::runtimeLimit(3000000000,0,10000,36000,300), "S10 supports more than legacy object cap");
+	check(hhc::runtimeLimit(3000000000,0,13000,36000,300).has_value(), "S10 bounded objects");
 	hhc::SourceFormat s{1920, 1080, 30000, 1001, 48000, 2, 1};
 	check(hhc::validateSource(s).empty(), "accept actual Program 1080p29.97 stereo track 1");
 	s.fpsNum = 30;

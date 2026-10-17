@@ -106,6 +106,7 @@ int main(int argc, char **argv)
 	{
 		hhc::CaptureOutput capture;
 		hhc::CaptureConfig config{out, 1};
+		if(fault == "--s10" || fault == "--s10-boundary-stop") config.mediaProfile="obs-hls-10s-v1";
 		if (journal) {
 			config.queueRoot = requested;
 			config.account = "synthetic-test-account";
@@ -205,8 +206,11 @@ int main(int argc, char **argv)
 			uint64_t audioFrame = 0;
 			const auto start = std::chrono::steady_clock::now();
 			const uint64_t base = os_gettime_ns();
+			bool boundaryStop=false;
 			for (int frame = 0; uint64_t(frame) * 1001 < uint64_t(seconds) * 30000 && capture.active();
 			     ++frame) {
+				if(fault=="--s10-boundary-stop" && frame>=750 && !boundaryStop)
+					boundaryStop=capture.stopAtCommonBoundary();
 				image.fill(QColor::fromHsv((frame / 30) % 360, 180, 90));
 				QPainter painter(&image);
 				painter.setPen(Qt::white);
@@ -266,7 +270,8 @@ int main(int argc, char **argv)
 						++count;
 					}
 				}
-				if (total < seconds - 0.5 || total > seconds + 0.1 || (seconds == 61 && count != 3)) {
+				const double expected=boundaryStop ? 30.03 : seconds;
+				if (total < expected - 0.5 || total > expected + 0.1 || (seconds == 61 && config.mediaProfile.isEmpty() && count != 3)) {
 					std::cerr << "FAIL timeline " << rendition << " duration=" << total
 						  << " segments=" << count << "\\n";
 					result = 10;

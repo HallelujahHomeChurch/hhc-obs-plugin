@@ -46,6 +46,7 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 	out.id = id;
 	out.actor = b["binding"].toObject()["actorId"].toString();
 	out.title = b["title"].toString();
+	out.mediaProfile = ingest.metadata()["intent"].toObject()["mediaProfile"].toString();
 	auto api = ingest.api();
 	SessionStore store(root + "/queue");
 	const auto directory = store.mediaDirectory(out.actor, id);
@@ -66,10 +67,16 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		});
 	try {
 		out.sync = sync.adopt(b);
+		// Read authoritative range before uploading retained S10 media after an outage.
+		if(!out.mediaProfile.isEmpty() && !out.sync.sealAccepted &&
+		   !QStringList{"aborted","failed","expired","ready"}.contains(out.sync.state) &&
+		   !revoked && !QFileInfo::exists(revokePath(root,id)))
+			control.poll({},true);
 		out.end = control.acceptedEnd();
+		out.serverEnd = control.serverEnd();
 		if (revoked || QFileInfo::exists(revokePath(root, id)))
 			out.sync = sync.abort();
-		else if (!(canStart && store.isPrepared(out.actor, id))) {
+		else if (!(canStart && !out.serverEnd && store.isPrepared(out.actor, id))) {
 			if (!active && !validated && !out.sync.sealAccepted) {
 				const auto recovery = store.scanPending(out.actor, cancelled, id);
 				if (!recovery.issues.empty())
@@ -83,7 +90,7 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			markIngestRevoked(root, id);
 		throw;
 	}
-	out.bound = canStart && store.isPrepared(out.actor, id) &&
+	out.bound = canStart && !out.serverEnd && store.isPrepared(out.actor, id) &&
 		    !QStringList{"aborted", "failed", "expired", "ready"}.contains(out.sync.state) &&
 		    !out.sync.stopAccepted;
 	return out;
