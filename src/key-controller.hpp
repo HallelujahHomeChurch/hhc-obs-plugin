@@ -23,6 +23,7 @@ public:
 	QLabel *statusLabel() const { return status_; }
 	QLineEdit *keyField() const { return key_; }
 	bool applySettings();
+	bool validateSettings();
 	void beginSettings();
 	void discardSettings();
 	std::function<void()> openSettings;

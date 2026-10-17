@@ -13,6 +13,7 @@ public:
 	KeyIngest(QString root, QString localId, IngestCredentials vault = {},
 		  ApiClient::Transport transport = httpRequest);
 	void saveKey(const QByteArray &);
+	static void validateKey(const QByteArray &);
 	bool hasKey() const;
 	QByteArray key() const;
 	void prepareOpen();

@@ -126,9 +126,13 @@ KeyIngest::KeyIngest(QString root, QString id, IngestCredentials vault, ApiClien
 		session_ = s;
 	}
 }
-void KeyIngest::saveKey(const QByteArray &value)
+void KeyIngest::validateKey(const QByteArray &value)
 {
 	require(QRegularExpression("^hhc_stream_[A-Za-z0-9_-]{43}$").match(QString::fromLatin1(value)).hasMatch());
+}
+void KeyIngest::saveKey(const QByteArray &value)
+{
+	validateKey(value);
 	vault_.save("stream-key", value);
 }
 bool KeyIngest::hasKey() const

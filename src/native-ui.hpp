@@ -10,6 +10,9 @@
 #include <QVBoxLayout>
 #include <QEvent>
 #include <QAction>
+#include <QCloseEvent>
+#include <QKeyEvent>
+#include <QMessageBox>
 namespace hhc {
 // shortcut: OBS 32.2.2 widget names are internal; revalidate before supporting another OBS version.
 class NativeUi : public QObject {
@@ -59,9 +62,9 @@ public:
   });
   connect(box, &QDialogButtonBox::clicked, this, [this, dialog, box, list, index](QAbstractButton *button) {
    auto role = box->buttonRole(button);
-   if ((role == QDialogButtonBox::ApplyRole || role == QDialogButtonBox::AcceptRole) && !controller_.applySettings()) {
-    list->setCurrentRow(index);
-    return;
+   if ((role == QDialogButtonBox::ApplyRole || role == QDialogButtonBox::AcceptRole) && controller_.keyField()->isModified()) {
+    if (!applyChanges(dialog, box)) { list->setCurrentRow(index); return; }
+    if (role == QDialogButtonBox::ApplyRole) return;
    }
    if (role == QDialogButtonBox::RejectRole) controller_.discardSettings();
    QMetaObject::invokeMethod(dialog, "on_buttonBox_clicked", Qt::DirectConnection, Q_ARG(QAbstractButton*, button));
@@ -78,12 +81,33 @@ public:
  }
 protected:
  bool eventFilter(QObject *object, QEvent *event) override {
+  if (object == dialog_ && controller_.keyField()->isModified() &&
+      (event->type() == QEvent::Close || (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape))) {
+   const auto answer = QMessageBox::question(dialog_, QString::fromUtf8("尚未儲存的 HHC 變更"),
+       QString::fromUtf8("是否儲存 HHC 金鑰及目前的 OBS 設定？"), QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
+   if (answer == QMessageBox::Discard) controller_.discardSettings();
+   else if (answer != QMessageBox::Save || !applyChanges(dialog_, dialog_->findChild<QDialogButtonBox *>("buttonBox"))) {
+    if (event->type() == QEvent::Close) static_cast<QCloseEvent *>(event)->ignore();
+    return true;
+   }
+  }
   if (event->type() == QEvent::Show && QByteArray(object->metaObject()->className()) == "OBSBasicSettings") {
    if (auto *dialog = qobject_cast<QDialog *>(object)) attach(dialog);
   }
   return false;
  }
 private:
+ bool applyChanges(QDialog *dialog, QDialogButtonBox *box) {
+  if (!controller_.validateSettings()) return false;
+  auto *apply = box->button(QDialogButtonBox::Apply);
+  if (!apply) return false;
+  // OBS 32.2.2 ClearChanged disables Apply only after native validation and save succeed.
+  apply->setEnabled(true);
+  QMetaObject::invokeMethod(dialog, "on_buttonBox_clicked", Qt::DirectConnection, Q_ARG(QAbstractButton*, apply));
+  if (apply->isEnabled()) return false;
+  if (!controller_.applySettings()) { apply->setEnabled(true); return false; }
+  return true;
+ }
  QMainWindow *main_;
  KeyController &controller_;
  QPointer<QDialog> dialog_;

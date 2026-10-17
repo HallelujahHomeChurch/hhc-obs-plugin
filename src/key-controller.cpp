@@ -175,13 +175,25 @@ void KeyController::display()
 	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳速度：最近 30 秒成功傳送的媒體平均值。"));
 	status_->setStyleSheet(paused_ ? "color: #e76f51" : "");
 }
-bool KeyController::applySettings()
+bool KeyController::validateSettings()
 {
 	if (!key_->isModified() || key_->text().isEmpty()) return true;
 	if (!key_->isEnabled()) {
 		settingsMessage_->setText(QString::fromUtf8("收錄或補傳尚未完成，不能更換金鑰。"));
 		return false;
 	}
+	try {
+		KeyIngest::validateKey(key_->text().toUtf8());
+		return true;
+	} catch (...) {
+		settingsMessage_->setText(QString::fromUtf8("串流金鑰格式不正確。"));
+		return false;
+	}
+}
+bool KeyController::applySettings()
+{
+	if (!validateSettings()) return false;
+	if (!key_->isModified() || key_->text().isEmpty()) { key_->setModified(false); return true; }
 	try {
 		KeyIngest(root_ + "/intents", "settings").saveKey(key_->text().toUtf8());
 		key_->setModified(false); keyAvailable_ = true;
