@@ -24,6 +24,8 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRandomGenerator>
+#include <QApplication>
+#include <QRegularExpression>
 #include <QUuid>
 #include <windows.h>
 namespace hhc {
@@ -108,6 +110,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	status_->setTextFormat(Qt::PlainText);
 	layout->addWidget(status_);
 	action_ = new QPushButton;
+	action_->setObjectName("hhcStreamButton");
 	layout->addWidget(action_);
 	retry_ = new QPushButton(QString::fromUtf8("重試"));
 	layout->addWidget(retry_);
@@ -193,6 +196,20 @@ KeyController::~KeyController()
 }
 void KeyController::setStreamActive(bool active)
 {
+	// OBS themes scope active colors to #streamButton, not to every QPushButton.
+	// Copy only those rules onto our own widget; never duplicate the native object name.
+	const auto theme = qApp->styleSheet();
+	if (theme != theme_) {
+		theme_ = theme;
+		QString rules;
+		static const QRegularExpression selector("([^{}]*#streamButton[^{}]*)\\{([^{}]*)\\}");
+		auto matches = selector.globalMatch(theme);
+		while (matches.hasNext()) {
+			auto rule = matches.next().captured(0);
+			rules += rule.replace("#streamButton", "#hhcStreamButton");
+		}
+		action_->setStyleSheet(rules);
+	}
 	const QString activeClass = active ? "state-active" : "";
 	if (action_->property("class").toString() != activeClass) {
 		action_->setProperty("class", activeClass);
@@ -523,7 +540,12 @@ void KeyController::syncDone()
 		} else if (!e.outputOpening && e.code == "broadcast_source_not_prepared") {
 			issue_ = QString::fromUtf8("平台尚未準備接收，正在自動重試。");
 			next_ = QDateTime::currentMSecsSinceEpoch() + 5000 + QRandomGenerator::global()->bounded(1000);
+		} else if (e.code == "local_session_busy") {
+			// Upload adoption and control polling share a journal lock. Yield without
+			// treating local ownership contention as a failed network connection.
+			next_ = QDateTime::currentMSecsSinceEpoch() + 250;
 		} else {
+			if (!failures_) blog(LOG_WARNING, "[HHC] Transfer retry: status=%d code=%s", e.status, qPrintable(e.code));
 			auto delay = e.retryDelayMs(failures_);
 			paused_ = !delay;
 			next_ = QDateTime::currentMSecsSinceEpoch() + delay.value_or(0);
