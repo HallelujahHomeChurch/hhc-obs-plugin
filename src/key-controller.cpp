@@ -42,21 +42,19 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 {
 	auto *layout = new QVBoxLayout(view_);
 	layout->setAlignment(Qt::AlignTop);
-	settings_ = new QDialog(view_);
-	settings_->setWindowTitle(QString::fromUtf8("HHC 串流設定"));
-	settings_->setMinimumWidth(300);
+	settings_ = new QWidget(view_);
 	auto *settingsLayout = new QVBoxLayout(settings_);
 	key_ = new QLineEdit;
 	key_->setEchoMode(QLineEdit::Password);
 	key_->setPlaceholderText(QString::fromUtf8("串流金鑰"));
+	auto *keyLabel = new QLabel(QString::fromUtf8("串流金鑰"));
+	keyLabel->setBuddy(key_);
+	settingsLayout->addWidget(keyLabel);
 	settingsLayout->addWidget(key_);
-	save_ = new QPushButton(QString::fromUtf8("儲存串流金鑰"));
-	settingsLayout->addWidget(save_);
-	titleLabel_ = new QLabel;
-	titleLabel_->setWordWrap(true);
-	titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-	titleLabel_->setTextFormat(Qt::PlainText);
-	layout->addWidget(titleLabel_);
+	settingsMessage_ = new QLabel(QString::fromUtf8("金鑰儲存於 Windows Credential Manager。"));
+	settingsMessage_->setWordWrap(true);
+	settingsLayout->addWidget(settingsMessage_);
+	settingsLayout->addStretch();
 	status_ = new QLabel;
 	status_->setWordWrap(true);
 	status_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -66,32 +64,10 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	layout->addWidget(action_);
 	retry_ = new QPushButton(QString::fromUtf8("重試"));
 	layout->addWidget(retry_);
-	settingsButton_ = new QPushButton(QString::fromUtf8("設定"));
-	layout->addWidget(settingsButton_);
 	settings_->hide();
-	connect(settingsButton_, &QPushButton::clicked, this, [this] {
-		settings_->show();
-		settings_->raise();
-		settings_->activateWindow();
-	});
-	connect(settings_, &QDialog::finished, key_, &QLineEdit::clear);
-	auto *console = new QPushButton(QString::fromUtf8("管理直播"));
-	settingsLayout->addWidget(console);
-	connect(console, &QPushButton::clicked, this,
-		[] { QDesktopServices::openUrl(QUrl("https://admin.alive.org.tw/content/broadcasts")); });
-	connect(save_, &QPushButton::clicked, this, [this] {
-		try {
-			KeyIngest(root_ + "/intents", "settings").saveKey(key_->text().toUtf8());
-			key_->clear();
-			keyAvailable_ = true;
-			paused_ = false;
-			issue_ = QString::fromUtf8("串流金鑰已儲存。");
-			settings_->accept();
-		} catch (...) {
-			issue_ = QString::fromUtf8("無法儲存金鑰；請確認格式及 Credential Manager。");
-		}
-		display();
-	});
+	status_->setWordWrap(false);
+	status_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+	rateClock_.start();
 	connect(action_, &QPushButton::clicked, this, [this] { startStop(); });
 	connect(retry_, &QPushButton::clicked, this, [this] {
 		paused_ = false;
@@ -149,7 +125,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			issue_ = QString::fromUtf8("收錄 journal 無法讀取；資料保留，請檢查。");
 		}
 	}
-	connect(&timer_, &QTimer::timeout, this, [this] { tick(); });
+	connect(&timer_, &QTimer::timeout, this, [this] { tick(); display(); });
 	timer_.start(500);
 	display();
 }
@@ -161,18 +137,47 @@ KeyController::~KeyController()
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
-	action_->setText(running || starting_ ? QString::fromUtf8("停止直播") : QString::fromUtf8("開始直播"));
+	action_->setText(running || starting_ ? QString::fromUtf8("停止 HHC 直播") : QString::fromUtf8("開始 HHC 直播"));
 	action_->setEnabled(lease_->isLocked() && (running || starting_ || !paused_) &&
 			    (id_.isEmpty() || released_ || running || starting_));
-	save_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ &&
+	key_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ &&
 			  !syncAwaiting_ && !controlAwaiting_);
-	key_->setEnabled(save_->isEnabled());
 	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；可更換金鑰")
 					       : QString::fromUtf8("串流金鑰"));
 	retry_->setVisible(paused_ && lease_->isLocked());
-	titleLabel_->setText(title_);
-	titleLabel_->setVisible(!title_.isEmpty() && !released_);
-	status_->setText(issue_.isEmpty() ? QString::fromUtf8("未連線") : issue_);
+	const auto now = rateClock_.elapsed();
+	rateSamples_.emplace_back(now, uploadedBytes_.load());
+	while (rateSamples_.size() > 1 && rateSamples_[1].first <= now - 30000) rateSamples_.pop_front();
+	const auto dt = now - rateSamples_.front().first;
+	const double mbps = dt > 0 ? double(uploadedBytes_.load() - rateSamples_.front().second) * 0.008 / dt : 0;
+	const auto state = paused_ ? QString::fromUtf8("需要處理") : failures_ ? QString::fromUtf8("連線重試") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : (!id_.isEmpty() && !released_) ? QString::fromUtf8("收尾中") : QString::fromUtf8("未連線");
+	status_->setText(QString::fromUtf8("HHC %1  |  ↑ %2 Mbps  |  待傳 %3 MB").arg(state).arg(mbps, 0, 'f', 1).arg(double(pendingBytes_) / 1048576, 0, 'f', 1));
+	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳速度：最近 30 秒成功傳送的媒體平均值。"));
+	status_->setStyleSheet(paused_ ? "color: #e76f51" : "");
+}
+bool KeyController::applySettings()
+{
+	if (key_->text().isEmpty()) return true;
+	if (!key_->isEnabled()) {
+		settingsMessage_->setText(QString::fromUtf8("收錄或補傳尚未完成，不能更換金鑰。"));
+		return false;
+	}
+	try {
+		KeyIngest(root_ + "/intents", "settings").saveKey(key_->text().toUtf8());
+		key_->clear(); keyAvailable_ = true;
+		settingsMessage_->setText(QString::fromUtf8("金鑰已儲存。"));
+		display();
+		return true;
+	} catch (...) {
+		settingsMessage_->setText(QString::fromUtf8("無法儲存金鑰；請確認格式及 Credential Manager。"));
+		return false;
+	}
+}
+void KeyController::discardSettings()
+{
+	key_->clear();
+	settingsMessage_->setText(keyAvailable_ ? QString::fromUtf8("已儲存串流金鑰；留空則保留原金鑰。")
+					      : QString::fromUtf8("尚未設定串流金鑰。金鑰儲存於 Windows Credential Manager。"));
 }
 bool KeyController::retireUnbound()
 {
@@ -217,7 +222,7 @@ void KeyController::startStop()
 		return;
 	if (!keyAvailable_) {
 		issue_ = QString::fromUtf8("請先儲存串流金鑰。");
-		settings_->show();
+		if (openSettings) openSettings();
 		display();
 		return;
 	}
@@ -293,7 +298,7 @@ void KeyController::tick()
 	syncAwaiting_ = true;
 	sync_.setFuture(QtConcurrent::run([this, id, active, revoked, preparing] {
 		HttpCancellationScope cancellation(cancelled_);
-		return keyTransferStep(root_, id, active, revoked, preparing, recoveryValidated_, &cancelled_);
+		return keyTransferStep(root_, id, active, revoked, preparing, recoveryValidated_, &cancelled_, {}, httpRequest, [this](quint64 n) { uploadedBytes_.fetch_add(n); });
 	}));
 }
 void KeyController::pollControl()
@@ -323,6 +328,7 @@ void KeyController::syncDone()
 		return;
 	try {
 		const auto r = workerResult(sync_.future());
+		pendingBytes_ = r.sync.pendingBytes;
 		actor_ = r.actor;
 		title_ = r.title;
 		failures_ = 0;

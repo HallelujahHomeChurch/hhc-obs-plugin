@@ -11,7 +11,7 @@ struct KeyJob {
 };
 KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool revoked, bool preparing,
 		       bool &validated, const std::atomic<bool> *cancelled = nullptr, IngestCredentials vault = {},
-		       ApiClient::Transport transport = httpRequest);
+		       ApiClient::Transport transport = httpRequest, std::function<void(quint64)> uploaded = {});
 void markIngestStopping(const QString &root, const QString &id);
 void markIngestRevoked(const QString &root, const QString &id);
 } // namespace hhc

@@ -24,7 +24,7 @@ void markIngestStopping(const QString &root, const QString &id)
 }
 KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool revoked, bool preparing,
 		       bool &validated, const std::atomic<bool> *cancelled, IngestCredentials vault,
-		       ApiClient::Transport transport)
+		       ApiClient::Transport transport, std::function<void(quint64)> uploaded)
 {
 	QDir().mkpath(root + "/intents");
 	QLockFile lock(lockFilePath(root + "/intents/" + id + ".work.lock"));
@@ -58,7 +58,12 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 	}
 	BroadcastControl control(directory, out.actor, id, api, true);
 	control.adoptIngest(result, ingest.metadata()["intent"].toObject());
-	CaptureSync sync(root + "/queue", out.actor, id, api);
+	CaptureSync sync(root + "/queue", out.actor, id, api,
+		[uploaded](const QByteArray &method, const QUrl &url, const QByteArray &body, const QMap<QByteArray, QByteArray> &headers) {
+			auto response = httpRequest(method, url, body, headers);
+			if (uploaded && response.status >= 200 && response.status < 300) uploaded(quint64(body.size()));
+			return response;
+		});
 	try {
 		out.sync = sync.adopt(b);
 		out.end = control.acceptedEnd();
