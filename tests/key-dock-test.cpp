@@ -1,4 +1,5 @@
 #include "key-controller.hpp"
+#include "gpu-encode.hpp"
 #include <QApplication>
 #include <QMessageBox>
 #include <QTemporaryDir>
@@ -159,9 +160,18 @@ struct KeyControllerTest {
 		failed += c.action_->text() != QString::fromUtf8("開始 HHC 串流");
 		c.starting_ = true;
 		c.display();
+		failed += !c.action_->property("class").toString().isEmpty();
 		failed += c.action_->text() != QString::fromUtf8("停止 HHC 串流");
 		c.starting_ = false;
 		c.display();
+		c.setStreamActive(true);
+		failed += c.action_->property("class").toString() != "state-active";
+		c.gpuPercent_ = 42;
+		c.display();
+		failed += !c.action_->property("class").toString().isEmpty() || !c.status_->text().contains("GPU: 42%");
+		c.gpuPercent_ = -1;
+		c.display();
+		failed += c.status_->text().contains("GPU: 0%");
 		c.pendingBytes_ = 1048576;
 		c.rateSamples_.clear();
 		c.rateSamples_.emplace_back(c.rateClock_.elapsed() - 1000, 0);
@@ -268,6 +278,9 @@ int main(int argc, char **argv)
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
+	const int gpu = hhc::sampleEncoderGpu();
+	failed += gpu < -1 || gpu > 100;
+	std::cout << "Video Encode sampler: " << gpu << " (-1 means unavailable)\n";
 	const auto fields = view->findChildren<QLineEdit *>();
 	if (fields.size() != 1 || fields[0]->echoMode() != QLineEdit::Password)
 		++failed;

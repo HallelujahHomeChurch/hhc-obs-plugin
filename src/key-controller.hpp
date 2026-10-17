@@ -43,6 +43,7 @@ private:
 	void pollControl();
 	void launchHelper();
 	void display();
+	void setStreamActive(bool active);
 	QString root_, id_, actor_, title_, issue_;
 	QPointer<QWidget> view_;
 	QLineEdit *key_;
@@ -60,6 +61,9 @@ private:
 	QLabel *status_;
 	QTimer timer_;
 	QFutureWatcher<KeyJob> sync_, control_;
+	QFutureWatcher<int> gpu_;
+	int gpuPercent_ = -1;
+	qint64 nextGpu_ = 0;
 	std::unique_ptr<CaptureOutput> capture_;
 	std::unique_ptr<QLockFile> lease_;
 	std::atomic<bool> cancelled_{false};
