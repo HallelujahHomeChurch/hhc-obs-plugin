@@ -1,4 +1,5 @@
 #include "runtime-paths.hpp"
+#include "gpu-encode.hpp"
 #include "key-controller.hpp"
 #include "ingest.hpp"
 #include "session-store.hpp"
@@ -171,7 +172,17 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			issue_ = QString::fromUtf8("收錄 journal 無法讀取；資料保留，請檢查。");
 		}
 	}
-	connect(&timer_, &QTimer::timeout, this, [this] { tick(); display(); });
+	connect(&gpu_, &QFutureWatcher<int>::finished, this, [this] {
+		try { gpuPercent_ = gpu_.result(); } catch (...) { gpuPercent_ = -1; }
+		if (!closing_) display();
+	});
+	connect(&timer_, &QTimer::timeout, this, [this] {
+		if (!gpu_.isRunning() && rateClock_.elapsed() >= nextGpu_) {
+			nextGpu_ = rateClock_.elapsed() + 2000;
+			gpu_.setFuture(QtConcurrent::run([] { return sampleEncoderGpu(); }));
+		}
+		tick(); display();
+	});
 	timer_.start(500);
 	display();
 }
@@ -180,9 +191,20 @@ KeyController::~KeyController()
 	shutdown();
 	delete view_;
 }
+void KeyController::setStreamActive(bool active)
+{
+	const QString activeClass = active ? "state-active" : "";
+	if (action_->property("class").toString() != activeClass) {
+		action_->setProperty("class", activeClass);
+		const auto style = action_->styleSheet();
+		action_->setStyleSheet("/* */");
+		action_->setStyleSheet(style);
+	}
+}
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
+	setStreamActive(running);
 	action_->setText(running || starting_ ? QString::fromUtf8("停止 HHC 串流") : QString::fromUtf8("開始 HHC 串流"));
 	action_->setEnabled(lease_->isLocked() && (running || starting_ || !paused_) &&
 			    (id_.isEmpty() || released_ || running || starting_));
@@ -198,7 +220,8 @@ void KeyController::display()
 	const double mbps = dt > 0 ? double(uploadedBytes_.load() - rateSamples_.front().second) * 0.008 / dt : 0;
 	const auto state = paused_ ? QString::fromUtf8("需要處理") : failures_ ? QString::fromUtf8("連線重試") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : (!id_.isEmpty() && !released_) ? QString::fromUtf8("收尾中") : QString::fromUtf8("未連線");
 	status_->setText(QString::fromUtf8("HHC %1  |  ↑ %2 Mbps  |  待傳 %3 MB").arg(state).arg(mbps, 0, 'f', 1).arg(double(pendingBytes_) / 1048576, 0, 'f', 1));
-	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳速度：最近 30 秒成功傳送的媒體平均值。"));
+	status_->setText(status_->text() + QString::fromUtf8("  |  GPU: %1").arg(gpuPercent_ >= 0 ? QString::number(gpuPercent_) + "%" : QString::fromUtf8("—")));
+	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳速度：最近 30 秒成功傳送的媒體平均值。\nGPU：整張 NVIDIA 顯示卡的 Video Encode 使用率，包含本機錄影與其他程式；多卡或讀取失敗顯示 —。"));
 	status_->setStyleSheet(paused_ ? "color: #e76f51" : "");
 }
 bool KeyController::validateSettings()
@@ -560,6 +583,7 @@ void KeyController::shutdown()
 		capture_.reset();
 	}
 	try {
+		gpu_.waitForFinished();
 		sync_.waitForFinished();
 		control_.waitForFinished();
 	} catch (...) {
