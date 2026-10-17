@@ -3,6 +3,7 @@
 #include <QtGlobal>
 #ifndef HHC_FIXTURE_BUILD
 #include "key-controller.hpp"
+#include "native-ui.hpp"
 #include <obs-frontend-api.h>
 #include <util/bmem.h>
 #include <util/config-file.h>
@@ -10,6 +11,7 @@
 #include <QCoreApplication>
 namespace {
 std::unique_ptr<hhc::KeyController> controller;
+std::unique_ptr<hhc::NativeUi> nativeUi;
 void frontendEvent(obs_frontend_event event, void *)
 {
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING && !controller) {
@@ -30,13 +32,16 @@ void frontendEvent(obs_frontend_event event, void *)
 				return QString::fromUtf8(mode).compare("Advanced", Qt::CaseInsensitive) == 0
 					? unsigned(config_get_uint(config, "AdvOut", "TrackIndex")) : 1u;
 			});
-		if (!obs_frontend_add_dock_by_id("hhc.capture", "HHC 串流", controller->view()))
-			controller.reset();
-		else
-			blog(LOG_INFO, "[HHC] Key-only ingest dock ready; credentials stay in Credential Manager");
+		nativeUi = std::make_unique<hhc::NativeUi>(static_cast<QMainWindow *>(obs_frontend_get_main_window()), *controller);
+		if (!nativeUi->install()) {
+			blog(LOG_ERROR, "[HHC] OBS UI layout unsupported; HHC controls were not installed");
+			nativeUi.reset(); controller.reset();
+		} else blog(LOG_INFO, "[HHC] Native controls/status/settings integration ready");
 	}
-	if (event == OBS_FRONTEND_EVENT_EXIT)
+	if (event == OBS_FRONTEND_EVENT_EXIT) {
+		nativeUi.reset();
 		controller.reset();
+	}
 }
 } // namespace
 #endif

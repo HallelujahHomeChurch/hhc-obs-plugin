@@ -1,7 +1,8 @@
 #pragma once
 #include "capture-output.hpp"
 #include "key-transfer.hpp"
-#include <QDialog>
+#include <QElapsedTimer>
+#include <deque>
 #include <QPointer>
 #include <QWidget>
 #include <QLabel>
@@ -18,6 +19,14 @@ public:
 	~KeyController() override;
 	QWidget *view() const { return view_; }
 	void shutdown();
+	QWidget *settingsPage() const { return settings_; }
+	QLabel *statusLabel() const { return status_; }
+	QLineEdit *keyField() const { return key_; }
+	bool applySettings();
+	bool validateSettings();
+	void beginSettings();
+	void discardSettings();
+	std::function<void()> openSettings;
 
 private:
 	friend struct KeyControllerTest;
@@ -33,9 +42,14 @@ private:
 	QLineEdit *key_;
 	unsigned audioTrack_ = 1;
 	std::function<unsigned()> audioTrackProvider_;
-	QDialog *settings_;
-	QPushButton *action_, *save_, *retry_, *settingsButton_;
-	QLabel *status_, *titleLabel_;
+	QWidget *settings_;
+	QLabel *settingsMessage_;
+	std::atomic<quint64> uploadedBytes_{0};
+	QElapsedTimer rateClock_;
+	std::deque<std::pair<qint64, quint64>> rateSamples_;
+	quint64 pendingBytes_ = 0;
+	QPushButton *action_, *retry_, *showKey_;
+	QLabel *status_;
 	QTimer timer_;
 	QFutureWatcher<KeyJob> sync_, control_;
 	std::unique_ptr<CaptureOutput> capture_;
