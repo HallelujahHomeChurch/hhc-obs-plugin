@@ -164,8 +164,24 @@ struct KeyControllerTest {
 		failed += c.action_->text() != QString::fromUtf8("停止 HHC 串流");
 		c.starting_ = false;
 		c.display();
+		const auto originalStyle = qApp->styleSheet();
+		qApp->setStyleSheet("QPushButton { background-color: #303030; } #streamButton.state-active { background-color: #2040c0; }");
+		c.setStreamActive(true);
+		c.action_->ensurePolished();
+		failed += c.action_->palette().color(QPalette::Button) != QColor("#2040c0");
+		c.setStreamActive(false);
+		failed += c.action_->palette().color(QPalette::Button) != QColor("#303030");
+		qApp->setStyleSheet(originalStyle);
 		c.setStreamActive(true);
 		failed += c.action_->property("class").toString() != "state-active";
+		for (const auto code : {"local_session_busy", "transport_unavailable"}) {
+			c.sync_.setFuture(QtConcurrent::run([code]() -> KeyJob { throw RequestError(0, code); }));
+			try { c.sync_.waitForFinished(); } catch (...) {}
+			c.syncDone();
+			failed += c.paused_;
+			failed += c.failures_ != (QString(code) == "local_session_busy" ? 0u : 1u);
+		}
+		c.failures_ = 0;
 		c.gpuPercent_ = 42;
 		c.display();
 		failed += !c.action_->property("class").toString().isEmpty() || !c.status_->text().contains("GPU: 42%");

@@ -44,7 +44,7 @@ private:
 	void launchHelper();
 	void display();
 	void setStreamActive(bool active);
-	QString root_, id_, actor_, title_, issue_;
+	QString root_, id_, actor_, title_, issue_, theme_;
 	QPointer<QWidget> view_;
 	QLineEdit *key_;
 	unsigned audioTrack_ = 1;
