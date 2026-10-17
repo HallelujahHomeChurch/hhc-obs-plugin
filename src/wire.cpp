@@ -24,6 +24,10 @@ const QJsonObject k3Root = QJsonDocument::fromJson(QByteArray(
 #include "k3-schema.inc"
 							   ))
 				   .object();
+const QJsonObject k4Root = QJsonDocument::fromJson(QByteArray(
+#include "k4-schema.inc"
+							   ))
+				   .object();
 QJsonObject resolve(const QJsonObject &root, const QString &ref)
 {
 	QJsonValue v(root);
@@ -34,6 +38,8 @@ QJsonObject resolve(const QJsonObject &root, const QString &ref)
 bool validate(const QJsonObject &root, const QJsonObject &s, const QJsonValue &v, int depth = 0)
 {
 	if (depth > 40 || s.empty())
+		return false;
+	if (s.contains("not") && validate(root, s["not"].toObject(), v, depth + 1))
 		return false;
 	if (s.contains("$ref"))
 		return validate(root, resolve(root, s["$ref"].toString()), v, depth + 1);
@@ -208,7 +214,8 @@ bool validWire(const QString &schema, const QJsonValue &value)
 {
 	const auto &root = schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot
 			   : b1Root["components"].toObject()["schemas"].toObject().contains(schema)   ? b1Root
-												      : k3Root;
+			   : k3Root["components"].toObject()["schemas"].toObject().contains(schema)   ? k3Root
+												      : k4Root;
 	return validate(root, resolve(root, "#/components/schemas/" + schema), value);
 }
 QByteArray canonicalInventory(const QJsonObject &i)

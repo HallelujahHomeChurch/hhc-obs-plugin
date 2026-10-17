@@ -9,8 +9,79 @@
 #include <QFile>
 #include <QPromise>
 #include <QDateTime>
+#include "ingest.hpp"
+#include "windows-path.hpp"
+#include <QJsonDocument>
+#include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int k4Recovery(KeyController &c)
+	{
+		c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		const auto original = c.id_;
+		KeyIngest(c.root_ + "/intents", original).prepareOpen();
+		writeAtomicMetadata(c.root_ + "/active.json",
+				    QJsonDocument(QJsonObject{{"localId", original},
+							      {"protocolVersion", "k4-2026-10-15.rc1"},
+							      {"started", false},
+							      {"released", false}})
+					    .toJson());
+		c.starting_ = true;
+		c.syncAwaiting_ = true; // Cancellation while a possibly committed open is in flight.
+		c.startStop();
+		c.syncAwaiting_ = false;
+		int failed = c.id_ != original || !c.stopping_ || c.released_ || c.retireUnbound();
+		failed += !QFileInfo::exists(c.root_ + "/intents/" + original + ".stopping");
+		c.startStop();
+		failed += c.id_ != original; // Cannot create a second output while cleanup is unresolved.
+		c.lease_->unlock();
+		{
+			KeyController restored(QFileInfo(c.root_).absolutePath());
+			restored.timer_.stop();
+			failed += restored.id_ != original || !restored.stopping_ || restored.starting_;
+			restored.closing_ = true; // No background process or real transport in this mock.
+		}
+		c.lease_->tryLock(0);
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
+			RequestError e(409, "broadcast_output_terminal");
+			e.outputOpening = true;
+			throw e;
+		}));
+		try {
+			c.sync_.waitForFinished();
+		} catch (...) {
+		}
+		c.syncDone();
+		failed += !c.released_ || c.starting_ || c.stopping_ || c.id_ != original;
+		const auto future = c.next_;
+		c.tick();
+		failed += c.syncAwaiting_ || c.id_ != original || c.next_ != future;
+		// A missing K4 intent must not silently enter the legacy resolve path.
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		writeAtomicMetadata(c.root_ + "/active.json",
+				    QJsonDocument(QJsonObject{{"localId", c.id_},
+							      {"protocolVersion", "k4-2026-10-15.rc1"},
+							      {"released", false}})
+					    .toJson());
+		c.released_ = false;
+		c.stopping_ = true;
+		failed += c.retireUnbound();
+		c.tick();
+		failed += !c.paused_ || c.syncAwaiting_ || c.released_;
+		c.id_.clear();
+		c.paused_ = c.stopping_ = false;
+		QFile::remove(c.root_ + "/active.json");
+		QDir().mkpath(c.root_ + "/active.json"); // Force the active pointer commit to fail.
+		c.keyAvailable_ = true;
+		c.startStop();
+		failed += !c.id_.isEmpty() || c.starting_ || !c.paused_ || c.syncAwaiting_;
+		QDir().rmdir(c.root_ + "/active.json");
+		c.paused_ = false;
+		if (failed)
+			std::cerr << "FAIL K4 cancellation, terminal or missing-intent recovery\n";
+		return failed;
+	}
 	static int settingsAfterRelease(KeyController &c)
 	{
 		c.timer_.stop();
@@ -27,7 +98,8 @@ struct KeyControllerTest {
 		c.syncAwaiting_ = false;
 		c.released_ = false;
 		c.id_.clear();
-		if (failed) std::cerr << "FAIL released input must allow key replacement only while idle\n";
+		if (failed)
+			std::cerr << "FAIL released input must allow key replacement only while idle\n";
 		return failed;
 	}
 	static int simpleControls(KeyController &c)
@@ -49,11 +121,14 @@ struct KeyControllerTest {
 		failed += c.retry_->isHidden();
 		c.retry_->click(); // No active input: this must not create a capture.
 		failed += c.paused_ || !c.id_.isEmpty();
-		c.audioTrackProvider_ = [] { return 0u; };
+		c.audioTrackProvider_ = [] {
+			return 0u;
+		};
 		c.startStop();
 		failed += !c.id_.isEmpty(); // Invalid OBS mixer must not silently fall back.
 		c.audioTrackProvider_ = {};
-		if (failed) std::cerr << "FAIL settings, recovery or audio selection behavior\n";
+		if (failed)
+			std::cerr << "FAIL settings, recovery or audio selection behavior\n";
 		return failed;
 	}
 	static int uploadPacing(KeyController &c)
@@ -135,6 +210,7 @@ int main(int argc, char **argv)
 	failed += hhc::KeyControllerTest::settingsAfterRelease(controller);
 	failed += hhc::KeyControllerTest::simpleControls(controller);
 	failed += hhc::KeyControllerTest::uploadPacing(controller);
+	failed += hhc::KeyControllerTest::k4Recovery(controller);
 	failed += hhc::KeyControllerTest::lifecycle(controller);
 	if (failed)
 		std::cerr << "FAIL key-only dock has unexpected credential or metadata controls\n";

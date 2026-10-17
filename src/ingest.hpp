@@ -14,6 +14,7 @@ public:
 		  ApiClient::Transport transport = httpRequest);
 	void saveKey(const QByteArray &);
 	bool hasKey() const;
+	void prepareOpen();
 	QJsonObject bind();
 	QByteArray bearer(bool force = false);
 	ApiClient api();
@@ -23,6 +24,8 @@ private:
 	QByteArray key() const;
 	void save();
 	void acceptSession(const QJsonObject &);
+	QJsonObject open();
+	void checkOpened(const QJsonObject &) const;
 	QJsonObject bootstrap(const QString &, QJsonObject, const QString &);
 	QString root_, id_;
 	QJsonObject journal_, session_;

@@ -9,6 +9,7 @@
 #include <QSet>
 #include <QThread>
 #include <QDateTime>
+#include <QRandomGenerator>
 #ifdef HHC_NETWORK_TEST_FAULTS
 #include <QFileInfo>
 #endif
@@ -21,6 +22,22 @@ void checkCancellation()
 		throw RequestError(0, "transport_cancelled");
 }
 } // namespace
+std::optional<qint64> RequestError::retryDelayMs(unsigned &failures) const
+{
+	if (!outputOpening) {
+		auto delay = retryDelay(failures);
+		return delay ? std::optional<qint64>(qint64(*delay) * 1000) : std::nullopt;
+	}
+	const bool wait = status == 409 && QStringList{"broadcast_source_not_prepared", "broadcast_source_busy",
+						       "broadcast_output_capacity_exhausted", "broadcast_active_limit"}
+						   .contains(code);
+	if (!(wait || status == 429 || status >= 500 || (status == 0 && code == "transport_unavailable")))
+		return std::nullopt;
+	const int base = int(std::min(30u, 1u << std::min(failures, 5u))) * 1000;
+	failures = std::min(failures, 5u) + 1;
+	return std::max(qint64(base * 4 / 5 + QRandomGenerator::global()->bounded(base * 2 / 5 + 1)),
+			qint64(retryAfter) * 1000);
+}
 HttpCancellationScope::HttpCancellationScope(const std::atomic<bool> &flag) : previous_(cancellation)
 {
 	cancellation = &flag;
@@ -49,7 +66,9 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 		throw RequestError(0, "invalid_transport_origin");
 #ifdef HHC_NETWORK_TEST_FAULTS
 	const auto offlinePath = qEnvironmentVariable("HHC_TEST_NETWORK_OFFLINE_FILE");
-	auto offline = [&] { return !offlinePath.isEmpty() && QFileInfo::exists(offlinePath); };
+	auto offline = [&] {
+		return !offlinePath.isEmpty() && QFileInfo::exists(offlinePath);
+	};
 	if (offline())
 		throw RequestError(0, "transport_unavailable");
 	bool networkCut = false;
@@ -105,7 +124,7 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 		auto when = QDateTime::fromString(QString::fromLatin1(retry), Qt::RFC2822Date);
 		seconds = when.isValid() ? int(QDateTime::currentDateTimeUtc().secsTo(when)) : 0;
 	}
-	response.retryAfter = qBound(0, seconds, 300);
+	response.retryAfter = std::max(0, seconds);
 	if (exceeded)
 		throw RequestError(413, "response_limit");
 	if (response.status == 0)
@@ -130,12 +149,15 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 		result = transport_(method, url,
 				    method == "GET" ? QByteArray{} : QJsonDocument(body).toJson(QJsonDocument::Compact),
 				    headers);
-		if (result.status != 401 || attempt == 1)
+		if (result.status != 401 || attempt == 1 || bearer.isEmpty())
 			break;
 	}
 	if (result.status < 200 || result.status >= 300) {
 		const auto code = QJsonDocument::fromJson(result.body).object()["error"].toObject()["code"].toString();
 		static const QSet<QString> known{"broadcast_source_not_prepared",
+						 "broadcast_source_busy",
+						 "broadcast_output_capacity_exhausted",
+						 "broadcast_output_terminal",
 						 "broadcast_stream_key_invalid",
 						 "broadcast_ingest_session_invalid",
 						 "broadcast_ingest_revoked",
