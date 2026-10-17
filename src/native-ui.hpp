@@ -51,7 +51,7 @@ public:
   auto *page = controller_.settingsPage();
   controller_.beginSettings();
   const int index = pages->addWidget(page);
-  auto *item = new QListWidgetItem(QString::fromUtf8("HHC 設定"), list);
+  auto *item = new QListWidgetItem(QString::fromUtf8("HHC"), list);
   item->setIcon(list->item(0)->icon());
   connect(list, &QListWidget::currentRowChanged, pages, &QStackedWidget::setCurrentIndex);
   connect(controller_.keyField(), &QLineEdit::textEdited, dialog, [box](const QString &) {
