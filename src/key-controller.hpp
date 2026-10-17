@@ -23,6 +23,7 @@ public:
 	QLabel *statusLabel() const { return status_; }
 	QLineEdit *keyField() const { return key_; }
 	bool applySettings();
+	void beginSettings();
 	void discardSettings();
 	std::function<void()> openSettings;
 
@@ -46,7 +47,7 @@ private:
 	QElapsedTimer rateClock_;
 	std::deque<std::pair<qint64, quint64>> rateSamples_;
 	quint64 pendingBytes_ = 0;
-	QPushButton *action_, *retry_;
+	QPushButton *action_, *retry_, *showKey_;
 	QLabel *status_;
 	QTimer timer_;
 	QFutureWatcher<KeyJob> sync_, control_;

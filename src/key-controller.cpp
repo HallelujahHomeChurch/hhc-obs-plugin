@@ -8,6 +8,8 @@
 #include "windows-path.hpp"
 #include <QtConcurrent/QtConcurrentRun>
 #include <QVBoxLayout>
+#include <QFormLayout>
+#include <QHBoxLayout>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -49,8 +51,26 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	key_->setPlaceholderText(QString::fromUtf8("串流金鑰"));
 	auto *keyLabel = new QLabel(QString::fromUtf8("串流金鑰"));
 	keyLabel->setBuddy(key_);
-	settingsLayout->addWidget(keyLabel);
-	settingsLayout->addWidget(key_);
+	auto *form = new QFormLayout;
+	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	auto *keyRow = new QHBoxLayout;
+	showKey_ = new QPushButton(QString::fromUtf8("顯示"));
+	auto *getKey = new QPushButton(QString::fromUtf8("取得串流金鑰"));
+	getKey->setToolTip(QString::fromUtf8("開啟 HHC 後台"));
+	keyRow->addWidget(key_, 1);
+	keyRow->addWidget(showKey_);
+	keyRow->addWidget(getKey);
+	form->addRow(keyLabel, keyRow);
+	settingsLayout->addLayout(form);
+	connect(showKey_, &QPushButton::clicked, this, [this] {
+		const bool show = key_->echoMode() == QLineEdit::Password;
+		key_->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
+		showKey_->setText(QString::fromUtf8(show ? "隱藏" : "顯示"));
+	});
+	connect(getKey, &QPushButton::clicked, this, [] {
+		QDesktopServices::openUrl(QUrl("https://admin.alive.org.tw/content/studio/direct"));
+	});
 	settingsMessage_ = new QLabel(QString::fromUtf8("金鑰儲存於 Windows Credential Manager。"));
 	settingsMessage_->setWordWrap(true);
 	settingsLayout->addWidget(settingsMessage_);
@@ -137,7 +157,7 @@ KeyController::~KeyController()
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
-	action_->setText(running || starting_ ? QString::fromUtf8("停止 HHC 直播") : QString::fromUtf8("開始 HHC 直播"));
+	action_->setText(running || starting_ ? QString::fromUtf8("停止 HHC 串流") : QString::fromUtf8("開始 HHC 串流"));
 	action_->setEnabled(lease_->isLocked() && (running || starting_ || !paused_) &&
 			    (id_.isEmpty() || released_ || running || starting_));
 	key_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ &&
@@ -157,14 +177,16 @@ void KeyController::display()
 }
 bool KeyController::applySettings()
 {
-	if (key_->text().isEmpty()) return true;
+	if (!key_->isModified() || key_->text().isEmpty()) return true;
 	if (!key_->isEnabled()) {
 		settingsMessage_->setText(QString::fromUtf8("收錄或補傳尚未完成，不能更換金鑰。"));
 		return false;
 	}
 	try {
 		KeyIngest(root_ + "/intents", "settings").saveKey(key_->text().toUtf8());
-		key_->clear(); keyAvailable_ = true;
+		key_->setModified(false); keyAvailable_ = true;
+		key_->setEchoMode(QLineEdit::Password);
+		showKey_->setText(QString::fromUtf8("顯示"));
 		settingsMessage_->setText(QString::fromUtf8("金鑰已儲存。"));
 		display();
 		return true;
@@ -173,9 +195,23 @@ bool KeyController::applySettings()
 		return false;
 	}
 }
+void KeyController::beginSettings()
+{
+	discardSettings();
+	try {
+		KeyIngest ingest(root_ + "/intents", "settings");
+		if (ingest.hasKey()) key_->setText(QString::fromLatin1(ingest.key()));
+		key_->setModified(false);
+	} catch (...) {
+		settingsMessage_->setText(QString::fromUtf8("無法讀取已儲存金鑰；請確認 Windows Credential Manager。"));
+	}
+}
 void KeyController::discardSettings()
 {
 	key_->clear();
+	key_->setModified(false);
+	key_->setEchoMode(QLineEdit::Password);
+	showKey_->setText(QString::fromUtf8("顯示"));
 	settingsMessage_->setText(keyAvailable_ ? QString::fromUtf8("已儲存串流金鑰；留空則保留原金鑰。")
 					      : QString::fromUtf8("尚未設定串流金鑰。金鑰儲存於 Windows Credential Manager。"));
 }

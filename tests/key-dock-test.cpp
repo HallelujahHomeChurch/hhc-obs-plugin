@@ -108,6 +108,12 @@ struct KeyControllerTest {
 		c.paused_ = false;
 		c.display();
 		int failed = c.settings_->isWindow() || !c.retry_->isHidden();
+		failed += c.action_->text() != QString::fromUtf8("開始 HHC 串流");
+		c.starting_ = true;
+		c.display();
+		failed += c.action_->text() != QString::fromUtf8("停止 HHC 串流");
+		c.starting_ = false;
+		c.display();
 		c.pendingBytes_ = 1048576;
 		c.rateSamples_.clear();
 		c.rateSamples_.emplace_back(c.rateClock_.elapsed() - 1000, 0);
@@ -121,9 +127,12 @@ struct KeyControllerTest {
 		c.keyAvailable_ = true;
 		failed += !requested || !c.settings_->isHidden();
 		c.key_->setText("unsaved-secret");
+		c.showKey_->click();
+		failed += c.key_->echoMode() != QLineEdit::Normal;
 		c.discardSettings();
-		failed += !c.key_->text().isEmpty();
+		failed += !c.key_->text().isEmpty() || c.key_->echoMode() != QLineEdit::Password;
 		c.key_->setText("invalid");
+		c.key_->setModified(true);
 		failed += c.applySettings();
 		c.discardSettings();
 		c.openSettings = {};

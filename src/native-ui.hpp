@@ -49,7 +49,7 @@ public:
   dialog_ = dialog;
   dialog->setProperty("hhcAttached", true);
   auto *page = controller_.settingsPage();
-  controller_.discardSettings();
+  controller_.beginSettings();
   const int index = pages->addWidget(page);
   auto *item = new QListWidgetItem(QString::fromUtf8("HHC 設定"), list);
   item->setIcon(list->item(0)->icon());

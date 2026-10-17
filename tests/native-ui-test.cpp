@@ -36,6 +36,7 @@ int main(int argc, char **argv) {
   dialog->list->setCurrentRow(1);
   failed += dialog->pages->currentWidget() != controller.settingsPage() || controller.settingsPage()->isWindow();
   controller.keyField()->setText("invalid-test-key");
+  controller.keyField()->setModified(true);
   dialog->box->button(QDialogButtonBox::Apply)->click();
   failed += dialog->nativeCalls != 0; // Invalid HHC data cannot close or apply native settings.
   dialog->box->button(QDialogButtonBox::Cancel)->click();
