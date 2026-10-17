@@ -32,6 +32,10 @@ void frontendEvent(obs_frontend_event event, void *)
 				return QString::fromUtf8(mode).compare("Advanced", Qt::CaseInsensitive) == 0
 					? unsigned(config_get_uint(config, "AdvOut", "TrackIndex")) : 1u;
 			});
+		controller->recording = [](bool start) {
+			if (start) obs_frontend_recording_start();
+			else obs_frontend_recording_stop();
+		};
 		nativeUi = std::make_unique<hhc::NativeUi>(static_cast<QMainWindow *>(obs_frontend_get_main_window()), *controller);
 		if (!nativeUi->install()) {
 			blog(LOG_ERROR, "[HHC] OBS UI layout unsupported; HHC controls were not installed");

@@ -9,6 +9,8 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTimer>
+#include <QCheckBox>
+#include <array>
 #include <QFutureWatcher>
 #include <QLockFile>
 #include <functional>
@@ -22,7 +24,10 @@ public:
 	QWidget *settingsPage() const { return settings_; }
 	QLabel *statusLabel() const { return status_; }
 	QLineEdit *keyField() const { return key_; }
+	bool settingsModified() const;
 	bool applySettings();
+	std::function<void(bool)> recording;
+	std::function<void()> settingsEdited;
 	bool validateSettings();
 	void beginSettings();
 	void discardSettings();
@@ -31,6 +36,7 @@ public:
 private:
 	friend struct KeyControllerTest;
 	void startStop();
+	void recordWithStream(bool start);
 	bool retireUnbound();
 	void tick();
 	void syncDone();
@@ -43,6 +49,8 @@ private:
 	unsigned audioTrack_ = 1;
 	std::function<unsigned()> audioTrackProvider_;
 	QWidget *settings_;
+	std::array<QCheckBox *, 4> outputOptions_;
+	std::array<bool, 4> savedOptions_{};
 	QLabel *settingsMessage_;
 	std::atomic<quint64> uploadedBytes_{0};
 	QElapsedTimer rateClock_;

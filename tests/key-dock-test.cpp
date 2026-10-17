@@ -1,5 +1,6 @@
 #include "key-controller.hpp"
 #include <QApplication>
+#include <QMessageBox>
 #include <QTemporaryDir>
 #include <QLineEdit>
 #include <QPushButton>
@@ -15,6 +16,53 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int outputOptions()
+	{
+		QTemporaryDir root;
+		KeyController c(root.path());
+		c.timer_.stop();
+		int failed = c.settingsModified() || c.outputOptions_[3]->isEnabled();
+		int starts = 0, stops = 0;
+		c.recording = [&](bool start) { start ? ++starts : ++stops; };
+		c.recordWithStream(true); c.recordWithStream(false);
+		failed += starts != 0 || stops != 0;
+		c.outputOptions_[2]->setChecked(true);
+		failed += !c.settingsModified() || !c.outputOptions_[3]->isEnabled();
+		c.discardSettings();
+		failed += c.settingsModified() || c.outputOptions_[3]->isEnabled();
+		c.outputOptions_[2]->setChecked(true);
+		failed += !c.applySettings() || c.settingsModified();
+		c.recordWithStream(true); c.recordWithStream(false);
+		failed += starts != 1 || stops != 1;
+		c.outputOptions_[3]->setChecked(true);
+		failed += !c.applySettings();
+		c.recordWithStream(true); c.recordWithStream(false);
+		failed += starts != 2 || stops != 1;
+		c.outputOptions_[2]->setChecked(false);
+		failed += !c.applySettings() || c.outputOptions_[3]->isEnabled();
+		c.recordWithStream(true); c.recordWithStream(false);
+		failed += starts != 2 || stops != 1;
+		c.outputOptions_[0]->setChecked(true);
+		c.outputOptions_[1]->setChecked(true);
+		failed += !c.applySettings();
+		c.view_->show();
+		auto refuse = [] { QTimer::singleShot(0, [] {
+			for (auto *w : QApplication::topLevelWidgets())
+				if (auto *box = qobject_cast<QMessageBox *>(w)) box->button(QMessageBox::No)->click();
+		}); };
+		refuse(); c.startStop();
+		failed += !c.id_.isEmpty() || c.starting_;
+		c.starting_ = true;
+		refuse(); c.startStop();
+		failed += !c.starting_ || c.stopping_;
+		c.starting_ = false;
+		c.view_->hide();
+		c.lease_->unlock();
+		KeyController restored(root.path());
+		restored.timer_.stop();
+		failed += restored.savedOptions_[2] || !restored.savedOptions_[3] || restored.settingsModified();
+		return failed;
+	}
 	static int k4Recovery(KeyController &c)
 	{
 		c.timer_.stop();
@@ -219,7 +267,7 @@ int main(int argc, char **argv)
 	QTemporaryDir root;
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
-	int failed = 0;
+	int failed = hhc::KeyControllerTest::outputOptions();
 	const auto fields = view->findChildren<QLineEdit *>();
 	if (fields.size() != 1 || fields[0]->echoMode() != QLineEdit::Password)
 		++failed;
