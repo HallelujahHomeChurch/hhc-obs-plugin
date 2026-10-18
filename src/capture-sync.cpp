@@ -476,7 +476,9 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 			continue;
 		complete = false;
 		state_.pendingBytes += quint64(o["size"].toInteger());
-		if (objects.size() < 1) {
+		// Amortize declare/sign/confirm across up to three closed objects without
+		// holding control recovery behind an unbounded backlog of PUT requests.
+		if (objects.size() < 3) {
 			objects.append(
 				QJsonObject{{"path", o["path"]}, {"sizeBytes", o["size"]}, {"sha256", o["sha256"]}});
 			paths.append(o["path"]);
@@ -559,6 +561,8 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 			}
 		}
 		mutate("confirm-" + tag, "POST", base + "/confirm", {{"paths", paths}}, "confirm");
+		for (const auto &v : objects)
+			state_.pendingBytes -= quint64(v.toObject()["sizeBytes"].toInteger());
 	}
 	if (!active && local["normalEnd"].toBool() && complete) {
 		require(local["stopIntent"].toBool() && state_.stopAccepted, "Seal requires durable stop acceptance");
