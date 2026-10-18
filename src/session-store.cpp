@@ -452,8 +452,9 @@ bool SessionStore::cleanupReady(const QString &account, const QString &id) const
 	}
 }
 
-void SessionStore::retryCleanup() const
+bool SessionStore::retryCleanup() const
 {
+	bool complete = true;
 	// Local-only recovery also works after the server session has expired.
 	for (const auto &accountDir : QDir(root_).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
 		if (QFileInfo(root_ + "/" + accountDir).isSymLink()) continue;
@@ -469,11 +470,12 @@ void SessionStore::retryCleanup() const
 				    !mayCleanup(j, QDateTime::currentDateTimeUtc()) || mediaDirectory(j.account, j.localId) != dir) continue;
 				QLockFile lock(lockFilePath(dir + "/sync.lock"));
 				lock.setStaleLockTime(0);
-				if (lock.tryLock(0)) cleanupReady(j.account, j.localId);
+				if (!lock.tryLock(0) || !cleanupReady(j.account, j.localId)) complete = false;
 			} catch (...) {
 				// Corrupt/unavailable journals are retained, not inferred to be disposable.
 			}
 		}
 	}
+	return complete;
 }
 } // namespace hhc

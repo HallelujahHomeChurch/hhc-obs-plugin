@@ -15,7 +15,8 @@ int main(int argc, char **argv)
 	QCoreApplication app(argc, argv);
 	QTemporaryDir temp;
 	// Exercise the same extended-length paths as installed OBS.
-	hhc::SessionStore store(temp.path() + "/" + QString(100, 'a') + "/" + QString(100, 'b'));
+	const auto root = temp.path() + "/" + QString(100, 'a') + "/" + QString(100, 'b');
+	hhc::SessionStore store(root + "/queue");
 	int failures = 0;
 	auto check = [&](bool ok, const char *name) {
 		if (!ok) { ++failures; std::cerr << "FAIL " << name << '\n'; }
@@ -66,15 +67,27 @@ int main(int argc, char **argv)
 	if (blocker != INVALID_HANDLE_VALUE) CloseHandle(blocker);
 	QLockFile lock(hhc::lockFilePath(dir + "/sync.lock")); lock.setStaleLockTime(0);
 	check(lock.tryLock(0), "hold synchronization owner");
-	store.retryCleanup();
+	check(!store.retryCleanup(), "busy cleanup remains pending for helper retry");
 	check(QFile::exists(dir + "/1080p/seg-000000.m4s"), "startup cleanup respects sync owner");
 	lock.unlock();
-	store.retryCleanup();
+	check(store.retryCleanup(), "subsequent sweep completes after owner releases lock");
 	check(!QFile::exists(dir + "/1080p/seg-000000.m4s") && !QFile::exists(staging.fileName()) &&
 		QFile::exists(original.fileName()), "local restart cleanup removes HLS and staging but preserves original");
 	const auto recovered = store.loadPending(j.account).first();
 	check(recovered.cleanupState == "complete" && recovered.objects.size() == 2 && recovered.confirmedReady &&
 		store.cleanupReady(j.account, j.localId), "idempotent cleanup preserves hashes and ready evidence");
+	const auto helperPending = make("helper-pending"); ready(helperPending);
+	const auto helperDir = store.mediaDirectory(helperPending.account, helperPending.localId);
+	QLockFile helperLock(hhc::lockFilePath(helperDir + "/sync.lock")); helperLock.setStaleLockTime(0);
+	check(helperLock.tryLock(0), "hold prior cleanup while helper transfer fails");
+	QProcess helper;
+	helper.start(QCoreApplication::applicationDirPath() + "/hhc-upload-helper.exe",
+		{"--root", root, "--k3", "missing-session"});
+	check(helper.waitForStarted() && !helper.waitForFinished(1500), "failed transfer retains helper for pending local cleanup");
+	helperLock.unlock();
+	const bool helperFinished = helper.waitForFinished(15000);
+	check(helperFinished && helper.exitCode() == 0 &&
+		!QFile::exists(helperDir + "/1080p/seg-000000.m4s"), "helper retries cleanup after no-bind exception without network");
 
 	const auto old = make("legacy"); ready(old);
 	edit(old, [](QJsonObject &o) { o.remove("autoCleanup"); o.remove("cleanupState"); });

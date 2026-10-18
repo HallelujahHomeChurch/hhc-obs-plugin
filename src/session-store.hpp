@@ -46,7 +46,7 @@ public:
 	bool mayCleanup(const CaptureJournal &, QDateTime now) const;
 	// Caller holds the session sync lock. False means retain/retry, never a failed upload.
 	bool cleanupReady(const QString &account, const QString &localId) const;
-	void retryCleanup() const;
+	bool retryCleanup() const;
 
 private:
 	QString root_;

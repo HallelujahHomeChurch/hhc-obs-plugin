@@ -42,19 +42,30 @@ int main(int argc, char **argv)
 	if (root.isEmpty())
 		return 2;
 	if (options.isSet("k3")) {
-		hhc::SessionStore(root + "/queue").retryCleanup();
+		auto nextCleanup = std::chrono::steady_clock::now();
 		unsigned failures = 0;
 		bool validated = false;
 		const auto cutoff = std::chrono::steady_clock::now() + std::chrono::hours(24);
+		auto finish = [&](int code) {
+			while (!hhc::SessionStore(root + "/queue").retryCleanup()) {
+				if (std::chrono::steady_clock::now() >= cutoff) return 7;
+				QThread::sleep(10);
+			}
+			return code;
+		};
 		while (std::chrono::steady_clock::now() < cutoff) {
+			if (std::chrono::steady_clock::now() >= nextCleanup) {
+				hhc::SessionStore(root + "/queue").retryCleanup();
+				nextCleanup = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+			}
 			try {
 				const auto r =
 					hhc::keyTransferStep(root, options.value("k3"), false, false, false, validated);
 				failures = 0;
 				if (r.sync.state == "ready" && r.sync.autoPublish != "pending" && r.sync.localCleanupComplete)
-					return 0;
+					return finish(0);
 				if (QStringList{"aborted", "failed", "expired"}.contains(r.sync.state))
-					return 4;
+					return finish(4);
 				if (!r.sync.pendingBytes)
 					QThread::sleep(10);
 			} catch (const hhc::RequestError &e) {
@@ -63,12 +74,12 @@ int main(int argc, char **argv)
 					continue;
 				}
 				if (e.code == "ingest_no_bind_intent")
-					return 0;
+					return finish(0);
 				if (e.outputOpening && e.code == "broadcast_output_terminal")
-					return 0;
+					return finish(0);
 				const auto delay = e.retryDelayMs(failures);
 				if (!delay)
-					return 5;
+					return finish(5);
 				const auto retryAt =
 					std::chrono::steady_clock::now() + std::chrono::milliseconds(*delay);
 				while (std::chrono::steady_clock::now() < retryAt) {
@@ -81,7 +92,7 @@ int main(int argc, char **argv)
 						std::max<qint64>(0, std::min<qint64>(remaining, 1000))));
 				}
 			} catch (...) {
-				return 6;
+				return finish(6);
 			}
 		}
 		return 7;
