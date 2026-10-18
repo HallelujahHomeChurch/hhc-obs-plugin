@@ -57,6 +57,7 @@ private:
 	QElapsedTimer rateClock_;
 	std::deque<std::pair<qint64, quint64>> rateSamples_;
 	quint64 pendingBytes_ = 0;
+	qint64 pendingSince_ = -1;
 	QPushButton *action_, *retry_, *showKey_;
 	QLabel *status_;
 	QTimer timer_;
