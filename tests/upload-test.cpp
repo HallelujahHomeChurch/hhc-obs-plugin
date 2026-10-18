@@ -218,7 +218,7 @@ int main(int argc, char **argv)
 	check(!store.mayCleanup(j, QDateTime::currentDateTimeUtc()), "mismatched remote package never cleaned");
 	j.readyPackage = "package-a";
 	j.readyAt = QDateTime::currentDateTimeUtc().addDays(-6);
-	check(!store.mayCleanup(j, QDateTime::currentDateTimeUtc()), "seven day retention enforced");
+	check(store.mayCleanup(j, QDateTime::currentDateTimeUtc()), "matching ready media needs no seven day retention");
 	j.normalEnd = false;
 	check(!store.mayCleanup(j, QDateTime::currentDateTimeUtc().addDays(30)), "age never makes crash successful");
 	auto altered = j;

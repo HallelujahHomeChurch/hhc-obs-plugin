@@ -366,10 +366,12 @@ QJsonObject CaptureSync::poll()
 	} while (!cursor.isEmpty());
 	capture["objects"] = objects;
 	save();
-	if (state_.state == "ready" && state_.sealAccepted)
+	if (state_.state == "ready" && state_.sealAccepted) {
 		SessionStore(root_).confirmReady(account_, id_, state_.captureId, capture["packageId"].toString(),
 						 QDateTime::fromString(capture["serverNow"].toString(),
 								       Qt::ISODateWithMs));
+		state_.localCleanupComplete = SessionStore(root_).cleanupReady(account_, id_);
+	}
 	return capture;
 }
 SyncState CaptureSync::controlImpl(bool closeLive)

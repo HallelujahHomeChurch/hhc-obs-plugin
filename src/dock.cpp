@@ -156,7 +156,7 @@ Dock::Dock(QWidget *parent) : QWidget(parent)
 	recentLayout->addWidget(recover);
 	cleanup_ = new QPushButton(QString::fromUtf8("查看可清理暫存"));
 	cleanup_->setObjectName("openCleanupFolder");
-	cleanup_->setToolTip(QString::fromUtf8("限已確認套件相符且滿七日的收錄。只開啟所選資料夾，不會刪除資料。"));
+	cleanup_->setToolTip(QString::fromUtf8("限已確認套件相符且就緒的收錄。只開啟所選資料夾，不會刪除資料。"));
 	recentLayout->addWidget(cleanup_);
 	connect(cleanup_, &QPushButton::clicked, this, [this] {
 		if (onOpenCleanup && sessions_->currentData(Qt::UserRole + 1).toBool())

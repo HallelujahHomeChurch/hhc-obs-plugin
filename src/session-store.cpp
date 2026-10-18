@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSet>
+#include <QLockFile>
 #include <stdexcept>
 namespace hhc {
 namespace {
@@ -50,13 +51,16 @@ QJsonObject json(const CaptureJournal &j)
 		{"normalEnd", j.normalEnd},
 		{"sealAcknowledged", j.sealAcknowledged},
 		{"confirmedReady", j.confirmedReady},
+		{"autoCleanup", j.autoCleanup},
+		{"cleanupState", j.cleanupState},
 		{"readyAt", j.readyAt.toUTC().toString(Qt::ISODateWithMs)}};
 }
 CaptureJournal parse(const QJsonObject &o)
 {
 	const QSet<QString> allowed{"localVersion", "account",          "localId",        "remoteCapture",
 				    "packageId",    "readyPackage",     "objects",        "stopIntent",
-				    "normalEnd",    "sealAcknowledged", "confirmedReady", "readyAt"};
+				    "normalEnd",    "sealAcknowledged", "confirmedReady", "readyAt",
+				    "autoCleanup", "cleanupState"};
 	for (auto it = o.begin(); it != o.end(); ++it)
 		require(allowed.contains(it.key()), "unknown journal field");
 	require(o["localVersion"].toInt() == 1 && o["objects"].isArray(), "invalid journal version");
@@ -72,6 +76,14 @@ CaptureJournal parse(const QJsonObject &o)
 	j.normalEnd = o["normalEnd"].toBool();
 	j.sealAcknowledged = o["sealAcknowledged"].toBool();
 	j.confirmedReady = o["confirmedReady"].toBool();
+	require(!o.contains("autoCleanup") || o["autoCleanup"].isBool(), "invalid cleanup policy");
+	j.autoCleanup = o["autoCleanup"].toBool(false);
+	require(!o.contains("cleanupState") || o["cleanupState"].isString(), "invalid cleanup state");
+	j.cleanupState = o["cleanupState"].toString();
+	require(QStringList{"", "pending", "complete"}.contains(j.cleanupState), "invalid cleanup state");
+	require(j.cleanupState.isEmpty() || (j.autoCleanup && j.normalEnd && j.stopIntent &&
+		j.sealAcknowledged && j.confirmedReady && !j.remoteCapture.isEmpty() &&
+		!j.packageId.isEmpty() && j.packageId == j.readyPackage), "cleanup without ready evidence");
 	j.readyAt = QDateTime::fromString(o["readyAt"].toString(), Qt::ISODateWithMs);
 	for (const auto &v : o["objects"].toArray()) {
 		require(v.isObject(), "invalid journal object");
@@ -229,7 +241,11 @@ RecoveryReport SessionStore::scanPending(const QString &account, const std::atom
 					}
 				}
 			}
-			validateObjects(dir, j, cancelled);
+			// A durable cleanup intent permits missing media after partial deletion or restart.
+			if (j.cleanupState.isEmpty())
+				validateObjects(dir, j, cancelled);
+			else
+				require(mayCleanup(j, QDateTime::currentDateTimeUtc()), "Cleanup ready evidence invalid");
 			result.sessions.append(j);
 		} catch (const std::exception &) {
 			checkCancellation(cancelled);
@@ -327,7 +343,7 @@ void SessionStore::confirmReady(const QString &account, const QString &id, const
 	j.packageId = j.readyPackage = packageId;
 	j.sealAcknowledged = j.confirmedReady = true;
 	j.readyAt = observedAt.toUTC();
-	// Metadata checkpoint only. Recovery verifies every media hash before offering cleanup.
+	// Save authoritative evidence before any local media can be removed.
 	const auto bytes = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
 	require(writeAtomicMetadata(dir + "/journal.json", bytes),
 		"Ready evidence commit failed; media retained");
@@ -363,6 +379,103 @@ bool SessionStore::isPrepared(const QString &account, const QString &id) const
 bool SessionStore::mayCleanup(const CaptureJournal &j, QDateTime now) const
 {
 	return j.normalEnd && j.sealAcknowledged && j.confirmedReady && !j.packageId.isEmpty() &&
-	       j.packageId == j.readyPackage && j.readyAt.isValid() && now.isValid() && j.readyAt.addDays(7) <= now;
+	       j.packageId == j.readyPackage && j.readyAt.isValid() && now.isValid() && j.readyAt <= now;
+}
+
+bool SessionStore::cleanupReady(const QString &account, const QString &id) const
+{
+	try {
+		const auto dir = mediaDirectory(account, id);
+		// Reject junctions as well as symlinks, including ancestors above the queue root.
+		auto safePath = [](const QString &path) {
+			QString current = QFileInfo(path).absoluteFilePath();
+			for (;;) {
+				const auto native = lockFilePath(current);
+				const auto attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(native.utf16()));
+				require(attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT),
+					"Cleanup path unavailable or redirected");
+				const auto parent = QFileInfo(current).absolutePath();
+				if (parent == current) break;
+				current = parent;
+			}
+		};
+		safePath(dir + "/journal.json");
+		QFile file(dir + "/journal.json");
+		require(file.size() <= 8 * 1024 * 1024 && openSharedJsonRead(file), "Cleanup journal unavailable");
+		QJsonParseError error;
+		const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
+		file.close();
+		require(error.error == QJsonParseError::NoError && doc.isObject(), "Cleanup journal corrupt");
+		auto j = parse(doc.object());
+		require(j.account == account && j.localId == id, "Cleanup identity mismatch");
+		if (!j.autoCleanup) return true; // Explicitly retain pre-upgrade diagnostic sessions.
+		require(j.stopIntent && !j.remoteCapture.isEmpty() &&
+			mayCleanup(j, QDateTime::currentDateTimeUtc()), "Cleanup before confirmed ready");
+		if (j.cleanupState == "complete") return true;
+		QStringList targets;
+		const QRegularExpression mediaPath(
+			"\\A(?:master\\.m3u8|(?:1080p|720p|480p)/(?:init\\.mp4|index\\.m3u8|segment-[0-9]{5}\\.m4s|seg-[0-9]{6}\\.m4s))\\z");
+		for (const auto &object : j.objects) {
+			require(mediaPath.match(object.path).hasMatch(), "Unsafe cleanup object");
+			targets.append(dir + "/" + object.path);
+		}
+		// FFmpeg retains copies of these six files in its staging directories.
+		for (const auto *rendition : {"1080p", "720p", "480p"})
+			for (const auto *name : {"init.mp4", "index.m3u8"})
+				targets.append(dir + "/staging/" + rendition + "/" + name);
+		// Validate every target before deleting any. Never recursively delete a session.
+		for (const auto &target : targets) {
+			const QFileInfo info(target);
+			if (!info.exists() && !info.isSymLink()) continue;
+			safePath(target);
+			require(info.isFile() && info.canonicalFilePath().startsWith(
+				QFileInfo(dir).canonicalFilePath() + "/", Qt::CaseInsensitive), "Cleanup escaped session");
+		}
+		if (j.cleanupState.isEmpty()) {
+			validateObjects(dir, j);
+			j.cleanupState = "pending";
+			require(writeAtomicMetadata(dir + "/journal.json", QJsonDocument(json(j)).toJson(QJsonDocument::Compact)),
+				"Cleanup intent commit failed");
+		}
+		bool complete = true;
+		for (const auto &target : targets) {
+			if (!QFileInfo::exists(target)) continue;
+			safePath(target);
+			const auto native = lockFilePath(target);
+			complete &= DeleteFileW(reinterpret_cast<LPCWSTR>(native.utf16())) != 0;
+		}
+		if (!complete) return false;
+		j.cleanupState = "complete";
+		return writeAtomicMetadata(dir + "/journal.json", QJsonDocument(json(j)).toJson(QJsonDocument::Compact));
+	} catch (...) {
+		return false;
+	}
+}
+
+bool SessionStore::retryCleanup() const
+{
+	bool complete = true;
+	// Local-only recovery also works after the server session has expired.
+	for (const auto &accountDir : QDir(root_).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+		if (QFileInfo(root_ + "/" + accountDir).isSymLink()) continue;
+		for (const auto &id : QDir(root_ + "/" + accountDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+			try {
+				const auto dir = root_ + "/" + accountDir + "/" + id;
+				if (QFileInfo(dir).isSymLink()) continue;
+				QFile file(dir + "/journal.json");
+				if (QFileInfo(file).isSymLink() || file.size() > 8 * 1024 * 1024 || !openSharedJsonRead(file)) continue;
+				const auto j = parse(QJsonDocument::fromJson(file.readAll()).object());
+				file.close();
+				if (!j.autoCleanup || j.cleanupState == "complete" ||
+				    !mayCleanup(j, QDateTime::currentDateTimeUtc()) || mediaDirectory(j.account, j.localId) != dir) continue;
+				QLockFile lock(lockFilePath(dir + "/sync.lock"));
+				lock.setStaleLockTime(0);
+				if (!lock.tryLock(0) || !cleanupReady(j.account, j.localId)) complete = false;
+			} catch (...) {
+				// Corrupt/unavailable journals are retained, not inferred to be disposable.
+			}
+		}
+	}
+	return complete;
 }
 } // namespace hhc

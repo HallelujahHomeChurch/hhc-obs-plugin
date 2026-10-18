@@ -170,6 +170,11 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 					    QFileInfo::exists(root_ + "/intents/" + id_ + ".stopping");
 				starting_ = !a["started"].toBool() && !stopping_;
 				audioTrack_ = unsigned(qBound(1, a["audioTrack"].toInt(1), 6));
+			} else {
+				// The input can be released before ready/local cleanup; resume off the UI thread.
+				id_ = a["localId"].toString();
+				launchHelper();
+				id_.clear();
 			}
 		} catch (...) {
 			paused_ = true;
@@ -236,10 +241,17 @@ void KeyController::display()
 	while (rateSamples_.size() > 1 && rateSamples_[1].first <= now - 30000) rateSamples_.pop_front();
 	const auto dt = now - rateSamples_.front().first;
 	const double mbps = dt > 0 ? double(uploadedBytes_.load() - rateSamples_.front().second) * 0.008 / dt : 0;
-	const auto state = paused_ ? QString::fromUtf8("需要處理") : failures_ ? QString::fromUtf8("連線重試") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : (!id_.isEmpty() && !released_) ? QString::fromUtf8("收尾中") : QString::fromUtf8("未連線");
-	status_->setText(QString::fromUtf8("HHC %1  |  ↑ %2 Mbps  |  待傳 %3 MB").arg(state).arg(mbps, 0, 'f', 1).arg(double(pendingBytes_) / 1048576, 0, 'f', 1));
-	status_->setText(status_->text() + QString::fromUtf8("  |  GPU: %1").arg(gpuPercent_ >= 0 ? QString::number(gpuPercent_) + "%" : QString::fromUtf8("—")));
-	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳速度：最近 30 秒成功傳送的媒體平均值。\nGPU：整張 NVIDIA 顯示卡的 Video Encode 使用率，包含本機錄影與其他程式；多卡或讀取失敗顯示 —。"));
+	if (!pendingBytes_) pendingSince_ = -1;
+	else if (pendingSince_ == -1) pendingSince_ = now;
+	const bool finalizing = !running && !starting_ && !id_.isEmpty() && !released_;
+	const auto state = paused_ ? QString::fromUtf8("需要處理") : failures_ ? QString::fromUtf8("重連中") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("未連線");
+	QString text = QString::fromUtf8("HHC：%1").arg(state);
+	// Routine segment uploads fluctuate; show sustained pending work without calling it a network failure.
+	if (pendingBytes_ && (paused_ || failures_ || finalizing || now - pendingSince_ >= 60000))
+		text += QString::fromUtf8(" · 待傳 %1 MB").arg(double(pendingBytes_) / 1048576, 0, 'f', 1);
+	status_->setText(text + QString::fromUtf8("  |  GPU 編碼：%1").arg(gpuPercent_ >= 0 ? QString::number(gpuPercent_) + "%" : QString::fromUtf8("—")));
+	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳：%1 Mbps（最近 30 秒成功傳送的媒體平均值）\n待傳：%2 MB（尚未確認的媒體，正常分段傳送也會短暫增加）\n待傳持續 60 秒未清空、重連或補傳時顯示於狀態列；不代表會員播放狀態。\nGPU：整張 NVIDIA 顯示卡的 Video Encode 使用率，包含本機錄影與其他程式；多卡或讀取失敗顯示 —。")
+		.arg(mbps, 0, 'f', 1).arg(double(pendingBytes_) / 1048576, 0, 'f', 1));
 	status_->setStyleSheet(paused_ ? "color: #e76f51" : "");
 }
 bool KeyController::validateSettings()
@@ -530,7 +542,9 @@ void KeyController::syncDone()
 			next_ = std::numeric_limits<qint64>::max();
 		} else
 			next_ = QDateTime::currentMSecsSinceEpoch() + (r.sync.pendingBytes ? 0 : 3000);
-		if (r.sync.state == "ready" && r.sync.autoPublish != "pending")
+		if (r.sync.state == "ready" && !r.sync.localCleanupComplete)
+			issue_ = QString::fromUtf8("收錄完成；本機暫存清理將自動重試。");
+		if (r.sync.state == "ready" && r.sync.autoPublish != "pending" && r.sync.localCleanupComplete)
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {
 		issue_ = e.code;
