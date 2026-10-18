@@ -14,6 +14,8 @@
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	const bool partialPut = app.arguments().contains("--partial-put");
+	const bool lostConfirm = app.arguments().contains("--lost-confirm");
 	try {
 		QFile fixtures("tests/fixtures/c1.json");
 		if (!fixtures.open(QIODevice::ReadOnly))
@@ -33,6 +35,9 @@ int main(int argc, char **argv)
 		QString terminalOverride;
 		bool stalePages = false;
 		int statusQueries = 0;
+		bool faultObserved = false;
+		QJsonObject uncertainConfirm;
+		bool sameConfirm = false;
 		QTemporaryDir root;
 		const QString account = "018f0c1f-18d0-7e81-9f6f-69c456db7003", id = "complete-test";
 		hhc::SessionStore store(root.path());
@@ -150,10 +155,15 @@ int main(int argc, char **argv)
 					if (operation == "declare")
 						for (const auto &v : request["objects"].toArray()) {
 							auto o = v.toObject();
+							bool exists = false;
+							for (const auto &old : remoteObjects)
+								exists |= old.toObject()["path"] == o["path"];
+							if (exists) continue;
 							o["state"] = "declared";
 							remoteObjects.append(o);
 						}
 					if (operation == "confirm") {
+						if (!uncertainConfirm.empty()) sameConfirm |= request == uncertainConfirm;
 						status = 202;
 						for (int i = 0; i < remoteObjects.size(); ++i) {
 							auto o = remoteObjects[i].toObject();
@@ -177,6 +187,13 @@ int main(int argc, char **argv)
 					response = {{"data", QJsonObject{{"capture", capture}, {"receipt", receipt}}},
 						    {"meta", QJsonObject{}},
 						    {"error", QJsonValue::Null}};
+					if (operation == "confirm" && lostConfirm && !faultObserved) {
+						faultObserved = true;
+						uncertainConfirm = request;
+						status = 503;
+						response = {{"data", QJsonValue::Null}, {"meta", QJsonObject{}},
+							{"error", QJsonObject{{"code", "capture_unavailable"}, {"message", "lost response"}}}};
+					}
 				}
 				auto body = QJsonDocument(response).toJson(QJsonDocument::Compact);
 				socket->write("HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Length: " +
@@ -188,8 +205,7 @@ int main(int argc, char **argv)
 		hhc::ApiClient api(QUrl(QString("http://127.0.0.1:%1/api").arg(server.serverPort())),
 				   [](bool) { return QByteArray("CMS-SECRET"); });
 		bool uploadSafe = true, expireOnce = true;
-		hhc::CaptureSync sync(root.path(), account, id, api,
-				      [&](const QByteArray &method, const QUrl &url, const QByteArray &bytes,
+		auto put = [&](const QByteArray &method, const QUrl &url, const QByteArray &bytes,
 					  const QMap<QByteArray, QByteArray> &headers) {
 					      auto path = url.path().mid(1);
 					      uploadSafe &= method == "PUT" && media[path] == bytes &&
@@ -199,11 +215,29 @@ int main(int argc, char **argv)
 						      expireOnce = false;
 						      return hhc::HttpResponse{403, {}};
 					      }
+					      if (partialPut && !faultObserved && uploaded.size() == 1) {
+						      faultObserved = true;
+						      return hhc::HttpResponse{503, {}};
+					      }
 					      uploaded[path] = bytes;
 					      return hhc::HttpResponse{204, {}};
-				      });
+				      };
+		hhc::CaptureSync sync(root.path(), account, id, api, put);
 		sync.begin("TEST", true, false);
+		if (partialPut || lostConfirm) {
+			try { sync.step(false); }
+			catch (const hhc::RequestError &e) { if (e.status != 503) throw; }
+			if (!faultObserved) throw std::runtime_error("fault not exercised");
+			// Reconstruct from disk; a lost receipt must replay the original batch body/key.
+			hhc::CaptureSync restart(root.path(), account, id, api, put);
+			restart.step(false);
+		}
 		auto queued = sync.step(false);
+		const bool batchedFirstUpload = uploaded.size() == 3;
+		quint64 expectedPending = 0;
+		for (const auto &o : local.objects)
+			if (!uploaded.contains(o.path)) expectedPending += quint64(o.size);
+		const bool pendingAfterConfirm = queued.pendingBytes == expectedPending;
 		auto sealed = queued;
 		bool fencedSeal = false;
 		for (int n = 0; n < 20 && !sealed.sealAccepted && !fencedSeal; ++n) {
@@ -230,10 +264,15 @@ int main(int argc, char **argv)
 			}
 		};
 		check(uploadSafe && uploaded.size() == 10, "PUT exact closed bytes with no CMS bearer or cookies");
+		check((partialPut || lostConfirm) ||
+		      (batchedFirstUpload && operations.count("declare") == 4 && operations.count("confirm") == 4),
+		      "bounded three-object batches amortize API round trips without losing inventory");
+		check(!lostConfirm || sameConfirm, "lost batch confirmation retries identical body and operation key");
+		check(operations.count("create") == 1, "batch restart retains original capture");
+		check(pendingAfterConfirm, "pending bytes exclude newly accepted confirmation");
 		check(fencedSeal && uploadedBeforeFence,
 		      "B1 reconciliation fence only gates seal after C1 stop and all uploads");
-		check(operations.first() == "create" && operations[1] == "stop" && operations.last() == "seal" &&
-			      operations.count("declare") == 10 && operations.count("confirm") == 10,
+		check(operations.first() == "create" && operations[1] == "stop" && operations.last() == "seal",
 		      "stop is accepted before tail confirmation and seal");
 		check(queued.state != "ready" && !queued.sealAccepted, "202 verification queue is not ready");
 		check(!beforeReady.confirmedReady && !beforeReady.readyAt.isValid() &&
