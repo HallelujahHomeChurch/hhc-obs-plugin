@@ -16,6 +16,9 @@ struct CaptureJournal {
 	QVector<ClosedObject> objects;
 	bool stopIntent = false, normalEnd = false, sealAcknowledged = false, confirmedReady = false;
 	QDateTime readyAt;
+	// Older journals without this opt-in retain their diagnostic media.
+	bool autoCleanup = true;
+	QString cleanupState;
 };
 struct RecoveryIssue {
 	QString localId, message;
@@ -41,6 +44,9 @@ public:
 	QString mediaDirectory(const QString &account, const QString &localId) const;
 	bool isPrepared(const QString &account, const QString &localId) const;
 	bool mayCleanup(const CaptureJournal &, QDateTime now) const;
+	// Caller holds the session sync lock. False means retain/retry, never a failed upload.
+	bool cleanupReady(const QString &account, const QString &localId) const;
+	void retryCleanup() const;
 
 private:
 	QString root_;

@@ -568,8 +568,9 @@ void PlatformController::completed()
 					if (cleanup)
 						cleanupIds << j.localId;
 					rows << j.localId + QString::fromUtf8(
-								    cleanup ? " · 已確認就緒滿七日，可查看暫存"
-								    : j.confirmedReady ? " · 已確認就緒，七日內保留"
+								    j.cleanupState == "complete" ? " · 已確認就緒，暫存已清理"
+								    : cleanup ? " · 已確認就緒，可查看暫存"
+								    : j.confirmedReady ? " · 已確認就緒，暫存保留"
 								    : j.normalEnd      ? " · 本機完整，可繼續同步"
 										       : " · 未正常完成，資料保留");
 				}
@@ -628,7 +629,7 @@ void PlatformController::completed()
 			if (remote.autoPublish == "blocked")
 				state_.issue =
 					QString::fromUtf8("影片已就緒，自動發布受阻；請在管理平台檢查權限／封面。 ");
-			if (remote.autoPublish != "pending")
+			if (remote.autoPublish != "pending" && remote.localCleanupComplete)
 				paused_ = true;
 		} else if (remote.state == "failed" || remote.state == "expired" || remote.state == "aborted") {
 			state_.terminalFailure = true;

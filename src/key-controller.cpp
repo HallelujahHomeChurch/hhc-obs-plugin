@@ -170,6 +170,11 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 					    QFileInfo::exists(root_ + "/intents/" + id_ + ".stopping");
 				starting_ = !a["started"].toBool() && !stopping_;
 				audioTrack_ = unsigned(qBound(1, a["audioTrack"].toInt(1), 6));
+			} else {
+				// The input can be released before ready/local cleanup; resume off the UI thread.
+				id_ = a["localId"].toString();
+				launchHelper();
+				id_.clear();
 			}
 		} catch (...) {
 			paused_ = true;
@@ -537,7 +542,9 @@ void KeyController::syncDone()
 			next_ = std::numeric_limits<qint64>::max();
 		} else
 			next_ = QDateTime::currentMSecsSinceEpoch() + (r.sync.pendingBytes ? 0 : 3000);
-		if (r.sync.state == "ready" && r.sync.autoPublish != "pending")
+		if (r.sync.state == "ready" && !r.sync.localCleanupComplete)
+			issue_ = QString::fromUtf8("收錄完成；本機暫存清理將自動重試。");
+		if (r.sync.state == "ready" && r.sync.autoPublish != "pending" && r.sync.localCleanupComplete)
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {
 		issue_ = e.code;

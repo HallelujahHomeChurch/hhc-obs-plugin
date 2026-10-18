@@ -42,6 +42,7 @@ int main(int argc, char **argv)
 	if (root.isEmpty())
 		return 2;
 	if (options.isSet("k3")) {
+		hhc::SessionStore(root + "/queue").retryCleanup();
 		unsigned failures = 0;
 		bool validated = false;
 		const auto cutoff = std::chrono::steady_clock::now() + std::chrono::hours(24);
@@ -50,7 +51,7 @@ int main(int argc, char **argv)
 				const auto r =
 					hhc::keyTransferStep(root, options.value("k3"), false, false, false, validated);
 				failures = 0;
-				if (r.sync.state == "ready" && r.sync.autoPublish != "pending")
+				if (r.sync.state == "ready" && r.sync.autoPublish != "pending" && r.sync.localCleanupComplete)
 					return 0;
 				if (QStringList{"aborted", "failed", "expired"}.contains(r.sync.state))
 					return 4;
@@ -158,7 +159,7 @@ int main(int argc, char **argv)
 					terminalFailed |= state.state == "failed" || state.state == "expired";
 					pending |= state.state != "ready" && state.state != "aborted" &&
 							   state.state != "expired" && state.state != "failed" ||
-						   state.state == "ready" && state.autoPublish == "pending";
+						   state.state == "ready" && (state.autoPublish == "pending" || !state.localCleanupComplete);
 					QJsonObject status{{"localId", j.localId},
 							   {"recordingId", state.recordingId},
 							   {"captureId", state.captureId},

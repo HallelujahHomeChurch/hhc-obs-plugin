@@ -253,7 +253,10 @@ int main(int argc, char **argv)
 		for (int n = 0; n < 20 && !sealed.sealAccepted; ++n)
 			sealed = sync.step(false);
 		const auto beforeReady = store.loadPending(account).first();
+		QFile cleanupBlocker(directory + "/1080p/seg-000000.m4s");
+		if (!cleanupBlocker.open(QIODevice::ReadOnly)) return 3;
 		auto ready = sync.step(false);
+		cleanupBlocker.close();
 		publish = true;
 		auto published = sync.step(false);
 		int failed = 0;
@@ -288,14 +291,16 @@ int main(int argc, char **argv)
 		      "canonical inventory actual 29.97 fps");
 		check(ready.state == "ready" && ready.autoPublish == "pending" && published.autoPublish == "published",
 		      "server ready and automatic publication remain independent");
+		check(!ready.localCleanupComplete && ready.stopAccepted && ready.sealAccepted && published.localCleanupComplete,
+		      "local deletion retry preserves successful release and completes on next poll");
 		const auto confirmed = store.loadPending(account).first();
 		check(confirmed.confirmedReady && confirmed.sealAcknowledged &&
 			      confirmed.remoteCapture == capture["captureId"] && confirmed.packageId == readyPackage &&
 			      confirmed.readyPackage == readyPackage && confirmed.readyAt.isValid(),
 		      "accepted seal and server ready persist matching package evidence for retention");
-		check(!store.mayCleanup(confirmed, confirmed.readyAt.addDays(7).addMSecs(-1)) &&
-			      store.mayCleanup(confirmed, confirmed.readyAt.addDays(7)),
-		      "successful capture keeps the complete seven day recovery window");
+		check(!QFileInfo::exists(directory + "/1080p/seg-000000.m4s") &&
+			      QFileInfo::exists(directory + "/inventory.json") && confirmed.objects.size() == 10,
+		      "ready automatically removes owned HLS while retaining inventory and journal");
 		const auto firstReadyAt = confirmed.readyAt;
 		sync.step(false);
 		check(store.loadPending(account).first().readyAt == firstReadyAt,

@@ -9,6 +9,7 @@ namespace hhc {
 struct SyncState {
 	QString recordingId, captureId, state, liveState, autoPublish;
 	bool liveEnabled = false, stopAccepted = false, sealAccepted = false;
+	bool localCleanupComplete = false;
 	quint64 pendingBytes = 0;
 	int lastSequence = -1;
 };
