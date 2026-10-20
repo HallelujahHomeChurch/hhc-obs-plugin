@@ -23,6 +23,7 @@ struct HttpResponse {
 	int status = 0;
 	QByteArray body;
 	int retryAfter = 0;
+	QString requestId;
 };
 class RequestError : public std::runtime_error {
 public:

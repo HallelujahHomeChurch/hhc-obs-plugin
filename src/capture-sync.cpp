@@ -13,6 +13,8 @@
 #include <QSet>
 #include <QLockFile>
 #include <QUuid>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <algorithm>
 namespace hhc {
 namespace {
@@ -238,12 +240,22 @@ void CaptureSync::apply(const QJsonObject &capture)
 		"Remote capture identity mismatch");
 	state_.recordingId = capture["recordingId"].toString();
 	state_.captureId = capture["captureId"].toString();
+	const auto previous = state_.state;
 	state_.state = capture["state"].toString();
 	state_.liveState = capture["liveState"].toString();
 	state_.liveEnabled = capture["liveEnabled"].toBool();
 	state_.autoPublish = capture["autoPublish"].toString();
 	state_.stopAccepted = capture["stopAcceptedAt"].isString();
 	state_.lastSequence = capture["progress"].toObject()["lastSequence"].toInt(-1);
+	if (previous != state_.state) {
+		const auto safeState = [](const QString &s) {
+			return QStringList{"creating", "uploading", "freezing", "validating", "ready", "failed", "expired", "aborted"}.contains(s) ? s : QString("unknown");
+		};
+		qInfo().noquote() << "[HHC sync] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+			<< "output=" + QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16))
+			<< "previous=" + (previous.isEmpty() ? QString("none") : safeState(previous)) << "state=" + safeState(state_.state)
+			<< "verified=" + QString::number(state_.lastSequence);
+	}
 	auto expires = QDateTime::fromString(capture["expiresAt"].toString(), Qt::ISODateWithMs),
 	     now = QDateTime::fromString(capture["serverNow"].toString(), Qt::ISODateWithMs);
 	require(expires.isValid() && now.isValid(), "Remote deadline malformed");
@@ -465,6 +477,8 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 		remote[v.toObject()["path"].toString()] = v.toObject();
 	QJsonArray objects, paths;
 	state_.pendingBytes = 0;
+	state_.pendingObjects = 0;
+	QMap<QString, QSet<int>> confirmed;
 	bool complete = true;
 	for (const auto &v : local["objects"].toArray()) {
 		const auto o = v.toObject();
@@ -474,9 +488,14 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 				"Remote immutable object differs");
 		if (r["state"] == "failed")
 			throw RequestError(409, "object_verification_failed");
-		if (r["state"] == "queued" || r["state"] == "verified")
+		if (r["state"] == "queued" || r["state"] == "verified") {
+			static const QRegularExpression segment("^(480p|720p|1080p)/seg-([0-9]{6})\\.m4s$");
+			const auto match = segment.match(o["path"].toString());
+			if (match.hasMatch()) confirmed[match.captured(1)].insert(match.captured(2).toInt());
 			continue;
+		}
 		complete = false;
+		++state_.pendingObjects;
 		state_.pendingBytes += quint64(o["size"].toInteger());
 		// Amortize declare/sign/confirm across up to three closed objects without
 		// holding control recovery behind an unbounded backlog of PUT requests.
@@ -486,6 +505,18 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 			paths.append(o["path"]);
 		}
 	}
+	state_.lastConfirmedSequence = -1;
+	while (confirmed["480p"].contains(state_.lastConfirmedSequence + 1) &&
+	       confirmed["720p"].contains(state_.lastConfirmedSequence + 1) &&
+	       confirmed["1080p"].contains(state_.lastConfirmedSequence + 1)) ++state_.lastConfirmedSequence;
+	QElapsedTimer observed;
+	observed.start();
+	qInfo().noquote() << "[HHC queue] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+		<< "monoMs=" + QString::number(observed.msecsSinceReference())
+		<< "output=" + QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16))
+		<< "commonConfirmed=" + QString::number(state_.lastConfirmedSequence)
+		<< "verified=" + QString::number(state_.lastSequence) << "pendingObjects=" + QString::number(state_.pendingObjects)
+		<< "pendingBytes=" + QString::number(state_.pendingBytes);
 	if (!objects.empty()) {
 		const auto tag = digest(QJsonDocument(objects).toJson(QJsonDocument::Compact)).left(40);
 		mutate("declare-" + tag, "POST", base + "/objects", {{"objects", objects}}, "declare");
@@ -565,6 +596,7 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 		mutate("confirm-" + tag, "POST", base + "/confirm", {{"paths", paths}}, "confirm");
 		for (const auto &v : objects)
 			state_.pendingBytes -= quint64(v.toObject()["sizeBytes"].toInteger());
+		state_.pendingObjects -= objects.size();
 	}
 	if (!active && local["normalEnd"].toBool() && complete) {
 		require(local["stopIntent"].toBool() && state_.stopAccepted, "Seal requires durable stop acceptance");

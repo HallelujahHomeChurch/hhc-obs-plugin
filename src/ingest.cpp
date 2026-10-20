@@ -8,6 +8,9 @@
 #include <QRegularExpression>
 #include <QUrlQuery>
 #include <QSet>
+#include <QDebug>
+#include <QCryptographicHash>
+#include <QElapsedTimer>
 namespace hhc {
 namespace {
 void require(bool ok)
@@ -288,10 +291,28 @@ QByteArray KeyIngest::bearer(bool force)
 {
 	require(!session_.isEmpty());
 	const auto expiry = QDateTime::fromString(session_["expiresAt"].toString(), Qt::ISODateWithMs);
-	if (force || QDateTime::currentDateTimeUtc().secsTo(expiry) <= 120)
-		acceptSession(bootstrap(
-			"session", {{"streamKey", QString::fromLatin1(key())}, {"sessionToken", session_["token"]}},
-			"BroadcastIngestSessionEnvelope"));
+	if (force || QDateTime::currentDateTimeUtc().secsTo(expiry) <= 120) {
+		const auto output = QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16));
+		QElapsedTimer elapsed;
+		elapsed.start();
+		auto logRenew = [&](const char *result, int status = 0) {
+			qInfo().noquote() << "[HHC renew] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+				<< "monoMs=" + QString::number(elapsed.msecsSinceReference()) << "elapsedMs=" + QString::number(elapsed.elapsed())
+				<< "output=" + output << "forced=" + QString::number(force)
+				<< "ttlSec=" + QString::number(QDateTime::currentDateTimeUtc().secsTo(expiry))
+				<< "result=" + QString::fromLatin1(result) << "status=" + QString::number(status);
+		};
+		logRenew("begin");
+		try {
+			acceptSession(bootstrap(
+				"session", {{"streamKey", QString::fromLatin1(key())}, {"sessionToken", session_["token"]}},
+				"BroadcastIngestSessionEnvelope"));
+			logRenew("renewed", 200);
+		} catch (const RequestError &e) {
+			logRenew("rejected", e.status);
+			throw;
+		}
+	}
 	return session_["token"].toString().toUtf8();
 }
 ApiClient KeyIngest::api()

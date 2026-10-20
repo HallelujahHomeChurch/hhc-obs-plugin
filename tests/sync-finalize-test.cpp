@@ -235,9 +235,10 @@ int main(int argc, char **argv)
 		auto queued = sync.step(false);
 		const bool batchedFirstUpload = uploaded.size() == 3;
 		quint64 expectedPending = 0;
+		int expectedPendingObjects = 0;
 		for (const auto &o : local.objects)
-			if (!uploaded.contains(o.path)) expectedPending += quint64(o.size);
-		const bool pendingAfterConfirm = queued.pendingBytes == expectedPending;
+			if (!uploaded.contains(o.path)) { expectedPending += quint64(o.size); ++expectedPendingObjects; }
+		const bool pendingAfterConfirm = queued.pendingBytes == expectedPending && queued.pendingObjects == expectedPendingObjects;
 		auto sealed = queued;
 		bool fencedSeal = false;
 		for (int n = 0; n < 20 && !sealed.sealAccepted && !fencedSeal; ++n) {
@@ -273,6 +274,8 @@ int main(int argc, char **argv)
 		check(!lostConfirm || sameConfirm, "lost batch confirmation retries identical body and operation key");
 		check(operations.count("create") == 1, "batch restart retains original capture");
 		check(pendingAfterConfirm, "pending bytes exclude newly accepted confirmation");
+		check(sealed.pendingObjects == 0 && sealed.lastConfirmedSequence == 0,
+		      "diagnostics distinguish complete common confirmation from verified progress");
 		check(fencedSeal && uploadedBeforeFence,
 		      "B1 reconciliation fence only gates seal after C1 stop and all uploads");
 		check(operations.first() == "create" && operations[1] == "stop" && operations.last() == "seal",

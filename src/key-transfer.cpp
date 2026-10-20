@@ -7,6 +7,8 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QLockFile>
+#include <QDebug>
+#include <QCryptographicHash>
 namespace hhc {
 QString revokePath(const QString &root, const QString &id)
 {
@@ -29,8 +31,12 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 	QDir().mkpath(root + "/intents");
 	QLockFile lock(lockFilePath(root + "/intents/" + id + ".work.lock"));
 	lock.setStaleLockTime(0);
-	if (!lock.tryLock(0))
+	if (!lock.tryLock(0)) {
+		qInfo().noquote() << "[HHC lease] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+			<< "output=" + QString::fromLatin1(QCryptographicHash::hash(id.toUtf8(), QCryptographicHash::Sha256).toHex().left(16))
+			<< "operation=transfer result=busy code=local_session_busy";
 		throw RequestError(409, "local_session_busy");
+	}
 	KeyIngest ingest(root + "/intents", id, std::move(vault), std::move(transport));
 	if (!preparing && ingest.metadata().isEmpty())
 		throw RequestError(409, "ingest_no_bind_intent");
