@@ -107,6 +107,14 @@ struct KeyControllerTest {
 		c.syncDone();
 		failed += c.released_ || !c.paused_ || c.action_->isEnabled();
 		}
+		// Replay error labels never reuse ordinary revocation/abort handling.
+		c.sync_.setFuture(QtConcurrent::run([]()->KeyJob {
+			RequestError e(403,"broadcast_ingest_revoked"); e.outputReplayUnknown=true; throw e;
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		c.syncDone();
+		failed += c.revoked_ || !c.paused_ || c.released_ || c.action_->isEnabled();
+		failed += QFileInfo::exists(c.root_+"/intents/"+original+".revoked");
 		int recorderActions = 0;
 		c.recording = [&](bool) { ++recorderActions; };
 		const auto sentinel = c.root_+"/original-stop-seal.json";

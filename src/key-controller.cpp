@@ -143,6 +143,13 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 				display();
 				return;
 			}
+			if (e.outputReplayUnknown) {
+				paused_ = true;
+				issue_ = e.code;
+				nextControl_ = std::numeric_limits<qint64>::max();
+				display();
+				return;
+			}
 			if (e.code == "broadcast_ingest_revoked") {
 				revoked_ = true;
 				markIngestRevoked(root_, id_);
@@ -575,7 +582,10 @@ void KeyController::syncDone()
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {
 		issue_ = e.code;
-		if (e.code == "broadcast_ingest_revoked") {
+		if (e.outputReplayUnknown) {
+			paused_ = true;
+			next_ = std::numeric_limits<qint64>::max();
+		} else if (e.code == "broadcast_ingest_revoked") {
 			revoked_ = true;
 			if (capture_)
 				capture_->stop(StopReason::EncoderFailure);

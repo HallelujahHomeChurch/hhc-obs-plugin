@@ -92,7 +92,7 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			out.sync = sync.step(active, [&] { control.replay(); });
 		}
 	} catch (const RequestError &e) {
-		if (e.code == "broadcast_ingest_revoked")
+		if (!e.outputReplayUnknown && e.code == "broadcast_ingest_revoked")
 			markIngestRevoked(root, id);
 		throw;
 	}

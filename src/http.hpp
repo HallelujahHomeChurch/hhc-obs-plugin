@@ -40,9 +40,11 @@ public:
 	bool outputOpening = false;
 	// Set only after validating and durably saving authenticated K5 terminal proof.
 	bool outputReleased = false;
+	bool outputReplayUnknown = false;
 	std::optional<qint64> retryDelayMs(unsigned &failures) const;
 	std::optional<int> retryDelay(unsigned &failures) const
 	{
+		if (outputReplayUnknown) return std::nullopt;
 		if (!(status == 0 && code == "transport_unavailable" || status == 429 || status >= 500 ||
 		      status == 409 && (code == "local_session_busy" || code == "local_credentials_busy" ||
 					code == "capture_missing_objects" || code == "oauth_temporarily_unavailable")))

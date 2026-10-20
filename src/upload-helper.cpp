@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 			} catch (const hhc::RequestError &e) {
 				qInfo().noquote() << "[HHC helper] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
 					<< "status=" + QString::number(e.status) << "result=request_failed";
-				if (e.code == "broadcast_ingest_revoked") {
+				if (!e.outputReplayUnknown && e.code == "broadcast_ingest_revoked") {
 					QThread::sleep(5);
 					continue;
 				}

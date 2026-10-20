@@ -383,16 +383,21 @@ void KeyIngest::replay()
 				throw RequestError(response.status, "malformed_success");
 			return response;
 		});
-	const auto data = client.request("POST", "/ingest/streams/replay", body, "BroadcastOutputReplayEnvelope")["data"].toObject();
-	checkReplay(data);
-	if (data["state"] == "terminal") {
-		const auto before = journal_;
-		journal_["terminalProof"] = data;
-		try { save(); }
-		catch (...) { journal_ = before; throw; }
-		checkTerminal();
+	try {
+		const auto data = client.request("POST", "/ingest/streams/replay", body, "BroadcastOutputReplayEnvelope")["data"].toObject();
+		checkReplay(data);
+		if (data["state"] == "terminal") {
+			const auto before = journal_;
+			journal_["terminalProof"] = data;
+			try { save(); }
+			catch (...) { journal_ = before; throw; }
+			checkTerminal();
+		}
+		acceptSession(data["session"].toObject());
+	} catch (RequestError &e) {
+		if (!e.outputReleased) e.outputReplayUnknown = true;
+		throw;
 	}
-	acceptSession(data["session"].toObject());
 }
 QByteArray KeyIngest::bearer(bool force)
 {

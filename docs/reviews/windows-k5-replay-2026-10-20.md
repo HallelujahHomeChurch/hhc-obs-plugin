@@ -15,7 +15,7 @@
 
 New K4 opening intents are durable before HTTP. Their original key is pinned to an output-specific Windows Credential Manager reference before the first request; only the reference is journaled. Initial/lost-response open uses that original key. Bound output recovery never calls open/resolve/bind.
 
-After exact invalid-session renewal, or loss of a bound cached session, the consumer sends authenticated `POST /api/ingest/streams/replay`. It validates the fixed schema and exact output/source/recording/capture/epoch/profile/completed receipt. An active result can renew only the original session. Only exact HTTP 200 terminal saves a credential-free terminal proof and then signals input release. Generic 401/403/404/409/422/429/5xx, unsupported routes, cancellation, malformed identity and missing evidence do not release or create anything. There is no K4 fallback.
+After exact invalid-session renewal, or loss of a bound cached session, the consumer sends authenticated `POST /api/ingest/streams/replay`. It validates the fixed schema and exact output/source/recording/capture/epoch/profile/completed receipt. An active result can renew only the original session. Only exact HTTP 200 terminal saves a credential-free terminal proof and then signals input release. Generic 401/403/404/409/422/429/5xx, unsupported routes, cancellation, malformed identity and missing evidence do not release or create anything. There is no K4 fallback. Replay-unknown errors retain their provenance through control, transfer and helper paths: they pause without ordinary conflict reconciliation, revoke/abort handling or transient upload retries.
 
 Terminal persistence is atomic and protected against stale renewals. Failure to persist proof restores the same instance's previous state. Controller release commits the active pointer before enabling Start and is monotonic against late control/upload completions. It does not call global streaming or recording controls. A new output ID is created only by a later explicit Start; ordinary unfinished Stop/seal remains on the original workflow. The helper retires only the original network output and leaves original journals/receipts/media intact. Legacy K3 keeps its existing path.
 
@@ -29,6 +29,7 @@ The fixed K5 original-key contract therefore cannot safely authenticate this old
 
 - Watched focused K5/schema/key-pinning/no-fallback tests fail before implementation, then pass.
 - Watched terminal-proof lock/same-instance regression fail, then pass after rollback fix.
+- Watched actual transfer revoked-error and control replay409 propagation regressions fail before fixing provenance guards.
 - Local headless K3/K4 tests pass; controller mock compiles. Widget mocks run on hosted Windows CI, without touching the user's desktop or credential store.
 - Coverage includes canonical fixture parity/hash, legacy900/S10, original key versus changed global key, missing old credential reference, incomplete receipt, exact identity/profile, all generic errors, lost cache, stale renewal, restart, helper/transfer journal retention, release pointer write failure and late callback ordering.
 - Hosted PR CI/package evidence is reported on PR #14 after completion. Existing PR15 diagnostics tests are not separately rerun locally.

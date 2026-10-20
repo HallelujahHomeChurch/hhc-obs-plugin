@@ -270,7 +270,7 @@ QJsonObject BroadcastControl::bind(const QString &recordingId)
 			journal_["bind"] = intent;
 			save();
 		} catch (const RequestError &e) {
-			if (e.status == 409 || e.status == 412)
+			if (!e.outputReplayUnknown && !e.outputReleased && (e.status == 409 || e.status == 412))
 				view();
 			throw;
 		}
@@ -298,7 +298,7 @@ QJsonObject BroadcastControl::ack(const QString &commandId, QJsonObject saved)
 		save();
 		return data["broadcast"].toObject();
 	} catch (const RequestError &e) {
-		if (e.status == 409 || e.status == 412) {
+		if (!e.outputReplayUnknown && !e.outputReleased && (e.status == 409 || e.status == 412)) {
 			const auto current = view();
 			// A rejected stale command must not poison the next command. Other conflicts stay
 			// fenced.
@@ -369,7 +369,7 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 				       {}, d1 ? "BroadcastControlD1Envelope" : "BroadcastControlEnvelope")["data"]
 				  .toObject();
 	} catch (const RequestError &e) {
-		if (e.status == 409 || e.status == 412)
+		if (!e.outputReplayUnknown && !e.outputReleased && (e.status == 409 || e.status == 412))
 			view();
 		throw;
 	}

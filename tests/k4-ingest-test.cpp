@@ -458,7 +458,11 @@ int main(int argc, char **argv)
 			sameInstance=std::make_unique<KeyIngest>(recovery.path(), id, vault, recover);
 			sameInstance->bearer(true); accepted = true;
 		}
-		catch (const RequestError &e) { terminal = e.outputReleased && e.code == "output_replay_terminal"; }
+		catch (const RequestError &e) {
+			terminal = e.outputReleased && e.code == "output_replay_terminal";
+			unsigned attempts=0;
+			if (!terminal && mode!="terminal-lock") check(!e.retryDelayMs(attempts),"K5 unknown stays paused, not normal upload error handling");
+		}
 		if (mode == "terminal-lock") {
 			terminalLock.reset();
 			check(!sameInstance->metadata().contains("terminalProof") && !read(recovery.path()+"/"+id+".json").contains("terminalProof"), "failed persistence leaves no in-memory or disk release proof");
@@ -479,7 +483,8 @@ int main(int argc, char **argv)
 		}
 	}
 	// Exercise the real helper/transfer entry with a stopped original journal: no cleanup or rebind.
-	{
+	for (const int replayStatus : {0,403,409}) {
+		const bool denied = replayStatus != 0;
 		QTemporaryDir worker;
 		secrets["stream-key"] = "hhc_stream_"+QByteArray(43,'A');
 		secrets.remove("session-"+id);
@@ -493,15 +498,18 @@ int main(int argc, char **argv)
 				++opens;
 				return {200,QJsonDocument(QJsonObject{{"data",data},{"meta",QJsonObject{}},{"error",QJsonValue::Null}}).toJson()};
 			}
+			if (denied && url.path()!="/api/ingest/streams/replay")
+				return {401,QJsonDocument(QJsonObject{{"error",QJsonObject{{"code","broadcast_ingest_session_invalid"}}}}).toJson()};
 			++replays;
 			check(url.path()=="/api/ingest/streams/replay","helper only replays original output");
+			if (denied) return {replayStatus,QJsonDocument(QJsonObject{{"error",QJsonObject{{"code",replayStatus==403 ? "broadcast_ingest_revoked" : "broadcast_output_terminal"}}}}).toJson()};
 			auto reply = QJsonDocument::fromJson(bytes).object();
 			reply.remove("streamKey"); reply["state"]="terminal";
 			return {200,QJsonDocument(QJsonObject{{"data",reply},{"meta",QJsonObject{}},{"error",QJsonValue::Null}}).toJson()};
 		};
 		KeyIngest original(worker.path()+"/intents",id,vault,wire);
 		original.prepareOpen(); original.bind();
-		secrets.remove("session-"+id);
+		if (!denied) secrets.remove("session-"+id);
 		SessionStore store(worker.path()+"/queue");
 		CaptureJournal journal;
 		journal.account=data["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
@@ -513,11 +521,24 @@ int main(int argc, char **argv)
 		check(writeAtomicMetadata(directory+"/stop-seal-receipts.json","{\"operationKey\":\"original.seal\"}"),"write original receipt evidence");
 		markIngestStopping(worker.path(),id);
 		bool validated=false;
+		KeyIngest controlIngest(worker.path()+"/intents",id,vault,wire);
+		auto controlApi = controlIngest.api();
+		BroadcastControl control(directory,journal.account,id,controlApi,true);
+		if (replayStatus==409) control.adoptIngest(data,original.metadata()["intent"].toObject());
 		for (int attempt=0;attempt<2;++attempt) {
-			try { keyTransferStep(worker.path(),id,false,false,false,validated,nullptr,vault,wire); check(false,"terminal returns explicit release"); }
-			catch(const RequestError &e) { check(e.outputReleased && e.code=="output_replay_terminal","helper observes authenticated durable terminal only"); }
+			const int beforeReplay=replays;
+			try {
+				if (replayStatus==409) control.poll({},true);
+				else keyTransferStep(worker.path(),id,false,false,false,validated,nullptr,vault,wire);
+				check(false,"terminal/unknown returns explicit disposition");
+			}
+			catch(const RequestError &e) {
+				check(denied ? !e.outputReleased && e.outputReplayUnknown && e.status==replayStatus && e.code==(replayStatus==403 ? "broadcast_ingest_revoked" : "broadcast_output_terminal") : e.outputReleased && e.code=="output_replay_terminal","control/helper preserves original unknown provenance or terminal proof");
+			}
+			check(replays-beforeReplay==(denied || attempt==0 ? 1 : 0),"one replay per explicit operation, no control reconciliation after unknown");
+			check(!QFileInfo::exists(worker.path()+"/intents/"+id+".revoked"),"K5 error label must never mark original revoked/abort it");
 		}
-		check(opens==1 && replays==1 && !validated && read(directory+"/journal.json")==before,"helper restart retains original journal without new output");
+		check(opens==1 && replays==(denied?2:1) && !validated && read(directory+"/journal.json")==before,"helper restart retains original journal without new output");
 		QFile receipt(directory+"/stop-seal-receipts.json");
 		check(receipt.open(QIODevice::ReadOnly) && receipt.readAll()=="{\"operationKey\":\"original.seal\"}","helper retains original Stop/seal receipts");
 	}
