@@ -5,9 +5,18 @@
 #include <QTimer>
 #include <iostream>
 #include <QJsonDocument>
+#include <QStringList>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QDir>
+#include "helper-diagnostics.hpp"
+namespace { QStringList diagnosticMessages; }
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	const auto oldHandler = qInstallMessageHandler([](QtMsgType, const QMessageLogContext &, const QString &message) {
+		diagnosticMessages.append(message);
+	});
 	QTcpServer server;
 	server.listen(QHostAddress::LocalHost, 0);
 	int calls = 0, refreshes = 0, mode = 0;
@@ -40,7 +49,7 @@ int main(int argc, char **argv)
 					       .toJson(QJsonDocument::Compact);
 			}
 			s->write("HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Length: " +
-				 QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+				 QByteArray::number(body.size()) + "\r\nX-Request-ID: 0123456789abcdef0123456789abcdef\r\nConnection: close\r\n\r\n" + body);
 			s->disconnectFromHost();
 		});
 		QObject::connect(s, &QTcpSocket::disconnected, s, &QObject::deleteLater);
@@ -107,5 +116,47 @@ int main(int argc, char **argv)
 	} catch (...) {
 	}
 	check(optionalErrorAccepted, "existing title envelope permits omitted optional error field");
+	const auto put = hhc::httpRequest("PUT", QUrl(QString("http://127.0.0.1:%1/private-object?private-signature=yes").arg(server.serverPort())),
+		"private-media", {{"Authorization", "private-put-header"}});
+	check(put.status == 200, "loopback PUT diagnostics preserve transfer result");
+	hhc::ApiClient privateRequest(QUrl("https://private-origin.invalid/api"), [](bool) { return QByteArray("private-bearer"); },
+		[](const auto &, const auto &, const auto &, const auto &) {
+			return hhc::HttpResponse{403, "{\"error\":{\"code\":\"private-error-body\"}}", 0, "0123456789abcdef\n"};
+		});
+	try { privateRequest.request("POST", "/ingest/streams/open?private-query=yes", {{"streamKey", "private-stream-key"}}, {}, "private-operation-key"); }
+	catch (const hhc::RequestError &) {}
+	hhc::ApiClient cancelled(QUrl("https://private-origin.invalid/api"), [](bool) { return QByteArray{}; },
+		[](const auto &, const auto &, const auto &, const auto &) -> hhc::HttpResponse {
+			throw hhc::RequestError(0, "transport_cancelled");
+		});
+	try { cancelled.request("GET", "/private-path"); } catch (const hhc::RequestError &) {}
+	const auto logs = diagnosticMessages.join('\n');
+	check(logs.contains("op=recording.create") && logs.contains("status=401") && logs.contains("attempt=2") &&
+	      logs.contains("requestId=0123456789abcdef0123456789abcdef") && logs.contains("elapsedMs=") &&
+	      logs.contains("monoMs=") && logs.contains("utc="), "safe per-attempt request diagnostics");
+	check(!logs.contains("synthetic-token") && !logs.contains("fixed-key") && !logs.contains("gateway error") &&
+	      !logs.contains("127.0.0.1") && !logs.contains("signed URL"), "diagnostics exclude credentials, origins and raw bodies");
+	check(!logs.contains("private-") && logs.contains("op=media.put") && logs.contains("requestId=none") && logs.contains("code=request_rejected") &&
+	      logs.contains("code=transport_cancelled") && logs.contains("outcome=cancelled"),
+	      "redact query/body/bearer/idempotency key, reject injected correlation and classify cancellation");
+	QTemporaryDir helperLogs;
+	const auto directory = helperLogs.path() + "/diagnostics";
+	check(hhc::appendHelperDiagnostic(directory, "[HHC helper] result=ready"), "helper diagnostic is persisted");
+	check(!hhc::appendHelperDiagnostic(directory, "untrusted Qt text") &&
+	      !hhc::appendHelperDiagnostic(directory, "[HHC helper] injected\nline"), "helper persists only bounded single-line HHC diagnostics");
+	for (int rotation = 0; rotation < 2; ++rotation) {
+		QFile current(directory + "/helper.log");
+		check(current.open(QIODevice::WriteOnly) && current.resize(8 * 1024 * 1024), "fill diagnostic rotation fixture");
+		current.close();
+		check(hhc::appendHelperDiagnostic(directory, "[HHC helper] result=rotated"), "helper log rotates without a new per-process file");
+	}
+	check(QDir(directory).entryList(QDir::Files).size() == 2 &&
+	      QFileInfo(directory + "/helper.log").size() < 2048 &&
+	      QFileInfo(directory + "/helper.previous.log").size() == 8 * 1024 * 1024,
+	      "helper diagnostics retain two files and at most 16 MiB total across restarts");
+	QLockFile logOwner(hhc::lockFilePath(directory + "/helper.lock"));
+	check(logOwner.tryLock(0) && !hhc::appendHelperDiagnostic(directory, "[HHC helper] result=busy"),
+	      "concurrent helper writers yield instead of racing rotation");
+	qInstallMessageHandler(oldHandler);
 	return failed ? 1 : 0;
 }

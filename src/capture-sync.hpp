@@ -11,6 +11,7 @@ struct SyncState {
 	bool liveEnabled = false, stopAccepted = false, sealAccepted = false;
 	bool localCleanupComplete = false;
 	quint64 pendingBytes = 0;
+	int pendingObjects = 0, lastConfirmedSequence = -1;
 	int lastSequence = -1;
 };
 struct BroadcastSyncResult {
