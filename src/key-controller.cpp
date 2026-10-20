@@ -352,9 +352,11 @@ bool KeyController::retireUnbound()
 	if (syncAwaiting_ || id_.isEmpty() || QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
 		return false;
 	// Missing K4 metadata is a recovery fault, not evidence the server released an output.
-	if (QFileInfo::exists(root_ + "/active.json") &&
-	    read(root_ + "/active.json")["protocolVersion"] == "k4-2026-10-15.rc1")
-		return false;
+	if (QFileInfo::exists(root_ + "/active.json")) {
+		const auto active = read(root_ + "/active.json");
+		if (active["protocolVersion"] == "k4-2026-10-15.rc1" || active["released"].toBool())
+			return false;
+	}
 	atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
 	id_.clear();
 	starting_ = stopping_ = paused_ = false;

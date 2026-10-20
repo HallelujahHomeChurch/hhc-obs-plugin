@@ -71,9 +71,10 @@ struct KeyControllerTest {
 		QDir().mkpath(root.path()+"/k3/intents");
 		// A pointer alone, even explicitly released, cannot erase missing original K4 evidence.
 		writeAtomicMetadata(root.path()+"/k3/active.json",QJsonDocument(QJsonObject{
-			{"localId",id},{"protocolVersion","k4-2026-10-15.rc1"},{"released",true}}).toJson());
+			{"localId",id},{"released",true}}).toJson());
 		KeyController restored(root.path());restored.timer_.stop();
 		int failed=restored.id_!=id || !restored.paused_ || restored.released_;
+		failed += restored.retireUnbound(); // Old released pointers can omit protocolVersion, too.
 		restored.keyAvailable_=true;restored.released_=true;restored.paused_=false;
 		restored.startStop();
 		failed+=restored.id_!=id || !restored.paused_ || restored.released_;

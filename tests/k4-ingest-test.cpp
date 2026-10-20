@@ -593,6 +593,8 @@ int main(int argc, char **argv)
 			check(inspect()==(op=="seal"),"legacy normal Stop/seal release requires accepted seal receipt");
 		}
 		check(!CaptureSync(legacy.path(),actor,id,none).hasReleaseReceipt(rec,QString(32,'f')),"release receipt must match exact original capture");
+		mutations.remove("stop"); remote["mutations"]=mutations;
+		check(!inspect(),"seal-only plus stop timestamp cannot substitute for original Stop receipt");
 		check(requests==0,"checking durable release evidence performs no HTTP");
 	}
 	return failures ? 1 : 0;
