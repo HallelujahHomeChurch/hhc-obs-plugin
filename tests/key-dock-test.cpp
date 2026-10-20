@@ -69,7 +69,11 @@ struct KeyControllerTest {
 		c.timer_.stop();
 		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 		const auto original = c.id_;
-		KeyIngest(c.root_ + "/intents", original).prepareOpen();
+		QMap<QString,QByteArray> keys{{"stream-key","hhc_stream_"+QByteArray(43,'A')}};
+		IngestCredentials fixtureVault{[&](const QString &name)->std::optional<QByteArray> {
+			return keys.contains(name) ? std::optional<QByteArray>(keys[name]) : std::nullopt;
+		},[&](const QString &name,const QByteArray &value){keys[name]=value;}};
+		KeyIngest(c.root_ + "/intents", original,fixtureVault).prepareOpen();
 		writeAtomicMetadata(c.root_ + "/active.json",
 				    QJsonDocument(QJsonObject{{"localId", original},
 							      {"protocolVersion", "k4-2026-10-15.rc1"},
@@ -93,18 +97,33 @@ struct KeyControllerTest {
 		}
 		c.lease_->tryLock(0);
 		// An error string alone is not authoritative terminal evidence.
-		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
-			RequestError e(403, "broadcast_output_terminal");
+		for (const int status : {403,409}) {
+		c.sync_.setFuture(QtConcurrent::run([status]() -> KeyJob {
+			RequestError e(status, "broadcast_output_terminal");
 			e.outputOpening = true;
 			throw e;
 		}));
 		try { c.sync_.waitForFinished(); } catch (...) {}
 		c.syncDone();
 		failed += c.released_ || !c.paused_ || c.action_->isEnabled();
+		}
+		int recorderActions = 0;
+		c.recording = [&](bool) { ++recorderActions; };
+		const auto sentinel = c.root_+"/original-stop-seal.json";
+		writeAtomicMetadata(sentinel,"{\"stopIntent\":true,\"sealKey\":\"original.seal\"}");
+		QFile::remove(c.root_+"/active.json");
+		QDir().mkpath(c.root_+"/active.json"); // Simulate failure to commit the release pointer.
+		c.sync_.setFuture(QtConcurrent::run([]()->KeyJob {
+			RequestError e(0,"output_replay_terminal"); e.outputReleased=true; throw e;
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		try { c.syncDone(); } catch (...) { ++failed; }
+		failed += !c.paused_ || c.released_ || c.id_ != original || c.action_->isEnabled();
+		QDir().rmdir(c.root_+"/active.json");
 		c.paused_ = true; // Invalid-session retry had disabled Start before authoritative terminal.
 		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
-			RequestError e(409, "broadcast_output_terminal");
-			e.outputOpening = true;
+			RequestError e(0, "output_replay_terminal");
+			e.outputReleased = true;
 			throw e;
 		}));
 		try {
@@ -114,9 +133,25 @@ struct KeyControllerTest {
 		c.syncDone();
 		failed += !c.released_ || c.starting_ || c.stopping_ || c.id_ != original;
 		failed += c.paused_ || !c.action_->isEnabled() || !c.retry_->isHidden();
+		failed += recorderActions != 0;
+		QFile preserved(sentinel);
+		failed += !preserved.open(QIODevice::ReadOnly) || preserved.readAll()!="{\"stopIntent\":true,\"sealKey\":\"original.seal\"}";
+		c.recording = {};
 		const auto future = c.next_;
 		c.tick();
 		failed += c.syncAwaiting_ || c.id_ != original || c.next_ != future;
+		// A control-confirmed retirement is monotonic against a late upload success or error.
+		for (bool error : {false,true}) {
+			c.syncAwaiting_ = true;
+			c.sync_.setFuture(QtConcurrent::run([error]()->KeyJob {
+				if (error) throw RequestError(403,"forbidden");
+				KeyJob r; r.sync.state="uploading"; return r;
+			}));
+			try { c.sync_.waitForFinished(); } catch (...) {}
+			c.syncDone();
+			failed += !c.released_ || c.paused_ || c.id_!=original || !c.action_->isEnabled();
+		}
+		c.terminalRetired_ = false; // The following synthetic state represents a different output.
 		// A missing K4 intent must not silently enter the legacy resolve path.
 		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 		writeAtomicMetadata(c.root_ + "/active.json",

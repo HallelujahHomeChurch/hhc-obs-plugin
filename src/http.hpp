@@ -38,6 +38,8 @@ public:
 	QString code;
 	int retryAfter;
 	bool outputOpening = false;
+	// Set only after validating and durably saving authenticated K5 terminal proof.
+	bool outputReleased = false;
 	std::optional<qint64> retryDelayMs(unsigned &failures) const;
 	std::optional<int> retryDelay(unsigned &failures) const
 	{
