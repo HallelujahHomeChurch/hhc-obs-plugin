@@ -553,7 +553,9 @@ void KeyController::syncDone()
 			if (capture_)
 				capture_->stop(StopReason::EncoderFailure);
 			next_ = 0;
-		} else if (e.outputOpening && e.code == "broadcast_output_terminal") {
+		} else if (e.outputOpening && e.status == 409 && e.code == "broadcast_output_terminal") {
+			if (capture_ && !capture_->finished())
+				capture_->stop(StopReason::EncoderFailure);
 			starting_ = stopping_ = paused_ = false;
 			released_ = true;
 			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});

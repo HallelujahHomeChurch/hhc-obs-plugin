@@ -25,7 +25,7 @@ public:
 private:
 	void save();
 	void acceptSession(const QJsonObject &);
-	QJsonObject open();
+	QJsonObject open(bool revalidate = false);
 	void checkOpened(const QJsonObject &) const;
 	QJsonObject bootstrap(const QString &, QJsonObject, const QString &);
 	QString root_, id_;

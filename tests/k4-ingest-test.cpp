@@ -329,5 +329,78 @@ int main(int argc, char **argv)
 		try { resumed.poll({},true); } catch(const RequestError &){conflict=true;}
 		check(conflict && posts==0,"reject wrong capture without mutation");
 	}
+	// A deleted capture invalidates renewal, but only replay of the pinned output may retire it.
+	for (const QString mode : {"renewed", "active", "terminal", "busy", "forbidden", "unauthorized", "timeout", "identity", "capture", "epoch", "recording", "profile", "receipt"}) {
+		QTemporaryDir recovery;
+		auto opened = fixtures[0].toObject()["value"].toObject();
+		auto data = opened["data"].toObject();
+		data["mediaProfile"] = "obs-hls-10s-v1";
+		auto session = data["session"].toObject();
+		session["expiresAt"] = "2099-01-01T00:00:00Z";
+		data["session"] = session;
+		opened["data"] = data;
+		secrets.remove("session-" + id);
+		int opens = 0, renews = 0;
+		auto failure = [](int status, const QString &code) {
+			return HttpResponse{status, QJsonDocument(QJsonObject{{"error", QJsonObject{{"code", code}}}}).toJson()};
+		};
+		auto recover = [&](const auto &, const QUrl &url, const QByteArray &bytes, const auto &) {
+			if (url.path().endsWith("/session")) {
+				++renews;
+				if (mode == "renewed")
+					return HttpResponse{200, QJsonDocument(QJsonObject{{"data", session}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
+				return failure(mode == "forbidden" ? 403 : 401, mode == "forbidden" ? "forbidden" : mode == "unauthorized" ? "unauthorized" : "broadcast_ingest_session_invalid");
+			}
+			check(url.path() == "/api/ingest/streams/open", "recovery never resolves or binds another capture");
+			const auto request = QJsonDocument::fromJson(bytes).object();
+			check(request["outputSessionId"] == id && request["mediaProfile"] == "obs-hls-10s-v1", "revalidation preserves original output/profile");
+			if (++opens == 1) return HttpResponse{200, QJsonDocument(opened).toJson()};
+			if (mode == "terminal") return failure(409, "broadcast_output_terminal");
+			if (mode == "busy") return failure(409, "broadcast_source_busy");
+			if (mode == "timeout") throw RequestError(0, "transport_unavailable");
+			auto changed = data;
+			if (mode == "identity") changed["sourceId"] = "018f0000-0000-4000-8000-000000000099";
+			if (mode == "capture" || mode == "epoch" || mode == "recording") {
+				auto broadcast = changed["broadcast"].toObject(), binding = broadcast["binding"].toObject(), changedSession = session;
+				if (mode == "recording") broadcast["recordingId"] = changedSession["recordingId"] = "018f0000-0000-4000-8000-000000000099";
+				else { const QString field = mode == "capture" ? "captureId" : "epoch"; const QJsonValue value = mode == "capture" ? QJsonValue(QString(32, 'b')) : QJsonValue(2); binding[field] = changedSession[field] = value; }
+				broadcast["binding"] = binding;
+				changed["broadcast"] = broadcast;
+				changed["session"] = changedSession;
+			}
+			if (mode == "profile") changed.remove("mediaProfile");
+			if (mode == "receipt") { auto receipt = changed["receipt"].toObject(); receipt["acceptedAt"] = "2026-10-20T00:00:00Z"; changed["receipt"] = receipt; }
+			return HttpResponse{200, QJsonDocument(QJsonObject{{"data", changed}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
+		};
+		KeyIngest recovering(recovery.path(), id, vault, recover);
+		recovering.prepareOpen("obs-hls-10s-v1");
+		recovering.bind();
+		auto lateRenewal = [&](const auto &, const auto &, const auto &, const auto &) {
+			return HttpResponse{200, QJsonDocument(QJsonObject{{"data", session}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
+		};
+		KeyIngest stale(recovery.path(), id, vault, lateRenewal);
+		const auto before = recovering.metadata();
+		const auto credentialBefore = secrets["session-" + id];
+		QFile retained(recovery.path() + "/retained.m4s");
+		check(retained.open(QIODevice::WriteOnly) && retained.write("original-media") == 14, "create retained media");
+		retained.close();
+		bool accepted = false, terminal = false;
+		try { recovering.bearer(true); accepted = true; }
+		catch (const RequestError &e) { terminal = e.status == 409 && e.code == "broadcast_output_terminal" && e.outputOpening; }
+		check(accepted == (mode == "renewed" || mode == "active"), qPrintable("renew/revalidate " + mode));
+		check(terminal == (mode == "terminal"), "only authoritative terminal releases output");
+		check(opens == (mode == "renewed" || mode == "forbidden" || mode == "unauthorized" ? 1 : 2) && renews == 1, "single same-ID revalidation, never recursive");
+		auto after = recovering.metadata();
+		after.remove("terminal");
+		check(after == before, "original intent, binding and receipts preserved");
+		check(secrets["session-" + id] == credentialBefore, "rejected identity never overwrites credential");
+		check(retained.open(QIODevice::ReadOnly) && retained.readAll() == "original-media", "terminal retains original media");
+		if (mode == "terminal") {
+			try { stale.bearer(true); check(false, "stale renewal cannot erase terminal"); }
+			catch (const RequestError &e) { check(e.status == 409 && e.code == "broadcast_output_terminal" && e.outputOpening, "stale writer observes terminal"); }
+			try { KeyIngest(recovery.path(), id, vault, recover).bind(); check(false, "terminal survives restart"); }
+			catch (const RequestError &e) { check(e.code == "broadcast_output_terminal" && opens == 2, "restart does not reopen terminal"); }
+		}
+	}
 	return failures ? 1 : 0;
 }

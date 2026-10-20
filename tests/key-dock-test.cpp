@@ -92,6 +92,16 @@ struct KeyControllerTest {
 			restored.closing_ = true; // No background process or real transport in this mock.
 		}
 		c.lease_->tryLock(0);
+		// An error string alone is not authoritative terminal evidence.
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
+			RequestError e(403, "broadcast_output_terminal");
+			e.outputOpening = true;
+			throw e;
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		c.syncDone();
+		failed += c.released_ || !c.paused_ || c.action_->isEnabled();
+		c.paused_ = true; // Invalid-session retry had disabled Start before authoritative terminal.
 		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
 			RequestError e(409, "broadcast_output_terminal");
 			e.outputOpening = true;
@@ -103,6 +113,7 @@ struct KeyControllerTest {
 		}
 		c.syncDone();
 		failed += !c.released_ || c.starting_ || c.stopping_ || c.id_ != original;
+		failed += c.paused_ || !c.action_->isEnabled() || !c.retry_->isHidden();
 		const auto future = c.next_;
 		c.tick();
 		failed += c.syncAwaiting_ || c.id_ != original || c.next_ != future;

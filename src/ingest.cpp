@@ -8,6 +8,7 @@
 #include <QRegularExpression>
 #include <QUrlQuery>
 #include <QSet>
+#include <QLockFile>
 namespace hhc {
 namespace {
 void require(bool ok)
@@ -152,6 +153,24 @@ QByteArray KeyIngest::key() const
 void KeyIngest::save()
 {
 	require(QDir().mkpath(root_) && !QFileInfo(root_).isSymLink());
+	QLockFile lock(lockFilePath(root_ + "/" + id_ + ".metadata.lock"));
+	lock.setStaleLockTime(0);
+	if (!lock.tryLock(0))
+		throw RequestError(409, "local_session_busy");
+	QFile current(root_ + "/" + id_ + ".json");
+	if (current.exists()) {
+		require(!QFileInfo(current).isSymLink() && current.size() < 65536 && openSharedJsonRead(current));
+		QJsonParseError error;
+		const auto saved = QJsonDocument::fromJson(current.readAll(), &error);
+		require(error.error == QJsonParseError::NoError && saved.isObject());
+		// A late control/session renewal must not erase a terminal decision from another worker.
+		if (saved.object()["terminal"].toBool() && !journal_["terminal"].toBool()) {
+			journal_["terminal"] = true;
+			RequestError e(409, "broadcast_output_terminal");
+			e.outputOpening = true;
+			throw e;
+		}
+	}
 	require(writeAtomicMetadata(root_ + "/" + id_ + ".json",
 				    QJsonDocument(journal_).toJson(QJsonDocument::Compact)));
 }
@@ -171,10 +190,10 @@ void KeyIngest::acceptSession(const QJsonObject &s)
 	binding.remove("expiresAt");
 	require(!journal_.contains("sessionBinding") || journal_["sessionBinding"] == binding);
 	require(QDateTime::fromString(s["expiresAt"].toString(), Qt::ISODateWithMs).isValid());
-	vault_.save("session-" + id_, QJsonDocument(s).toJson(QJsonDocument::Compact));
-	session_ = s;
 	journal_["sessionBinding"] = binding;
 	save();
+	vault_.save("session-" + id_, QJsonDocument(s).toJson(QJsonDocument::Compact));
+	session_ = s;
 }
 QJsonObject KeyIngest::bind()
 {
@@ -241,13 +260,16 @@ void KeyIngest::checkOpened(const QJsonObject &data) const
 		require(pin == journal_["sessionBinding"]);
 	}
 }
-QJsonObject KeyIngest::open()
+QJsonObject KeyIngest::open(bool revalidate)
 {
 	try {
 		if (journal_.value("terminal").toBool())
 			throw RequestError(409, "broadcast_output_terminal");
-		if (journal_.value("broadcast").isObject() && !session_.isEmpty())
+		if (!revalidate && journal_.value("broadcast").isObject() && !session_.isEmpty())
 			return {{"broadcast", journal_["broadcast"]}, {"receipt", journal_["receipt"]}};
+		if (revalidate)
+			require(journal_["version"] == "k4-2026-10-15.rc1" &&
+				journal_["broadcast"].isObject() && journal_["sessionBinding"].isObject());
 		auto body = journal_["intent"].toObject();
 		body["streamKey"] = QString::fromLatin1(key());
 		require(validWire("BroadcastOutputOpenInput", body));
@@ -263,6 +285,8 @@ QJsonObject KeyIngest::open()
 			client.request("POST", "/ingest/streams/open", body, "BroadcastOutputOpenedEnvelope")["data"]
 				.toObject();
 		checkOpened(data);
+		if (revalidate)
+			require(data["receipt"] == journal_["receipt"]);
 		journal_["broadcast"] = data["broadcast"];
 		journal_["receipt"] = data["receipt"];
 		journal_["sourceId"] = data["sourceId"];
@@ -288,10 +312,19 @@ QByteArray KeyIngest::bearer(bool force)
 {
 	require(!session_.isEmpty());
 	const auto expiry = QDateTime::fromString(session_["expiresAt"].toString(), Qt::ISODateWithMs);
-	if (force || QDateTime::currentDateTimeUtc().secsTo(expiry) <= 120)
-		acceptSession(bootstrap(
-			"session", {{"streamKey", QString::fromLatin1(key())}, {"sessionToken", session_["token"]}},
-			"BroadcastIngestSessionEnvelope"));
+	if (force || QDateTime::currentDateTimeUtc().secsTo(expiry) <= 120) {
+		try {
+			acceptSession(bootstrap(
+				"session", {{"streamKey", QString::fromLatin1(key())}, {"sessionToken", session_["token"]}},
+				"BroadcastIngestSessionEnvelope"));
+		} catch (const RequestError &e) {
+			if (e.status != 401 || e.code != "broadcast_ingest_session_invalid" ||
+			    journal_["version"] != "k4-2026-10-15.rc1")
+				throw;
+			// Only replay the pinned output: an invalid session alone cannot release its input.
+			open(true);
+		}
+	}
 	return session_["token"].toString().toUtf8();
 }
 ApiClient KeyIngest::api()
