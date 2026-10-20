@@ -2,3 +2,4 @@ tests/fixtures/c1.json -text
 tests/fixtures/b1.json -text
 tests/fixtures/k3.json -text
 tests/fixtures/k5/* -text
+src/k5-schema.inc -text
