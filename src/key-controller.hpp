@@ -41,6 +41,7 @@ private:
 	void tick();
 	void syncDone();
 	void retireOutput();
+	bool hasReleaseProof() const;
 	void pollControl();
 	void launchHelper();
 	void display();

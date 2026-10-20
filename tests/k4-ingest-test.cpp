@@ -35,6 +35,21 @@ QJsonObject read(const QString &path)
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	// Read-only probe of existing release receipts; no OBS, credential store, transport or journal writes.
+	if (app.arguments().size()==7 && app.arguments()[1]=="--check-release") {
+		int requests=0;
+		ApiClient offline(QUrl("https://fixture.invalid/api"),[](bool){return QByteArray{};},
+			[&](const auto &,const auto &,const auto &,const auto &)->HttpResponse{++requests;throw RequestError(0,"unexpected_network");});
+		try {
+			CaptureSync saved(app.arguments()[2],app.arguments()[3],app.arguments()[4],offline);
+			const bool released=saved.hasReleaseReceipt(app.arguments()[5],app.arguments()[6]);
+			std::cout<<"matchingReleaseReceipt="<<released<<" httpCalls="<<requests<<"\n";
+			return released && requests==0 ? 0 : 1;
+		} catch (const std::exception &e) {
+			std::cerr<<"release proof rejected: "<<e.what()<<"\n";
+			return 1;
+		}
+	}
 	QFile s10("tests/fixtures/s10.json");
 	check(s10.open(QIODevice::ReadOnly), "S10 rc2 fixtures readable");
 	for (const auto &v : QJsonDocument::fromJson(s10.readAll()).array()) {
@@ -541,6 +556,44 @@ int main(int argc, char **argv)
 		check(opens==1 && replays==(denied?2:1) && !validated && read(directory+"/journal.json")==before,"helper restart retains original journal without new output");
 		QFile receipt(directory+"/stop-seal-receipts.json");
 		check(receipt.open(QIODevice::ReadOnly) && receipt.readAll()=="{\"operationKey\":\"original.seal\"}","helper retains original Stop/seal receipts");
+	}
+	// A legacy released pointer is not proof; normal matching Stop/seal receipts are sufficient.
+	{
+		QTemporaryDir legacy;
+		const auto opened = fixtures[0].toObject()["value"].toObject()["data"].toObject();
+		const auto binding = opened["session"].toObject();
+		const auto actor = opened["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
+		QJsonObject capture, seal;
+		QFile fixed("tests/fixtures/c1.json"); check(fixed.open(QIODevice::ReadOnly),"read normal release fixtures");
+		for (const auto &v : QJsonDocument::fromJson(fixed.readAll()).array()) {
+			const auto f=v.toObject();
+			if (f["name"]=="poll") capture=f["value"].toObject()["data"].toObject();
+			if (f["name"]=="seal") seal=f["value"].toObject();
+		}
+		capture["recordingId"]=binding["recordingId"];capture["captureId"]=binding["captureId"];
+		capture["state"]="validating";capture["stopAcceptedAt"]="2026-10-20T00:00:00Z";
+		seal["operationKey"]=id+".seal";
+		const auto cap=binding["captureId"].toString(), rec=binding["recordingId"].toString();
+		const auto base="/admin/recordings/"+rec+"/captures/"+cap;
+		QJsonObject remote{{"version",1},{"account",actor},{"localId",id},{"title","legacy"},{"autoPublish",false},
+			{"liveEnabled",true},{"recordingId",rec},{"recordingVersion",1},{"captureId",cap},
+			{"mutations",QJsonObject{}},{"lastCapture",capture}};
+		SessionStore store(legacy.path());
+		const auto dir=store.mediaDirectory(actor,id);QDir().mkpath(dir);
+		int requests=0;
+		ApiClient none(QUrl("https://fixture.invalid/api"),[](bool){return QByteArray{};},[&](const auto &,const auto &,const auto &,const auto &)->HttpResponse{++requests;throw RequestError(0,"unexpected_network");});
+		auto inspect=[&]{check(writeAtomicMetadata(dir+"/remote-journal.json",QJsonDocument(remote).toJson()),"write legacy release evidence");return CaptureSync(legacy.path(),actor,id,none).hasReleaseReceipt(rec,cap);};
+		check(!inspect(),"terminal label/stop time without receipts cannot release a legacy pointer");
+		QJsonObject mutations;
+		for (const auto &op : {QString("stop"),QString("seal")}) {
+			QJsonObject body=op=="seal" ? seal : QJsonObject{{"operationKey",id+".stop"}};
+			QJsonObject receipt{{"operationKey",id+"."+op},{"operation",op},{"captureId",cap},{"acceptedAt","2026-10-20T00:00:00Z"}};
+			mutations[op]=QJsonObject{{"body",body},{"method","POST"},{"path",base+"/"+op},{"receipt",receipt}};
+			remote["mutations"]=mutations;
+			check(inspect()==(op=="seal"),"legacy normal Stop/seal release requires accepted seal receipt");
+		}
+		check(!CaptureSync(legacy.path(),actor,id,none).hasReleaseReceipt(rec,QString(32,'f')),"release receipt must match exact original capture");
+		check(requests==0,"checking durable release evidence performs no HTTP");
 	}
 	return failures ? 1 : 0;
 }

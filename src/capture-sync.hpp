@@ -30,6 +30,7 @@ public:
 	SyncState control(bool closeLive);
 	SyncState abort();
 	QString directory() const;
+	bool hasReleaseReceipt(const QString &recordingId, const QString &captureId) const;
 	static void persistControl(const QString &root, const QString &account, const QString &id, bool closeLive);
 
 private:

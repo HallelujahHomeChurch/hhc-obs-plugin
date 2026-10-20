@@ -217,6 +217,13 @@ void CaptureSync::persistControl(const QString &root, const QString &account, co
 	auto bytes = QJsonDocument(intent).toJson(QJsonDocument::Compact);
 	require(writeAtomicMetadata(path, bytes), "Control intent commit failed");
 }
+bool CaptureSync::hasReleaseReceipt(const QString &recordingId, const QString &captureId) const
+{
+	if (state_.recordingId != recordingId || state_.captureId != captureId || captureId.isEmpty()) return false;
+	// load() validates every persisted mutation, operation key, capture and receipt before this check.
+	return (state_.stopAccepted && state_.sealAccepted) ||
+		(state_.state == "aborted" && journal_["mutations"].toObject()["abort"].toObject()["receipt"].isObject());
+}
 QString CaptureSync::directory() const
 {
 	return SessionStore(root_).mediaDirectory(account_, id_);

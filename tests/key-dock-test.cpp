@@ -64,6 +64,23 @@ struct KeyControllerTest {
 		failed += restored.savedOptions_[2] || !restored.savedOptions_[3] || restored.settingsModified();
 		return failed;
 	}
+	static int unprovenReleasedPointer()
+	{
+		QTemporaryDir root;
+		const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+		QDir().mkpath(root.path()+"/k3/intents");
+		// A pointer alone, even explicitly released, cannot erase missing original K4 evidence.
+		writeAtomicMetadata(root.path()+"/k3/active.json",QJsonDocument(QJsonObject{
+			{"localId",id},{"protocolVersion","k4-2026-10-15.rc1"},{"released",true}}).toJson());
+		KeyController restored(root.path());restored.timer_.stop();
+		int failed=restored.id_!=id || !restored.paused_ || restored.released_;
+		restored.keyAvailable_=true;restored.released_=true;restored.paused_=false;
+		restored.startStop();
+		failed+=restored.id_!=id || !restored.paused_ || restored.released_;
+		restored.closing_=true;
+		if (failed) std::cerr<<"FAIL released pointer without durable evidence must remain original and paused\n";
+		return failed;
+	}
 	static int k4Recovery(KeyController &c)
 	{
 		c.timer_.stop();
@@ -370,6 +387,7 @@ int main(int argc, char **argv)
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
+	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
 	failed += gpu < -1 || gpu > 100;
 	std::cout << "Video Encode sampler: " << gpu << " (-1 means unavailable)\n";

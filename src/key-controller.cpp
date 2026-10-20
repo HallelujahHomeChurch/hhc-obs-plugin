@@ -187,8 +187,13 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			} else {
 				// The input can be released before ready/local cleanup; resume off the UI thread.
 				id_ = a["localId"].toString();
-				launchHelper();
-				id_.clear();
+				if (hasReleaseProof()) {
+					launchHelper();
+					id_.clear();
+				} else {
+					paused_ = stopping_ = true;
+					issue_ = QString::fromUtf8("尚無原輸出的釋放證據；保留收錄與素材，請重試。");
+				}
 			}
 		} catch (...) {
 			paused_ = true;
@@ -406,8 +411,18 @@ void KeyController::startStop()
 		return;
 	}
 	audioTrack_ = selectedTrack;
-	if (!id_.isEmpty())
+	if (!id_.isEmpty()) {
+		try {
+			if (!hasReleaseProof()) throw RequestError(409, "ingest_release_unproven");
+		} catch (...) {
+			paused_ = true;
+			released_ = false;
+			issue_ = QString::fromUtf8("尚無原輸出的釋放證據；保留收錄與素材，請重試。");
+			display();
+			return;
+		}
 		launchHelper();
+	}
 	capture_.reset();
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	try {
@@ -500,6 +515,21 @@ void KeyController::pollControl()
 		out.serverEnd = control.serverEnd();
 		return out;
 	}));
+}
+bool KeyController::hasReleaseProof() const
+{
+	KeyIngest ingest(root_ + "/intents", id_);
+	const auto metadata = ingest.metadata();
+	if (metadata["version"] == "k3-2026-10-14.rc1") return true;
+	if (metadata["version"] != "k4-2026-10-15.rc1") return false;
+	// KeyIngest validates a saved terminal proof against all original pins on load.
+	if (metadata.contains("terminalProof")) return true;
+	const auto binding = metadata["sessionBinding"].toObject();
+	const auto actor = metadata["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
+	if (actor.isEmpty() || binding.isEmpty()) return false;
+	auto api = ingest.api();
+	CaptureSync saved(root_ + "/queue", actor, id_, api);
+	return saved.hasReleaseReceipt(binding["recordingId"].toString(), binding["captureId"].toString());
 }
 void KeyController::retireOutput()
 {
