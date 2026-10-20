@@ -75,7 +75,7 @@ int main(int argc, char **argv)
 				}
 				if (e.code == "ingest_no_bind_intent")
 					return finish(0);
-				if (e.outputOpening && e.code == "broadcast_output_terminal")
+				if (e.outputOpening && e.status == 409 && e.code == "broadcast_output_terminal")
 					return finish(0);
 				const auto delay = e.retryDelayMs(failures);
 				if (!delay)
