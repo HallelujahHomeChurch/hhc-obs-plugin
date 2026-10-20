@@ -4,6 +4,7 @@
 #include "capture-sync.hpp"
 #include "broadcast-control.hpp"
 #include "session-store.hpp"
+#include "helper-diagnostics.hpp"
 #include <QCoreApplication>
 #include <QCommandLineParser>
 #include <QJsonDocument>
@@ -16,7 +17,24 @@
 #include <QThread>
 #include <QRandomGenerator>
 #include <QCryptographicHash>
+#include <QDebug>
+#include <QMutex>
+#include <QMutexLocker>
 #include <iostream>
+namespace {
+QString diagnosticDirectory;
+QMutex diagnosticMutex;
+QtMessageHandler previousHandler = nullptr;
+void helperMessage(QtMsgType type, const QMessageLogContext &context, const QString &message)
+{
+	if (message.startsWith("[HHC ") && !message.contains('\n') && !message.contains('\r')) {
+		QMutexLocker guard(&diagnosticMutex);
+		hhc::appendHelperDiagnostic(diagnosticDirectory, message);
+	}
+	if (previousHandler) previousHandler(type, context, message);
+	else std::cerr << message.toUtf8().constData() << '\n';
+}
+}
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -41,6 +59,8 @@ int main(int argc, char **argv)
 	auto root = options.value("root"), expected = options.value("account");
 	if (root.isEmpty())
 		return 2;
+	diagnosticDirectory = root + "/diagnostics";
+	previousHandler = qInstallMessageHandler(helperMessage);
 	if (options.isSet("k3")) {
 		auto nextCleanup = std::chrono::steady_clock::now();
 		unsigned failures = 0;
@@ -69,6 +89,8 @@ int main(int argc, char **argv)
 				if (!r.sync.pendingBytes)
 					QThread::sleep(10);
 			} catch (const hhc::RequestError &e) {
+				qInfo().noquote() << "[HHC helper] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+					<< "status=" + QString::number(e.status) << "result=request_failed";
 				if (e.code == "broadcast_ingest_revoked") {
 					QThread::sleep(5);
 					continue;

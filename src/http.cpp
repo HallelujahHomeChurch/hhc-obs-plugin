@@ -10,11 +10,81 @@
 #include <QThread>
 #include <QDateTime>
 #include <QRandomGenerator>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QRegularExpression>
 #ifdef HHC_NETWORK_TEST_FAULTS
 #include <QFileInfo>
 #endif
 namespace hhc {
 namespace {
+QString operation(const QUrl &url, const QByteArray &method)
+{
+	const auto path = url.path();
+	if (method == "PUT") return "media.put";
+	if (path == "/api/ingest/streams/open") return "output.open";
+	if (path == "/api/ingest/broadcast-source/session") return "session.renew";
+	if (path.endsWith("/control")) return "control.poll";
+	if (path.endsWith("/ack")) return "control.ack";
+	if (path.endsWith("/captures")) return "capture.create";
+	if (path == "/api/admin/recordings" && method == "POST") return "recording.create";
+	if (path.contains("/captures/")) {
+		const auto suffix = path.section('/', -1);
+		if (QStringList{"objects", "sign", "confirm", "stop", "seal", "abort"}.contains(suffix))
+			return "capture." + suffix;
+		if (method == "GET") return "capture.poll";
+	}
+	return "other";
+}
+void logRequest(const QByteArray &method, const QUrl &url, int status, const QString &code,
+		const QString &requestId, int attempt, const QElapsedTimer &elapsed, const char *outcome)
+{
+	static const QRegularExpression correlation("^(?:[a-fA-F0-9]{16,64}|[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12})$");
+	const auto match = correlation.match(requestId);
+	const auto safeId = match.hasMatch() && match.capturedLength() == requestId.size() ? requestId : QString("none");
+	qInfo().noquote() << QString("[HHC HTTP] utc=%1 monoMs=%2 op=%3 status=%4 code=%5 requestId=%6 attempt=%7 elapsedMs=%8 outcome=%9")
+		.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)).arg(elapsed.msecsSinceReference())
+		.arg(operation(url, method)).arg(status).arg(code, safeId).arg(attempt).arg(elapsed.elapsed()).arg(outcome);
+}
+QString responseCode(const QByteArray &body)
+{
+	static const QSet<QString> known{"broadcast_source_not_prepared",
+			 "broadcast_source_busy",
+			 "broadcast_output_capacity_exhausted",
+			 "broadcast_output_terminal",
+			 "broadcast_stream_key_invalid",
+			 "broadcast_ingest_session_invalid",
+			 "broadcast_ingest_revoked",
+			 "capture_invalid",
+			 "capture_unauthorized",
+			 "capture_forbidden",
+			 "capture_not_found",
+			 "capture_conflict",
+			 "capture_missing_objects",
+			 "capture_expired",
+			 "capture_too_large",
+			 "capture_rate_limited",
+			 "capture_unavailable",
+			 "recording_conflict",
+			 "invalid_recording",
+			 "recordings_unavailable",
+			 "unauthorized",
+			 "forbidden",
+			 "broadcast_invalid",
+			 "broadcast_not_found",
+			 "broadcast_state_conflict",
+			 "broadcast_already_bound",
+			 "broadcast_active_limit",
+			 "broadcast_epoch_mismatch",
+			 "broadcast_boundary_conflict",
+			 "broadcast_operation_conflict",
+			 "broadcast_revision_conflict",
+			 "broadcast_protocol_unsupported",
+			 "rate_limited",
+			 "unavailable"};
+	const auto code = QJsonDocument::fromJson(body).object()["error"].toObject()["code"].toString();
+	return known.contains(code) ? code : QString("request_rejected");
+}
 thread_local const std::atomic<bool> *cancellation = nullptr;
 void checkCancellation()
 {
@@ -74,6 +144,8 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 	bool networkCut = false;
 #endif
 	QNetworkAccessManager manager;
+	QElapsedTimer elapsed;
+	elapsed.start();
 	QNetworkRequest request(url);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
 	request.setTransferTimeout(30000);
@@ -110,6 +182,12 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 	QObject::connect(&deadline, &QTimer::timeout, reply, &QNetworkReply::abort);
 	deadline.start();
 	loop.exec();
+	const auto outcome = cancellation && cancellation->load() ? "cancelled" :
+		(!deadline.isActive() || reply->error() == QNetworkReply::TimeoutError) ? "timeout" :
+		reply->error() != QNetworkReply::NoError ? "network_error" : "response";
+	if (method == "PUT" || reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 0)
+		logRequest(method, url, reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),
+			"transport", {}, 1, elapsed, outcome);
 	checkCancellation();
 #ifdef HHC_NETWORK_TEST_FAULTS
 	if (networkCut)
@@ -117,6 +195,9 @@ HttpResponse httpRequest(const QByteArray &method, const QUrl &url, const QByteA
 #endif
 	response.body += reply->readAll();
 	response.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+	response.requestId = QString::fromLatin1(reply->rawHeader("X-Request-ID").left(128));
+	if (response.requestId.isEmpty())
+		response.requestId = QString::fromLatin1(reply->rawHeader("X-Correlation-ID").left(128));
 	auto retry = reply->rawHeader("Retry-After");
 	bool numeric = false;
 	auto seconds = retry.toInt(&numeric);
@@ -139,57 +220,37 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 	QUrl url(origin_.toString() + (route_ ? route_(method, path) : path));
 	HttpResponse result;
 	for (int attempt = 0; attempt < 2; ++attempt) {
-		QMap<QByteArray, QByteArray> headers{{"Content-Type", "application/json"},
-						     {"Accept", "application/json"}};
-		const auto bearer = token_(attempt == 1);
-		if (!bearer.isEmpty())
-			headers["Authorization"] = "Bearer " + bearer;
-		if (!key.isEmpty())
-			headers["Idempotency-Key"] = key;
-		result = transport_(method, url,
-				    method == "GET" ? QByteArray{} : QJsonDocument(body).toJson(QJsonDocument::Compact),
-				    headers);
-		if (result.status != 401 || attempt == 1 || bearer.isEmpty())
-			break;
+		QElapsedTimer elapsed;
+		elapsed.start();
+		try {
+			QMap<QByteArray, QByteArray> headers{{"Content-Type", "application/json"},
+							     {"Accept", "application/json"}};
+			const auto bearer = token_(attempt == 1);
+			if (!bearer.isEmpty())
+				headers["Authorization"] = "Bearer " + bearer;
+			if (!key.isEmpty())
+				headers["Idempotency-Key"] = key;
+			result = transport_(method, url,
+					    method == "GET" ? QByteArray{} : QJsonDocument(body).toJson(QJsonDocument::Compact),
+					    headers);
+			logRequest(method, url, result.status, result.status >= 200 && result.status < 300 ? "none" : responseCode(result.body),
+				result.requestId, attempt + 1, elapsed, "response");
+			if (result.status != 401 || attempt == 1 || bearer.isEmpty())
+				break;
+		} catch (const RequestError &e) {
+			const auto code = QStringList{"transport_unavailable", "transport_cancelled", "local_session_busy",
+				"local_credentials_busy", "ingest_local_conflict", "malformed_success"}.contains(e.code) ? e.code : QString("request_failed");
+			logRequest(method, url, e.status, code, {}, attempt + 1, elapsed,
+				e.code == "transport_cancelled" ? "cancelled" : "exception");
+			throw;
+		} catch (...) {
+			logRequest(method, url, 0, "local_error", {}, attempt + 1, elapsed, "exception");
+			throw;
+		}
 	}
 	if (result.status < 200 || result.status >= 300) {
-		const auto code = QJsonDocument::fromJson(result.body).object()["error"].toObject()["code"].toString();
-		static const QSet<QString> known{"broadcast_source_not_prepared",
-						 "broadcast_source_busy",
-						 "broadcast_output_capacity_exhausted",
-						 "broadcast_output_terminal",
-						 "broadcast_stream_key_invalid",
-						 "broadcast_ingest_session_invalid",
-						 "broadcast_ingest_revoked",
-						 "capture_invalid",
-						 "capture_unauthorized",
-						 "capture_forbidden",
-						 "capture_not_found",
-						 "capture_conflict",
-						 "capture_missing_objects",
-						 "capture_expired",
-						 "capture_too_large",
-						 "capture_rate_limited",
-						 "capture_unavailable",
-						 "recording_conflict",
-						 "invalid_recording",
-						 "recordings_unavailable",
-						 "unauthorized",
-						 "forbidden",
-						 "broadcast_invalid",
-						 "broadcast_not_found",
-						 "broadcast_state_conflict",
-						 "broadcast_already_bound",
-						 "broadcast_active_limit",
-						 "broadcast_epoch_mismatch",
-						 "broadcast_boundary_conflict",
-						 "broadcast_operation_conflict",
-						 "broadcast_revision_conflict",
-						 "broadcast_protocol_unsupported",
-						 "rate_limited",
-						 "unavailable"};
-		throw RequestError(result.status, known.contains(code) ? code : QString("request_rejected"),
-				   result.retryAfter);
+		const auto code = responseCode(result.body);
+		throw RequestError(result.status, code, result.retryAfter);
 	}
 	QJsonParseError error;
 	auto document = QJsonDocument::fromJson(result.body, &error);

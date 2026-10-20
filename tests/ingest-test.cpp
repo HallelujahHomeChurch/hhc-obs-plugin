@@ -9,9 +9,13 @@
 #include <QJsonArray>
 #include <QFile>
 #include <iostream>
+namespace { QStringList diagnosticMessages; }
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	const auto oldHandler = qInstallMessageHandler([](QtMsgType, const QMessageLogContext &, const QString &message) {
+		diagnosticMessages.append(message);
+	});
 	int failed = 0;
 	auto check = [&](bool ok, const char *name) {
 		if (!ok) {
@@ -231,5 +235,11 @@ int main(int argc, char **argv)
 		std::cerr << "FAIL abort recovery " << e.what() << '\n';
 		++failed;
 	}
+	qInstallMessageHandler(oldHandler);
+	const auto logs = diagnosticMessages.join('\n');
+	check(logs.contains("[HHC renew]") && logs.contains("ttlSec=") && logs.contains("result=renewed") &&
+	      logs.contains("result=rejected"), "renewal diagnostics distinguish success and rejection");
+	check(!logs.contains("local-test") && !logs.contains("hhc_stream_") && !logs.contains("hhc_ingest_") &&
+	      !logs.contains("Authorization") && !logs.contains("sessionToken"), "renewal diagnostics contain only hashed identity");
 	return failed ? 1 : 0;
 }
