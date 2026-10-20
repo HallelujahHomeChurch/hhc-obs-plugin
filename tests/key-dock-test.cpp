@@ -64,12 +64,34 @@ struct KeyControllerTest {
 		failed += restored.savedOptions_[2] || !restored.savedOptions_[3] || restored.settingsModified();
 		return failed;
 	}
+	static int unprovenReleasedPointer()
+	{
+		QTemporaryDir root;
+		const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+		QDir().mkpath(root.path()+"/k3/intents");
+		// A pointer alone, even explicitly released, cannot erase missing original K4 evidence.
+		writeAtomicMetadata(root.path()+"/k3/active.json",QJsonDocument(QJsonObject{
+			{"localId",id},{"released",true}}).toJson());
+		KeyController restored(root.path());restored.timer_.stop();
+		int failed=restored.id_!=id || !restored.paused_ || restored.released_;
+		failed += restored.retireUnbound(); // Old released pointers can omit protocolVersion, too.
+		restored.keyAvailable_=true;restored.released_=true;restored.paused_=false;
+		restored.startStop();
+		failed+=restored.id_!=id || !restored.paused_ || restored.released_;
+		restored.closing_=true;
+		if (failed) std::cerr<<"FAIL released pointer without durable evidence must remain original and paused\n";
+		return failed;
+	}
 	static int k4Recovery(KeyController &c)
 	{
 		c.timer_.stop();
 		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 		const auto original = c.id_;
-		KeyIngest(c.root_ + "/intents", original).prepareOpen();
+		QMap<QString,QByteArray> keys{{"stream-key","hhc_stream_"+QByteArray(43,'A')}};
+		IngestCredentials fixtureVault{[&](const QString &name)->std::optional<QByteArray> {
+			return keys.contains(name) ? std::optional<QByteArray>(keys[name]) : std::nullopt;
+		},[&](const QString &name,const QByteArray &value){keys[name]=value;}};
+		KeyIngest(c.root_ + "/intents", original,fixtureVault).prepareOpen();
 		writeAtomicMetadata(c.root_ + "/active.json",
 				    QJsonDocument(QJsonObject{{"localId", original},
 							      {"protocolVersion", "k4-2026-10-15.rc1"},
@@ -92,9 +114,42 @@ struct KeyControllerTest {
 			restored.closing_ = true; // No background process or real transport in this mock.
 		}
 		c.lease_->tryLock(0);
-		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
-			RequestError e(409, "broadcast_output_terminal");
+		// An error string alone is not authoritative terminal evidence.
+		for (const int status : {403,409}) {
+		c.sync_.setFuture(QtConcurrent::run([status]() -> KeyJob {
+			RequestError e(status, "broadcast_output_terminal");
 			e.outputOpening = true;
+			throw e;
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		c.syncDone();
+		failed += c.released_ || !c.paused_ || c.action_->isEnabled();
+		}
+		// Replay error labels never reuse ordinary revocation/abort handling.
+		c.sync_.setFuture(QtConcurrent::run([]()->KeyJob {
+			RequestError e(403,"broadcast_ingest_revoked"); e.outputReplayUnknown=true; throw e;
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		c.syncDone();
+		failed += c.revoked_ || !c.paused_ || c.released_ || c.action_->isEnabled();
+		failed += QFileInfo::exists(c.root_+"/intents/"+original+".revoked");
+		int recorderActions = 0;
+		c.recording = [&](bool) { ++recorderActions; };
+		const auto sentinel = c.root_+"/original-stop-seal.json";
+		writeAtomicMetadata(sentinel,"{\"stopIntent\":true,\"sealKey\":\"original.seal\"}");
+		QFile::remove(c.root_+"/active.json");
+		QDir().mkpath(c.root_+"/active.json"); // Simulate failure to commit the release pointer.
+		c.sync_.setFuture(QtConcurrent::run([]()->KeyJob {
+			RequestError e(0,"output_replay_terminal"); e.outputReleased=true; throw e;
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		try { c.syncDone(); } catch (...) { ++failed; }
+		failed += !c.paused_ || c.released_ || c.id_ != original || c.action_->isEnabled();
+		QDir().rmdir(c.root_+"/active.json");
+		c.paused_ = true; // Invalid-session retry had disabled Start before authoritative terminal.
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
+			RequestError e(0, "output_replay_terminal");
+			e.outputReleased = true;
 			throw e;
 		}));
 		try {
@@ -103,9 +158,26 @@ struct KeyControllerTest {
 		}
 		c.syncDone();
 		failed += !c.released_ || c.starting_ || c.stopping_ || c.id_ != original;
+		failed += c.paused_ || !c.action_->isEnabled() || !c.retry_->isHidden();
+		failed += recorderActions != 0;
+		QFile preserved(sentinel);
+		failed += !preserved.open(QIODevice::ReadOnly) || preserved.readAll()!="{\"stopIntent\":true,\"sealKey\":\"original.seal\"}";
+		c.recording = {};
 		const auto future = c.next_;
 		c.tick();
 		failed += c.syncAwaiting_ || c.id_ != original || c.next_ != future;
+		// A control-confirmed retirement is monotonic against a late upload success or error.
+		for (bool error : {false,true}) {
+			c.syncAwaiting_ = true;
+			c.sync_.setFuture(QtConcurrent::run([error]()->KeyJob {
+				if (error) throw RequestError(403,"forbidden");
+				KeyJob r; r.sync.state="uploading"; return r;
+			}));
+			try { c.sync_.waitForFinished(); } catch (...) {}
+			c.syncDone();
+			failed += !c.released_ || c.paused_ || c.id_!=original || !c.action_->isEnabled();
+		}
+		c.terminalRetired_ = false; // The following synthetic state represents a different output.
 		// A missing K4 intent must not silently enter the legacy resolve path.
 		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 		writeAtomicMetadata(c.root_ + "/active.json",
@@ -316,6 +388,7 @@ int main(int argc, char **argv)
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
+	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
 	failed += gpu < -1 || gpu > 100;
 	std::cout << "Video Encode sampler: " << gpu << " (-1 means unavailable)\n";

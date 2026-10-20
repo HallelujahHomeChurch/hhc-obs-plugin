@@ -128,14 +128,28 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	connect(&sync_, &QFutureWatcher<KeyJob>::finished, this, [this] { syncDone(); });
 	connect(&control_, &QFutureWatcher<KeyJob>::finished, this, [this] {
 		controlAwaiting_ = false;
-		if (closing_)
+		if (closing_ || terminalRetired_) {
+			if (!closing_) display();
 			return;
+		}
 		try {
 			auto r = workerResult(control_.future());
 			end_ = r.end;
 			if(r.serverEnd) serverEnd_=r.serverEnd;
 			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 2000;
 		} catch (const RequestError &e) {
+			if (e.outputReleased && e.code == "output_replay_terminal") {
+				retireOutput();
+				display();
+				return;
+			}
+			if (e.outputReplayUnknown) {
+				paused_ = true;
+				issue_ = e.code;
+				nextControl_ = std::numeric_limits<qint64>::max();
+				display();
+				return;
+			}
 			if (e.code == "broadcast_ingest_revoked") {
 				revoked_ = true;
 				markIngestRevoked(root_, id_);
@@ -173,8 +187,13 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			} else {
 				// The input can be released before ready/local cleanup; resume off the UI thread.
 				id_ = a["localId"].toString();
-				launchHelper();
-				id_.clear();
+				if (hasReleaseProof()) {
+					launchHelper();
+					id_.clear();
+				} else {
+					paused_ = stopping_ = true;
+					issue_ = QString::fromUtf8("尚無原輸出的釋放證據；保留收錄與素材，請重試。");
+				}
 			}
 		} catch (...) {
 			paused_ = true;
@@ -333,9 +352,11 @@ bool KeyController::retireUnbound()
 	if (syncAwaiting_ || id_.isEmpty() || QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
 		return false;
 	// Missing K4 metadata is a recovery fault, not evidence the server released an output.
-	if (QFileInfo::exists(root_ + "/active.json") &&
-	    read(root_ + "/active.json")["protocolVersion"] == "k4-2026-10-15.rc1")
-		return false;
+	if (QFileInfo::exists(root_ + "/active.json")) {
+		const auto active = read(root_ + "/active.json");
+		if (active["protocolVersion"] == "k4-2026-10-15.rc1" || active["released"].toBool())
+			return false;
+	}
 	atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
 	id_.clear();
 	starting_ = stopping_ = paused_ = false;
@@ -392,8 +413,18 @@ void KeyController::startStop()
 		return;
 	}
 	audioTrack_ = selectedTrack;
-	if (!id_.isEmpty())
+	if (!id_.isEmpty()) {
+		try {
+			if (!hasReleaseProof()) throw RequestError(409, "ingest_release_unproven");
+		} catch (...) {
+			paused_ = true;
+			released_ = false;
+			issue_ = QString::fromUtf8("尚無原輸出的釋放證據；保留收錄與素材，請重試。");
+			display();
+			return;
+		}
 		launchHelper();
+	}
 	capture_.reset();
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	try {
@@ -414,6 +445,7 @@ void KeyController::startStop()
 	title_.clear();
 	recoveryValidated_ = false;
 	starting_ = true;
+	terminalRetired_ = false;
 	stopping_ = released_ = revoked_ = paused_ = false;
 	end_.reset();
 	serverEnd_.reset();
@@ -424,7 +456,7 @@ void KeyController::startStop()
 }
 void KeyController::tick()
 {
-	if (closing_ || paused_ || !lease_->isLocked() || id_.isEmpty())
+	if (closing_ || paused_ || terminalRetired_ || !lease_->isLocked() || id_.isEmpty())
 		return;
 	if (!QFileInfo::exists(root_ + "/intents/" + id_ + ".json") && QFileInfo::exists(root_ + "/active.json") &&
 	    read(root_ + "/active.json")["protocolVersion"] == "k4-2026-10-15.rc1") {
@@ -486,11 +518,45 @@ void KeyController::pollControl()
 		return out;
 	}));
 }
+bool KeyController::hasReleaseProof() const
+{
+	KeyIngest ingest(root_ + "/intents", id_);
+	const auto metadata = ingest.metadata();
+	if (metadata["version"] == "k3-2026-10-14.rc1") return true;
+	if (metadata["version"] != "k4-2026-10-15.rc1") return false;
+	// KeyIngest validates a saved terminal proof against all original pins on load.
+	if (metadata.contains("terminalProof")) return true;
+	const auto binding = metadata["sessionBinding"].toObject();
+	const auto actor = metadata["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
+	if (actor.isEmpty() || binding.isEmpty()) return false;
+	auto api = ingest.api();
+	CaptureSync saved(root_ + "/queue", actor, id_, api);
+	return saved.hasReleaseReceipt(binding["recordingId"].toString(), binding["captureId"].toString());
+}
+void KeyController::retireOutput()
+{
+	next_ = std::numeric_limits<qint64>::max();
+	try {
+		atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
+	} catch (...) {
+		paused_ = true;
+		released_ = false;
+		issue_ = QString::fromUtf8("無法保存輸出釋放紀錄；原輸出與素材保留，請重試。");
+		return;
+	}
+	if (capture_ && !capture_->finished()) capture_->stop(StopReason::EncoderFailure);
+	starting_ = stopping_ = paused_ = false;
+	released_ = terminalRetired_ = true;
+	issue_ = QString::fromUtf8("本次輸出已結束；再次按開始直播才會建立下一次輸出。");
+}
 void KeyController::syncDone()
 {
 	syncAwaiting_ = false;
-	if (closing_)
+	// Control can persist release before an already-running upload reports its old result.
+	if (closing_ || terminalRetired_) {
+		if (!closing_) display();
 		return;
+	}
 	try {
 		const auto r = workerResult(sync_.future());
 		pendingBytes_ = r.sync.pendingBytes;
@@ -548,17 +614,16 @@ void KeyController::syncDone()
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {
 		issue_ = e.code;
-		if (e.code == "broadcast_ingest_revoked") {
+		if (e.outputReplayUnknown) {
+			paused_ = true;
+			next_ = std::numeric_limits<qint64>::max();
+		} else if (e.code == "broadcast_ingest_revoked") {
 			revoked_ = true;
 			if (capture_)
 				capture_->stop(StopReason::EncoderFailure);
 			next_ = 0;
-		} else if (e.outputOpening && e.code == "broadcast_output_terminal") {
-			starting_ = stopping_ = paused_ = false;
-			released_ = true;
-			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
-			next_ = std::numeric_limits<qint64>::max();
-			issue_ = QString::fromUtf8("本次輸出已結束；再次按開始直播才會建立下一次輸出。");
+		} else if (e.outputReleased && e.code == "output_replay_terminal") {
+			retireOutput();
 		} else if (!e.outputOpening && e.code == "broadcast_source_not_prepared") {
 			issue_ = QString::fromUtf8("平台尚未準備接收，正在自動重試。");
 			next_ = QDateTime::currentMSecsSinceEpoch() + 5000 + QRandomGenerator::global()->bounded(1000);

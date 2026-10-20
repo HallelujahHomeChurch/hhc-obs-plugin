@@ -12,6 +12,9 @@
 #include <stdexcept>
 namespace hhc {
 namespace {
+const QJsonObject k5Root = QJsonDocument::fromJson(QByteArray(
+#include "k5-schema.inc"
+)).object();
 const QJsonObject d1Root = QJsonDocument::fromJson(QByteArray(
 #include "d1-schema.inc"
 )).object();
@@ -218,6 +221,8 @@ qint64 measuredBandwidth(const QVector<double> &durations, const QVector<qint64>
 }
 bool validWire(const QString &schema, const QJsonValue &value)
 {
+	if (k5Root["$defs"].toObject().contains(schema) && schema.startsWith("BroadcastOutputReplay"))
+		return validate(k5Root, resolve(k5Root, "#/$defs/" + schema), value);
 	const auto &root = d1Root["components"].toObject()["schemas"].toObject().contains(schema) ? d1Root
 			   : s10Root["components"].toObject()["schemas"].toObject().contains(schema) ? s10Root
 			   : schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot

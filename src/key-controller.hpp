@@ -40,6 +40,8 @@ private:
 	bool retireUnbound();
 	void tick();
 	void syncDone();
+	void retireOutput();
+	bool hasReleaseProof() const;
 	void pollControl();
 	void launchHelper();
 	void display();
@@ -70,7 +72,7 @@ private:
 	std::atomic<bool> cancelled_{false};
 	bool closing_ = false, starting_ = false, stopping_ = false, paused_ = false, syncAwaiting_ = false,
 	     controlAwaiting_ = false;
-	bool released_ = false, revoked_ = false;
+	bool released_ = false, revoked_ = false, terminalRetired_ = false;
 	bool keyAvailable_ = false, recoveryValidated_ = false;
 	unsigned failures_ = 0;
 	qint64 next_ = 0, nextControl_ = 0;

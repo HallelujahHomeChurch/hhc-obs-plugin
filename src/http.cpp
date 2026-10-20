@@ -94,6 +94,7 @@ void checkCancellation()
 } // namespace
 std::optional<qint64> RequestError::retryDelayMs(unsigned &failures) const
 {
+	if (outputReplayUnknown) return std::nullopt;
 	if (!outputOpening) {
 		auto delay = retryDelay(failures);
 		return delay ? std::optional<qint64>(qint64(*delay) * 1000) : std::nullopt;
