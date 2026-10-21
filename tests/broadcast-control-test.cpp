@@ -6,9 +6,12 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <QJsonDocument>
+#include <QLockFile>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <future>
 #include <iostream>
+#include <thread>
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
@@ -316,6 +319,31 @@ int main(int argc, char **argv)
 		recovered.poll([] { return std::optional<int>{99}; });
 		check(ackBodies.last()["boundarySequence"] == 28,
 		      "accepted optional receipt replays original marker instead of choosing later boundary");
+		stage = "concurrent-control-poll";
+		std::promise<bool> locked;
+		auto acquired = locked.get_future();
+		std::jthread concurrentPoll([&] {
+			QLockFile owner(dir.path() + "/broadcast.lock");
+			owner.setStaleLockTime(0);
+			const bool owns = owner.tryLock(0);
+			locked.set_value(owns);
+			if (owns)
+				std::this_thread::sleep_for(std::chrono::milliseconds(300));
+		});
+		const bool held = acquired.get();
+		bool continued = false;
+		if (held) {
+			try {
+				recovered.poll();
+				continued = true;
+			} catch (const hhc::RequestError &) {
+			}
+		}
+		concurrentPoll.join();
+		check(held && continued,
+		      "brief independent control poll cannot discard an adopted upload round");
+		check(ackBodies.last()["boundarySequence"] == 28 && bindPosts == 1,
+		      "waiting for control ownership preserves original marker and capture");
 		stage = "c1-adopt";
 		QTemporaryDir queueRoot;
 		const QString localId = "session";
