@@ -259,10 +259,10 @@ void CaptureSync::apply(const QJsonObject &capture)
 		const auto safeState = [](const QString &s) {
 			return QStringList{"creating", "uploading", "freezing", "validating", "ready", "failed", "expired", "aborted"}.contains(s) ? s : QString("unknown");
 		};
-		qInfo().noquote() << "[HHC sync] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
-			<< "output=" + QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16))
-			<< "previous=" + (previous.isEmpty() ? QString("none") : safeState(previous)) << "state=" + safeState(state_.state)
-			<< "verified=" + QString::number(state_.lastSequence);
+		diagnostic(QString("[HHC sync] utc=%1 output=%2 previous=%3 state=%4 verified=%5")
+			.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs))
+			.arg(QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16)))
+			.arg(previous.isEmpty() ? QString("none") : safeState(previous), safeState(state_.state)).arg(state_.lastSequence));
 	}
 	auto expires = QDateTime::fromString(capture["expiresAt"].toString(), Qt::ISODateWithMs),
 	     now = QDateTime::fromString(capture["serverNow"].toString(), Qt::ISODateWithMs);
@@ -519,12 +519,10 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 	       confirmed["1080p"].contains(state_.lastConfirmedSequence + 1)) ++state_.lastConfirmedSequence;
 	QElapsedTimer observed;
 	observed.start();
-	qInfo().noquote() << "[HHC queue] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
-		<< "monoMs=" + QString::number(observed.msecsSinceReference())
-		<< "output=" + QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16))
-		<< "commonConfirmed=" + QString::number(state_.lastConfirmedSequence)
-		<< "verified=" + QString::number(state_.lastSequence) << "pendingObjects=" + QString::number(state_.pendingObjects)
-		<< "pendingBytes=" + QString::number(state_.pendingBytes);
+	diagnostic(QString("[HHC queue] utc=%1 monoMs=%2 output=%3 commonConfirmed=%4 verified=%5 pendingObjects=%6 pendingBytes=%7")
+		.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)).arg(observed.msecsSinceReference())
+		.arg(QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16)))
+		.arg(state_.lastConfirmedSequence).arg(state_.lastSequence).arg(state_.pendingObjects).arg(state_.pendingBytes));
 	if (!objects.empty()) {
 		const auto tag = digest(QJsonDocument(objects).toJson(QJsonDocument::Compact)).left(40);
 		mutate("declare-" + tag, "POST", base + "/objects", {{"objects", objects}}, "declare");

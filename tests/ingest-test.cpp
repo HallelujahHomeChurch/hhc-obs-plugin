@@ -9,10 +9,16 @@
 #include <QJsonArray>
 #include <QFile>
 #include <iostream>
-namespace { QStringList diagnosticMessages; }
+#include "helper-diagnostics.hpp"
+namespace { QStringList diagnosticMessages; QString nativeDirectory; }
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	QTemporaryDir nativeLogs;
+	nativeDirectory = nativeLogs.path() + "/native";
+	const auto oldSink = hhc::setDiagnosticSink([](const QString &message) {
+		hhc::appendHelperDiagnostic(nativeDirectory, message);
+	});
 	const auto oldHandler = qInstallMessageHandler([](QtMsgType, const QMessageLogContext &, const QString &message) {
 		diagnosticMessages.append(message);
 	});
@@ -236,6 +242,14 @@ int main(int argc, char **argv)
 		++failed;
 	}
 	qInstallMessageHandler(oldHandler);
+	hhc::setDiagnosticSink(oldSink);
+	QFile nativeLog(nativeDirectory + "/helper.log");
+	check(nativeLog.open(QIODevice::ReadOnly), "native renewal diagnostics survive without helper/qInfo redirection");
+	const auto persisted = nativeLog.readAll();
+	check(persisted.contains("[HHC renew]") && persisted.contains("result=renewed") &&
+	      persisted.contains("result=rejected") && persisted.contains("elapsedMs="), "native renewal outcomes are persisted");
+	check(!persisted.contains("hhc_stream_") && !persisted.contains("hhc_ingest_") &&
+	      !persisted.contains("sessionToken"), "native renewal persistence excludes credentials");
 	const auto logs = diagnosticMessages.join('\n');
 	check(logs.contains("[HHC renew]") && logs.contains("ttlSec=") && logs.contains("result=renewed") &&
 	      logs.contains("result=rejected"), "renewal diagnostics distinguish success and rejection");

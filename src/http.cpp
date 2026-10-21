@@ -42,9 +42,9 @@ void logRequest(const QByteArray &method, const QUrl &url, int status, const QSt
 	static const QRegularExpression correlation("^(?:[a-fA-F0-9]{16,64}|[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12})$");
 	const auto match = correlation.match(requestId);
 	const auto safeId = match.hasMatch() && match.capturedLength() == requestId.size() ? requestId : QString("none");
-	qInfo().noquote() << QString("[HHC HTTP] utc=%1 monoMs=%2 op=%3 status=%4 code=%5 requestId=%6 attempt=%7 elapsedMs=%8 outcome=%9")
+	diagnostic(QString("[HHC HTTP] utc=%1 monoMs=%2 op=%3 status=%4 code=%5 requestId=%6 attempt=%7 elapsedMs=%8 outcome=%9")
 		.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)).arg(elapsed.msecsSinceReference())
-		.arg(operation(url, method)).arg(status).arg(code, safeId).arg(attempt).arg(elapsed.elapsed()).arg(outcome);
+		.arg(operation(url, method)).arg(status).arg(code, safeId).arg(attempt).arg(elapsed.elapsed()).arg(outcome));
 }
 QString responseCode(const QByteArray &body)
 {
@@ -86,12 +86,22 @@ QString responseCode(const QByteArray &body)
 	return known.contains(code) ? code : QString("request_rejected");
 }
 thread_local const std::atomic<bool> *cancellation = nullptr;
+std::atomic<DiagnosticSink> diagnosticSink{nullptr};
 void checkCancellation()
 {
 	if (cancellation && cancellation->load())
 		throw RequestError(0, "transport_cancelled");
 }
 } // namespace
+DiagnosticSink setDiagnosticSink(DiagnosticSink sink)
+{
+	return diagnosticSink.exchange(sink);
+}
+void diagnostic(const QString &message)
+{
+	if (const auto sink = diagnosticSink.load()) sink(message);
+	qInfo().noquote() << message;
+}
 std::optional<qint64> RequestError::retryDelayMs(unsigned &failures) const
 {
 	if (outputReplayUnknown) return std::nullopt;

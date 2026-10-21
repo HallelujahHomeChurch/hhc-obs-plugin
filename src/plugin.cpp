@@ -4,14 +4,21 @@
 #ifndef HHC_FIXTURE_BUILD
 #include "key-controller.hpp"
 #include "native-ui.hpp"
+#include "helper-diagnostics.hpp"
+#include "http.hpp"
 #include <obs-frontend-api.h>
 #include <util/bmem.h>
 #include <util/config-file.h>
 #include <QMainWindow>
 #include <QCoreApplication>
+#include <QMutex>
+#include <QMutexLocker>
 namespace {
 std::unique_ptr<hhc::KeyController> controller;
 std::unique_ptr<hhc::NativeUi> nativeUi;
+QString nativeDiagnosticDirectory;
+QMutex nativeDiagnosticMutex;
+hhc::DiagnosticSink previousDiagnosticSink = nullptr;
 void frontendEvent(obs_frontend_event event, void *)
 {
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING && !controller) {
@@ -23,6 +30,16 @@ void frontendEvent(obs_frontend_event event, void *)
 		char *path = obs_module_config_path("platform");
 		const auto root = QString::fromUtf8(path);
 		bfree(path);
+		nativeDiagnosticDirectory = root + "/k3/diagnostics/native";
+		previousDiagnosticSink = hhc::setDiagnosticSink([](const QString &message) {
+			QMutexLocker guard(&nativeDiagnosticMutex);
+			static bool warned = false;
+			if (!hhc::appendHelperDiagnostic(nativeDiagnosticDirectory, message) && !warned) {
+				warned = true;
+				blog(LOG_WARNING, "[HHC] Native diagnostic persistence unavailable");
+			}
+		});
+		hhc::diagnostic("[HHC native] diagnostics=enabled");
 		controller = std::make_unique<hhc::KeyController>(
 			root, static_cast<QMainWindow *>(obs_frontend_get_main_window()), []() -> unsigned {
 				auto *config = obs_frontend_get_profile_config();
@@ -40,11 +57,13 @@ void frontendEvent(obs_frontend_event event, void *)
 		if (!nativeUi->install()) {
 			blog(LOG_ERROR, "[HHC] OBS UI layout unsupported; HHC controls were not installed");
 			nativeUi.reset(); controller.reset();
+			hhc::setDiagnosticSink(previousDiagnosticSink);
 		} else blog(LOG_INFO, "[HHC] Native controls/status/settings integration ready");
 	}
 	if (event == OBS_FRONTEND_EVENT_EXIT) {
 		nativeUi.reset();
 		controller.reset();
+		hhc::setDiagnosticSink(previousDiagnosticSink);
 	}
 }
 } // namespace

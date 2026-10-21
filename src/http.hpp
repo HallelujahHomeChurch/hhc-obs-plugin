@@ -10,6 +10,10 @@
 #include <algorithm>
 #include <optional>
 namespace hhc {
+// Keep persistence local to HHC calls instead of intercepting other OBS plugins' Qt messages.
+using DiagnosticSink = void (*)(const QString &);
+DiagnosticSink setDiagnosticSink(DiagnosticSink);
+void diagnostic(const QString &message);
 class HttpCancellationScope {
 public:
 	explicit HttpCancellationScope(const std::atomic<bool> &);

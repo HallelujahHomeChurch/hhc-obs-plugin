@@ -10,10 +10,15 @@
 #include <QFile>
 #include <QDir>
 #include "helper-diagnostics.hpp"
-namespace { QStringList diagnosticMessages; }
+namespace { QStringList diagnosticMessages; QString nativeDirectory; }
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	QTemporaryDir nativeLogs;
+	nativeDirectory = nativeLogs.path() + "/native";
+	const auto oldSink = hhc::setDiagnosticSink([](const QString &message) {
+		hhc::appendHelperDiagnostic(nativeDirectory, message);
+	});
 	const auto oldHandler = qInstallMessageHandler([](QtMsgType, const QMessageLogContext &, const QString &message) {
 		diagnosticMessages.append(message);
 	});
@@ -131,6 +136,20 @@ int main(int argc, char **argv)
 		});
 	try { cancelled.request("GET", "/private-path"); } catch (const hhc::RequestError &) {}
 	const auto logs = diagnosticMessages.join('\n');
+	QFile nativeLog(nativeDirectory + "/helper.log");
+	check(nativeLog.open(QIODevice::ReadOnly), "native requests persist diagnostics without a helper process");
+	const auto persisted = nativeLog.readAll();
+	nativeLog.close();
+	check(persisted.contains("op=media.put") && persisted.contains("status=401") &&
+	      persisted.contains("attempt=2") && persisted.contains("elapsedMs=") &&
+	      persisted.contains("requestId=0123456789abcdef0123456789abcdef"), "native file retains safe phase, retry, timing and correlation");
+	check(!persisted.contains("private-") && !persisted.contains("synthetic-token") &&
+	      !persisted.contains("127.0.0.1"), "native file excludes request secrets and origins");
+	qInfo().noquote() << "unrelated Qt message";
+	check(nativeLog.open(QIODevice::ReadOnly) && nativeLog.readAll() == persisted &&
+	      diagnosticMessages.contains("unrelated Qt message"), "native sink leaves global Qt handling intact");
+	nativeLog.close();
+	hhc::setDiagnosticSink(oldSink);
 	check(logs.contains("op=recording.create") && logs.contains("status=401") && logs.contains("attempt=2") &&
 	      logs.contains("requestId=0123456789abcdef0123456789abcdef") && logs.contains("elapsedMs=") &&
 	      logs.contains("monoMs=") && logs.contains("utc="), "safe per-attempt request diagnostics");
