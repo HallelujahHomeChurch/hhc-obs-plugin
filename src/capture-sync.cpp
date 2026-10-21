@@ -469,7 +469,7 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 		replayed = true;
 	}
 	// Replayed confirmations can change object states after the initial snapshot.
-	if (replayed) capture = poll();
+	if (replayed && state_.state == "uploading") capture = poll();
 	if (state_.state == "ready" || state_.state == "aborted" || state_.state == "expired" ||
 	    state_.state == "failed")
 		return state_;
