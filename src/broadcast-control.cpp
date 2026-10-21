@@ -354,7 +354,8 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 {
 	QLockFile lock(lockFilePath(directory_ + "/broadcast.lock"));
 	lock.setStaleLockTime(0);
-	if (!lock.tryLock(0))
+	// Let the independent control reader finish without restarting an adopted upload round.
+	if (!lock.tryLock(2000))
 		throw RequestError(409, "local_session_busy");
 	load();
 	require(journal_["binding"].isObject());
