@@ -410,11 +410,10 @@ QByteArray KeyIngest::bearer(bool force)
 		QElapsedTimer elapsed;
 		elapsed.start();
 		auto logRenew = [&](const char *result, int status = 0) {
-			qInfo().noquote() << "[HHC renew] utc=" + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
-				<< "monoMs=" + QString::number(elapsed.msecsSinceReference()) << "elapsedMs=" + QString::number(elapsed.elapsed())
-				<< "output=" + output << "forced=" + QString::number(force)
-				<< "ttlSec=" + QString::number(QDateTime::currentDateTimeUtc().secsTo(expiry))
-				<< "result=" + QString::fromLatin1(result) << "status=" + QString::number(status);
+			diagnostic(QString("[HHC renew] utc=%1 monoMs=%2 elapsedMs=%3 output=%4 forced=%5 ttlSec=%6 result=%7 status=%8")
+				.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)).arg(elapsed.msecsSinceReference())
+				.arg(elapsed.elapsed()).arg(output).arg(force).arg(QDateTime::currentDateTimeUtc().secsTo(expiry))
+				.arg(QString::fromLatin1(result)).arg(status));
 		};
 		logRenew("begin");
 		try {
