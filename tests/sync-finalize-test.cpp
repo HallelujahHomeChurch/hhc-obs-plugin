@@ -16,6 +16,7 @@ int main(int argc, char **argv)
 	QCoreApplication app(argc, argv);
 	const bool partialPut = app.arguments().contains("--partial-put");
 	const bool lostConfirm = app.arguments().contains("--lost-confirm");
+	const bool uncommittedConfirm = app.arguments().contains("--uncommitted-confirm");
 	try {
 		QFile fixtures("tests/fixtures/c1.json");
 		if (!fixtures.open(QIODevice::ReadOnly))
@@ -112,9 +113,17 @@ int main(int argc, char **argv)
 									 {"status", "draft"},
 									 {"version", 1}}},
 						    {"meta", QJsonObject{}}};
-				else if (first.contains("/sign ")) {
+				else if (first.contains("/confirm ") && uncommittedConfirm && !faultObserved) {
+					faultObserved = true;
+					uncertainConfirm = request;
+					status = 503;
+					response = {{"data", QJsonValue::Null}, {"meta", QJsonObject{}},
+						{"error", QJsonObject{{"code", "capture_unavailable"}, {"message", "not committed"}}}};
+				} else if (first.contains("/sign ")) {
 					QJsonArray signedObjects;
-					for (const auto &p : request["paths"].toArray())
+					for (const auto &p : request["paths"].toArray()) {
+						for (const auto &o : remoteObjects)
+							if (o.toObject()["path"] == p && o.toObject()["state"] != "declared") status = 409;
 						signedObjects.append(QJsonObject{
 							{"path", p},
 							{"url", "https://upload.invalid/" + p.toString()},
@@ -123,9 +132,11 @@ int main(int argc, char **argv)
 							 QJsonObject{{"Content-Type",
 								      QJsonArray{"application/octet-stream"}},
 								     {"Host", QJsonArray{"upload.invalid"}}}}});
-					response = {{"data", signedObjects},
-						    {"meta", QJsonObject{}},
-						    {"error", QJsonValue::Null}};
+					}
+					response = status == 409
+						? QJsonObject{{"data", QJsonValue::Null}, {"meta", QJsonObject{}},
+							{"error", QJsonObject{{"code", "capture_conflict"}, {"message", "already confirmed"}}}}
+						: QJsonObject{{"data", signedObjects}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}};
 				} else if (first.startsWith("GET ")) {
 					++statusQueries;
 					capture["nextCursor"] = stalePages ? "1080p/init.mp4" : "";
@@ -224,7 +235,7 @@ int main(int argc, char **argv)
 				      };
 		hhc::CaptureSync sync(root.path(), account, id, api, put);
 		sync.begin("TEST", true, false);
-		if (partialPut || lostConfirm) {
+		if (partialPut || lostConfirm || uncommittedConfirm) {
 			try { sync.step(false); }
 			catch (const hhc::RequestError &e) { if (e.status != 503) throw; }
 			if (!faultObserved) throw std::runtime_error("fault not exercised");
@@ -268,10 +279,10 @@ int main(int argc, char **argv)
 			}
 		};
 		check(uploadSafe && uploaded.size() == 10, "PUT exact closed bytes with no CMS bearer or cookies");
-		check((partialPut || lostConfirm) ||
+		check((partialPut || lostConfirm || uncommittedConfirm) ||
 		      (batchedFirstUpload && operations.count("declare") == 4 && operations.count("confirm") == 4),
 		      "bounded three-object batches amortize API round trips without losing inventory");
-		check(!lostConfirm || sameConfirm, "lost batch confirmation retries identical body and operation key");
+		check(!(lostConfirm || uncommittedConfirm) || sameConfirm, "lost batch confirmation retries identical body and operation key");
 		check(operations.count("create") == 1, "batch restart retains original capture");
 		check(pendingAfterConfirm, "pending bytes exclude newly accepted confirmation");
 		check(sealed.pendingObjects == 0 && sealed.lastConfirmedSequence == 0,

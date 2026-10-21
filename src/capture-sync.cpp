@@ -442,6 +442,7 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 		}
 	}
 	auto pending = journal_["mutations"].toObject();
+	bool replayed = false;
 	const QString basePath = "/admin/recordings/" + state_.recordingId + "/captures/" + state_.captureId;
 	for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
 		const auto saved = it.value().toObject();
@@ -465,7 +466,10 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 		if (op == "seal" && beforeSeal)
 			beforeSeal();
 		mutate(tag, method, basePath + suffix, saved["body"].toObject(), op);
+		replayed = true;
 	}
+	// Replayed confirmations can change object states after the initial snapshot.
+	if (replayed && state_.state == "uploading") capture = poll();
 	if (state_.state == "ready" || state_.state == "aborted" || state_.state == "expired" ||
 	    state_.state == "failed")
 		return state_;
