@@ -14,6 +14,7 @@
 #include <QLockFile>
 #include <QCryptographicHash>
 #include <QUrlQuery>
+#include <QDir>
 
 using namespace hhc;
 namespace {
@@ -218,16 +219,16 @@ int main(int argc, char **argv)
 		session["expiresAt"] = "2099-01-01T00:00:00Z";
 		opened["session"] = session;
 		const auto actor = opened["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
-		QJsonObject status;
+		QJsonObject pagedStatus;
 		QFile fixed("tests/fixtures/c1.json");
 		check(fixed.open(QIODevice::ReadOnly), "pagination C1 fixture readable");
 		for (const auto &v : QJsonDocument::fromJson(fixed.readAll()).array())
-			if (v.toObject()["name"] == "poll") status = v.toObject()["value"].toObject()["data"].toObject();
-		status["recordingId"] = session["recordingId"];
-		status["captureId"] = session["captureId"];
-		status["expiresAt"] = "2099-01-01T00:00:00Z";
-		status["declaredObjects"] = count;
-		status["declaredBytes"] = count;
+			if (v.toObject()["name"] == "poll") pagedStatus = v.toObject()["value"].toObject()["data"].toObject();
+		pagedStatus["recordingId"] = session["recordingId"];
+		pagedStatus["captureId"] = session["captureId"];
+		pagedStatus["expiresAt"] = "2099-01-01T00:00:00Z";
+		pagedStatus["declaredObjects"] = count;
+		pagedStatus["declaredBytes"] = count;
 		QJsonArray objects;
 		CaptureJournal local;
 		local.account = actor;
@@ -245,10 +246,14 @@ int main(int argc, char **argv)
 			objects.append(QJsonObject{{"path", path}, {"sizeBytes", 1}, {"sha256", hash}, {"state", "queued"}});
 			local.objects.append({path, 1, hash, false});
 		}
-		int reads = 0, unexpected = 0;
-		auto wire = [&](const QByteArray &method, const QUrl &url, const QByteArray &, const auto &) {
+		int reads = 0, unexpected = 0, writes = 0, largestBatch = 0;
+		bool wrongIdentity = false, unauthorized = false, failedLastObject = false, loseConfirm = false, replayMatched = false;
+		QJsonObject uncertain;
+		auto wire = [&](const QByteArray &method, const QUrl &url, const QByteArray &bytes, const auto &) {
 			QJsonObject value;
+			const auto body = QJsonDocument::fromJson(bytes).object();
 			if (url.path() == "/api/ingest/streams/open") value = opened;
+			else if (url.path() == "/api/ingest/broadcast-source/session") value = session;
 			else if (url.path().endsWith("/control"))
 				value = {{"revision", 3}, {"phase", "live"}, {"pendingCommand", QJsonValue::Null},
 					{"controlVersion", "d1-2026-10-17.rc2"}, {"recordingId", session["recordingId"]},
@@ -256,16 +261,47 @@ int main(int argc, char **argv)
 					{"boundaries", QJsonObject{{"startSequence", 0}, {"endSequenceExclusive", QJsonValue::Null}, {"revision", 3}}}};
 			else if (method == "GET" && url.path().endsWith("/captures/" + session["captureId"].toString())) {
 				++reads;
+				if (unauthorized) return HttpResponse{401, "{\"data\":null,\"meta\":{},\"error\":{\"code\":\"permission_denied\"}}"};
 				const QUrlQuery query(url);
 				const auto cursor = query.queryItemValue("cursor");
 				const int offset = cursor.isEmpty() ? 0 : cursor.mid(1).toInt();
 				const int limit = query.queryItemValue("limit").toInt();
 				check(limit >= 1 && limit <= 1000, "pagination uses supported limits");
 				QJsonArray page;
-				for (int i = offset; i < qMin(offset + limit, count); ++i) page.append(objects[i]);
-				value = status;
+				for (int i = offset; i < qMin(offset + limit, objects.size()); ++i) {
+					auto object = objects[i].toObject();
+					if (failedLastObject && i == count - 1) object["state"] = "failed";
+					page.append(object);
+				}
+				value = pagedStatus;
+				if (wrongIdentity) value["captureId"] = QString(32, 'f');
+				value["declaredObjects"] = objects.size();
+				value["declaredBytes"] = objects.size();
 				value["objects"] = page;
-				value["nextCursor"] = offset + limit < count ? "p" + QString::number(offset + limit) : QString{};
+				value["nextCursor"] = offset + limit < objects.size() ? "p" + QString::number(offset + limit) : QString{};
+			} else if (method == "POST" && url.path().endsWith("/sign")) {
+				QJsonArray signedObjects;
+				for (const auto &path : body["paths"].toArray()) {
+					for (const auto &object : objects)
+						if (object.toObject()["path"] == path && object.toObject()["state"] != "declared")
+							return HttpResponse{409, "{\"data\":null,\"meta\":{},\"error\":{\"code\":\"capture_conflict\"}}"};
+					signedObjects.append(QJsonObject{{"path", path}, {"url", "https://upload.invalid/" + path.toString()},
+						{"method", "PUT"}, {"headers", QJsonObject{{"Content-Type", QJsonArray{"application/octet-stream"}}, {"Host", QJsonArray{"upload.invalid"}}}}});
+				}
+				return HttpResponse{200, QJsonDocument(QJsonObject{{"data", signedObjects}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
+			} else if (method == "POST" && (url.path().endsWith("/objects") || url.path().endsWith("/confirm"))) {
+				++writes;
+				const bool declare = url.path().endsWith("/objects");
+				if (declare) {
+					largestBatch = qMax(largestBatch, int(body["objects"].toArray().size()));
+					for (const auto &v : body["objects"].toArray()) { auto object = v.toObject(); object["state"] = "declared"; objects.append(object); }
+				} else {
+					if (loseConfirm) { loseConfirm = false; uncertain = body; return HttpResponse{503, "{\"data\":null,\"meta\":{},\"error\":{\"code\":\"capture_unavailable\"}}"}; }
+					replayMatched |= body == uncertain;
+					for (int i = 0; i < objects.size(); ++i) { auto object = objects[i].toObject(); if (body["paths"].toArray().contains(object["path"])) { object["state"] = "queued"; objects[i] = object; } }
+				}
+				value = {{"capture", pagedStatus}, {"receipt", QJsonObject{{"operationKey", body["operationKey"]},
+					{"operation", declare ? "declare" : "confirm"}, {"captureId", session["captureId"]}, {"acceptedAt", "2026-10-22T00:00:00Z"}}}};
 			} else ++unexpected;
 			return HttpResponse{200, QJsonDocument(QJsonObject{{"data", value}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
 		};
@@ -279,6 +315,46 @@ int main(int argc, char **argv)
 			std::cout << "pagination objects=" << count << " GETs=" << reads << '\n';
 			check(reads == 1 + (count + 999) / 1000, "active round has one authority summary and one full status traversal");
 			check(result.sync.pendingObjects == 0 && unexpected == 0, "paged active round retains all queued objects without writes");
+			wrongIdentity = true;
+			bool rejected = false;
+			try { keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire); }
+			catch (const std::exception &) { rejected = true; }
+			check(rejected && writes == 0, "summary identity mismatch prevents any mutation");
+			wrongIdentity = false;
+			unauthorized = true;
+			rejected = false;
+			try { keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire); }
+			catch (const RequestError &e) { rejected = e.status == 401 && !e.outputReleased; }
+			check(rejected && writes == 0 && !read(paged.path() + "/intents/" + id + ".json").contains("terminalProof"), "generic401 never releases or changes the original output");
+			unauthorized = false;
+			failedLastObject = true;
+			rejected = false;
+			try { keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire); }
+			catch (const RequestError &e) { rejected = e.code == "object_verification_failed"; }
+			check(rejected && writes == 0, "summary cannot hide a failed object on the final full-status page");
+			failedLastObject = false;
+			for (int i = 0; i < 10; ++i) {
+				const auto path = qualities[i % 3] + QString("/seg-%1.m4s").arg((count + 2) / 3 + i / 3, 6, 10, QChar('0'));
+				QFile file(mediaDir + "/" + path); check(file.open(QIODevice::WriteOnly) && file.write("x") == 1, "write closed pending fixture"); file.close();
+				local.objects.append({path, 1, hash, false});
+			}
+			pagedStore.save(local);
+			int puts = 0;
+			auto put = [&](const QByteArray &method, const QUrl &, const QByteArray &body, const QMap<QByteArray, QByteArray> &headers) {
+				check(method == "PUT" && body == "x" && !headers.contains("Authorization") && !headers.contains("Cookie"), "paged batch PUT keeps exact owned bytes and capability-only headers"); ++puts; return HttpResponse{204, {}};
+			};
+			auto api = ingest.api();
+			loseConfirm = true;
+			CaptureSync uploading(paged.path() + "/queue", actor, id, api, put);
+			try { uploading.step(true); } catch (const RequestError &e) { check(e.status == 503, "inject lost uncommitted paged confirm"); }
+			check(puts == 6 && largestBatch == 6, "large capture batch is capped at six closed objects");
+			CaptureSync resumed(paged.path() + "/queue", actor, id, api, put);
+			const auto drained = resumed.step(true);
+			check(replayMatched && puts == 10 && drained.pendingObjects == 0 && largestBatch == 6, "more than six pending objects drain after restart using original confirm and a refreshed snapshot");
+			pagedStatus["state"] = "aborted"; pagedStatus["liveState"] = "aborted"; pagedStatus["autoPublish"] = "cancelled";
+			const auto writesBefore = writes;
+			const auto terminal = keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire);
+			check(terminal.sync.state == "aborted" && writes == writesBefore, "authoritative terminal summary fences all later mutations");
 		} catch (const std::exception &e) {
 			std::cerr << "FAIL pagination " << e.what() << '\n';
 			++failures;

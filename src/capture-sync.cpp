@@ -169,7 +169,7 @@ BroadcastSyncResult CaptureSync::broadcastStep(const QString &recordingId, bool 
 		result.sync = step(active, [&] { control.replay(); });
 	return result;
 }
-SyncState CaptureSync::adopt(const QJsonObject &broadcast)
+SyncState CaptureSync::adopt(const QJsonObject &broadcast, bool summaryOnly)
 {
 	require(validWire("BroadcastView", broadcast), "Invalid bound broadcast");
 	const auto binding = broadcast["binding"].toObject();
@@ -193,7 +193,7 @@ SyncState CaptureSync::adopt(const QJsonObject &broadcast)
 	}
 	require(journal_["recordingId"] == broadcast["recordingId"] && journal_["captureId"] == binding["captureId"],
 		"Existing capture differs from binding");
-	poll(); // C1 GET only, never create a parallel capture.
+	poll(summaryOnly); // C1 GET only, never create a parallel capture.
 	return state_;
 }
 SyncState CaptureSync::control(bool live)
@@ -356,15 +356,15 @@ SyncState CaptureSync::beginImpl(const QString &title, bool publish, bool live)
 		       "create");
 	return state_;
 }
-QJsonObject CaptureSync::poll()
+QJsonObject CaptureSync::poll(bool summaryOnly)
 {
 	QString cursor;
 	QJsonArray objects;
 	QSet<QString> cursors, paths;
 	QJsonObject capture;
 	do {
-		QString path =
-			"/admin/recordings/" + state_.recordingId + "/captures/" + state_.captureId + "?limit=1000";
+		QString path = "/admin/recordings/" + state_.recordingId + "/captures/" + state_.captureId +
+			       (summaryOnly ? "?limit=1" : "?limit=1000");
 		if (!cursor.isEmpty())
 			path += "&cursor=" + QString::fromLatin1(QUrl::toPercentEncoding(cursor));
 		auto page = api_.request("GET", path, {}, "RecordingCaptureEnvelope")["data"].toObject();
@@ -383,10 +383,10 @@ QJsonObject CaptureSync::poll()
 			require(!cursors.contains(cursor), "Status cursor cycle");
 			cursors.insert(cursor);
 		}
-	} while (!cursor.isEmpty());
+	} while (!summaryOnly && !cursor.isEmpty());
 	capture["objects"] = objects;
 	save();
-	if (state_.state == "ready" && state_.sealAccepted) {
+	if (!summaryOnly && state_.state == "ready" && state_.sealAccepted) {
 		SessionStore(root_).confirmReady(account_, id_, state_.captureId, capture["packageId"].toString(),
 						 QDateTime::fromString(capture["serverNow"].toString(),
 								       Qt::ISODateWithMs));
@@ -488,6 +488,7 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 	for (const auto &v : capture["objects"].toArray())
 		remote[v.toObject()["path"].toString()] = v.toObject();
 	QJsonArray objects, paths;
+	const int batchLimit = capture["objects"].toArray().size() > 1000 ? 6 : 3;
 	state_.pendingBytes = 0;
 	state_.pendingObjects = 0;
 	QMap<QString, QSet<int>> confirmed;
@@ -509,9 +510,8 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 		complete = false;
 		++state_.pendingObjects;
 		state_.pendingBytes += quint64(o["size"].toInteger());
-		// Amortize declare/sign/confirm across up to three closed objects without
-		// holding control recovery behind an unbounded backlog of PUT requests.
-		if (objects.size() < 3) {
+		// Amortize a paged snapshot across two groups while keeping PUT work bounded.
+		if (objects.size() < batchLimit) {
 			objects.append(
 				QJsonObject{{"path", o["path"]}, {"sizeBytes", o["size"]}, {"sha256", o["sha256"]}});
 			paths.append(o["path"]);

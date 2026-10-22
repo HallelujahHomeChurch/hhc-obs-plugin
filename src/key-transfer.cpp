@@ -72,7 +72,8 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			return response;
 		});
 	try {
-		out.sync = sync.adopt(b);
+		// Keep fresh authority before D1; step still reads every object before mutations.
+		out.sync = sync.adopt(b, active && !preparing);
 		// Read authoritative range before uploading retained S10 media after an outage.
 		if(!out.mediaProfile.isEmpty() && !out.sync.sealAccepted &&
 		   !QStringList{"aborted","failed","expired","ready"}.contains(out.sync.state) &&
