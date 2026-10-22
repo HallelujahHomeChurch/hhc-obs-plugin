@@ -24,7 +24,7 @@ public:
 							const QMap<QByteArray, QByteArray> &)>;
 	CaptureSync(QString root, QString account, QString localId, ApiClient &, PutTransport put = httpRequest);
 	SyncState begin(const QString &title, bool autoPublish, bool liveEnabled);
-	SyncState adopt(const QJsonObject &broadcast);
+	SyncState adopt(const QJsonObject &broadcast, bool summaryOnly = false);
 	SyncState step(bool encoderActive, std::function<void()> beforeSeal = {});
 	BroadcastSyncResult broadcastStep(const QString &recordingId, bool encoderActive, bool creating);
 	SyncState control(bool closeLive);
@@ -40,7 +40,7 @@ private:
 	SyncState stepImpl(bool, std::function<void()> = {});
 	SyncState controlImpl(bool);
 	QJsonObject mutate(QString tag, QByteArray method, QString path, QJsonObject body, QString operation);
-	QJsonObject poll();
+	QJsonObject poll(bool summaryOnly = false);
 	void apply(const QJsonObject &);
 	void save();
 	QString root_, account_, id_;
