@@ -17,6 +17,45 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int pausedDiagnostics(QApplication &app)
+	{
+		QTemporaryDir root;
+		KeyController c(root.path());
+		c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		const auto original = c.id_;
+		int failed = 0;
+		auto failWorker = [&](bool control, std::exception_ptr error) {
+			auto &watcher = control ? c.control_ : c.sync_;
+			c.paused_ = false;
+			watcher.setFuture(QtConcurrent::run([error]() -> KeyJob { std::rethrow_exception(error); }));
+			try { watcher.waitForFinished(); } catch (...) {}
+			app.processEvents();
+			QFile file(c.root_ + "/diagnostics/native/" + (control ? "control" : "sync") + "-error.json");
+			if (!file.open(QIODevice::ReadOnly)) { ++failed; return QJsonObject{}; }
+			const auto bytes = file.readAll();
+			failed += bytes.contains("synthetic-secret") || bytes.contains("https://") || bytes.contains("signed");
+			const auto record = QJsonDocument::fromJson(bytes).object();
+			failed += record["localId"] != original || record["stage"] != (control ? "control" : "sync");
+			return record;
+		};
+		auto record = failWorker(false, std::make_exception_ptr(std::runtime_error("Remote journal commit failed")));
+		failed += !c.paused_ || record["code"] != "local_remote_journal_write_failed" ||
+			  record["paused"] != true || record["retryable"] != false;
+		c.tick(); c.startStop();
+		failed += c.id_ != original || c.released_ || c.syncAwaiting_;
+		record = failWorker(true, std::make_exception_ptr(std::runtime_error("https://synthetic-secret/signed")));
+		failed += !c.paused_ || record["code"] != "local_validation_failed" || record["stage"] != "control";
+		record = failWorker(false, std::make_exception_ptr(RequestError(503, "capture_unavailable", 2)));
+		failed += c.paused_ || record["status"] != 503 || record["retryable"] != true;
+		record = failWorker(false, std::make_exception_ptr(RequestError(401, "unauthorized")));
+		failed += !c.paused_ || c.released_ || c.id_ != original || record["status"] != 401;
+		record = failWorker(true, std::make_exception_ptr(123));
+		failed += !c.paused_ || record["category"] != "unknown_exception";
+		c.closing_ = true; // Mock workers only; never launch a background recovery process.
+		if (failed) std::cerr << "FAIL durable, privacy-safe worker diagnostics preserve pause and identity\n";
+		return failed;
+	}
 	static int outputOptions()
 	{
 		QTemporaryDir root;
@@ -388,6 +427,7 @@ int main(int argc, char **argv)
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
+	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
 	failed += gpu < -1 || gpu > 100;
