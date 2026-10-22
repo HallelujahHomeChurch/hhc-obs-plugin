@@ -13,6 +13,7 @@
 #include <memory>
 #include <QLockFile>
 #include <QCryptographicHash>
+#include <QUrlQuery>
 
 using namespace hhc;
 namespace {
@@ -205,6 +206,82 @@ int main(int argc, char **argv)
 		for (int base : {1000, 2000, 4000, 8000, 16000, 30000, 30000}) {
 			auto delay = e.retryDelayMs(count);
 			check(delay && *delay >= base * 4 / 5 && *delay <= base * 6 / 5, "bounded exponential jitter");
+		}
+	}
+	// Large active captures keep fresh authority without walking every status page twice.
+	for (int count : {2001, 4500}) {
+		QTemporaryDir paged;
+		secrets.remove("session-" + id);
+		auto opened = fixtures[0].toObject()["value"].toObject()["data"].toObject();
+		opened["mediaProfile"] = "obs-hls-10s-v1";
+		auto session = opened["session"].toObject();
+		session["expiresAt"] = "2099-01-01T00:00:00Z";
+		opened["session"] = session;
+		const auto actor = opened["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
+		QJsonObject status;
+		QFile fixed("tests/fixtures/c1.json");
+		check(fixed.open(QIODevice::ReadOnly), "pagination C1 fixture readable");
+		for (const auto &v : QJsonDocument::fromJson(fixed.readAll()).array())
+			if (v.toObject()["name"] == "poll") status = v.toObject()["value"].toObject()["data"].toObject();
+		status["recordingId"] = session["recordingId"];
+		status["captureId"] = session["captureId"];
+		status["expiresAt"] = "2099-01-01T00:00:00Z";
+		status["declaredObjects"] = count;
+		status["declaredBytes"] = count;
+		QJsonArray objects;
+		CaptureJournal local;
+		local.account = actor;
+		local.localId = id;
+		SessionStore pagedStore(paged.path() + "/queue");
+		const auto mediaDir = pagedStore.mediaDirectory(actor, id);
+		const QStringList qualities{"1080p", "720p", "480p"};
+		for (const auto &quality : qualities) QDir().mkpath(mediaDir + "/" + quality);
+		const auto hash = QString::fromLatin1(QCryptographicHash::hash("x", QCryptographicHash::Sha256).toHex());
+		for (int i = 0; i < count; ++i) {
+			const auto path = qualities[i % 3] + QString("/seg-%1.m4s").arg(i / 3, 6, 10, QChar('0'));
+			QFile mediaFile(mediaDir + "/" + path);
+			check(mediaFile.open(QIODevice::WriteOnly) && mediaFile.write("x") == 1, "create owned pagination fixture bytes");
+			mediaFile.close();
+			objects.append(QJsonObject{{"path", path}, {"sizeBytes", 1}, {"sha256", hash}, {"state", "queued"}});
+			local.objects.append({path, 1, hash, false});
+		}
+		int reads = 0, unexpected = 0;
+		auto wire = [&](const QByteArray &method, const QUrl &url, const QByteArray &, const auto &) {
+			QJsonObject value;
+			if (url.path() == "/api/ingest/streams/open") value = opened;
+			else if (url.path().endsWith("/control"))
+				value = {{"revision", 3}, {"phase", "live"}, {"pendingCommand", QJsonValue::Null},
+					{"controlVersion", "d1-2026-10-17.rc2"}, {"recordingId", session["recordingId"]},
+					{"captureId", session["captureId"]}, {"epoch", session["epoch"]},
+					{"boundaries", QJsonObject{{"startSequence", 0}, {"endSequenceExclusive", QJsonValue::Null}, {"revision", 3}}}};
+			else if (method == "GET" && url.path().endsWith("/captures/" + session["captureId"].toString())) {
+				++reads;
+				const QUrlQuery query(url);
+				const auto cursor = query.queryItemValue("cursor");
+				const int offset = cursor.isEmpty() ? 0 : cursor.mid(1).toInt();
+				const int limit = query.queryItemValue("limit").toInt();
+				check(limit >= 1 && limit <= 1000, "pagination uses supported limits");
+				QJsonArray page;
+				for (int i = offset; i < qMin(offset + limit, count); ++i) page.append(objects[i]);
+				value = status;
+				value["objects"] = page;
+				value["nextCursor"] = offset + limit < count ? "p" + QString::number(offset + limit) : QString{};
+			} else ++unexpected;
+			return HttpResponse{200, QJsonDocument(QJsonObject{{"data", value}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
+		};
+		bool validated = false;
+		try {
+			KeyIngest ingest(paged.path() + "/intents", id, vault, wire);
+			ingest.prepareOpen("obs-hls-10s-v1");
+			ingest.bind();
+			pagedStore.save(local);
+			const auto result = keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire);
+			std::cout << "pagination objects=" << count << " GETs=" << reads << '\n';
+			check(reads == 1 + (count + 999) / 1000, "active round has one authority summary and one full status traversal");
+			check(result.sync.pendingObjects == 0 && unexpected == 0, "paged active round retains all queued objects without writes");
+		} catch (const std::exception &e) {
+			std::cerr << "FAIL pagination " << e.what() << '\n';
+			++failures;
 		}
 	}
 	// Actual transfer/adoption code: lost response, stopping, restart, original abort. No encoder or network.
