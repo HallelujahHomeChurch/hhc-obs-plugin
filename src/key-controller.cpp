@@ -645,7 +645,7 @@ void KeyController::syncDone()
 			paused_ = !delay;
 			next_ = QDateTime::currentMSecsSinceEpoch() + delay.value_or(0);
 		}
-		recordFailure("sync", &e, !paused_);
+		recordFailure("sync", &e, !paused_ && !released_ && !revoked_);
 	} catch (const std::exception &e) {
 		paused_ = true;
 		issue_ = QString::fromUtf8("恢復資料檢查未完成；原 intent 與素材保留。");
