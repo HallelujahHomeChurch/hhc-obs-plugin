@@ -46,12 +46,30 @@ struct KeyControllerTest {
 		failed += c.id_ != original || c.released_ || c.syncAwaiting_;
 		record = failWorker(true, std::make_exception_ptr(std::runtime_error("https://synthetic-secret/signed")));
 		failed += !c.paused_ || record["code"] != "local_validation_failed" || record["stage"] != "control";
-		record = failWorker(false, std::make_exception_ptr(RequestError(503, "capture_unavailable", 2)));
-		failed += c.paused_ || record["status"] != 503 || record["retryable"] != true;
+		record = failWorker(false, std::make_exception_ptr(RequestError(503, "capture_unavailable", 2,
+			"0123456789abcdef0123456789abcdef")));
+		failed += c.paused_ || record["status"] != 503 || record["retryable"] != true ||
+			  record["requestId"] != "0123456789abcdef0123456789abcdef";
 		record = failWorker(false, std::make_exception_ptr(RequestError(401, "unauthorized")));
 		failed += !c.paused_ || c.released_ || c.id_ != original || record["status"] != 401;
+		RequestError unknownAuthority(503, "capture_unavailable");
+		unknownAuthority.outputReplayUnknown = true;
+		for (bool control : {false, true}) {
+			record = failWorker(control, std::make_exception_ptr(unknownAuthority));
+			failed += !c.paused_ || c.released_ || c.id_ != original ||
+				  record["pauseReason"] != "output_authority_unknown" || record["retryable"] != false;
+		}
+		record = failWorker(false, std::make_exception_ptr(RequestError(403, "https://synthetic-secret/signed", 0,
+			"https://synthetic-secret/request")));
+		failed += record["code"] != "request_failed" || record["requestId"] != "none" || !c.paused_;
 		record = failWorker(true, std::make_exception_ptr(123));
 		failed += !c.paused_ || record["category"] != "unknown_exception";
+		const auto diagnosticPath = c.root_ + "/diagnostics/native/sync-error.json";
+		QFile::remove(diagnosticPath); QDir().mkpath(diagnosticPath);
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob { throw std::runtime_error("Queue document unavailable"); }));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		app.processEvents();
+		failed += !c.paused_ || c.id_ != original || c.released_;
 		c.closing_ = true; // Mock workers only; never launch a background recovery process.
 		if (failed) std::cerr << "FAIL durable, privacy-safe worker diagnostics preserve pause and identity\n";
 		return failed;
