@@ -39,14 +39,12 @@ QString operation(const QUrl &url, const QByteArray &method)
 void logRequest(const QByteArray &method, const QUrl &url, int status, const QString &code,
 		const QString &requestId, int attempt, const QElapsedTimer &elapsed, const char *outcome)
 {
-	static const QRegularExpression correlation("^(?:[a-fA-F0-9]{16,64}|[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12})$");
-	const auto match = correlation.match(requestId);
-	const auto safeId = match.hasMatch() && match.capturedLength() == requestId.size() ? requestId : QString("none");
+	const auto safeId = safeDiagnosticRequestId(requestId);
 	diagnostic(QString("[HHC HTTP] utc=%1 monoMs=%2 op=%3 status=%4 code=%5 requestId=%6 attempt=%7 elapsedMs=%8 outcome=%9")
 		.arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)).arg(elapsed.msecsSinceReference())
 		.arg(operation(url, method)).arg(status).arg(code, safeId).arg(attempt).arg(elapsed.elapsed()).arg(outcome));
 }
-QString responseCode(const QByteArray &body)
+bool knownResponseCode(const QString &code)
 {
 	static const QSet<QString> known{"broadcast_source_not_prepared",
 			 "broadcast_source_busy",
@@ -82,8 +80,12 @@ QString responseCode(const QByteArray &body)
 			 "broadcast_protocol_unsupported",
 			 "rate_limited",
 			 "unavailable"};
+	return known.contains(code);
+}
+QString responseCode(const QByteArray &body)
+{
 	const auto code = QJsonDocument::fromJson(body).object()["error"].toObject()["code"].toString();
-	return known.contains(code) ? code : QString("request_rejected");
+	return knownResponseCode(code) ? code : QString("request_rejected");
 }
 thread_local const std::atomic<bool> *cancellation = nullptr;
 std::atomic<DiagnosticSink> diagnosticSink{nullptr};
@@ -93,6 +95,23 @@ void checkCancellation()
 		throw RequestError(0, "transport_cancelled");
 }
 } // namespace
+QString safeDiagnosticRequestId(const QString &id)
+{
+	static const QRegularExpression pattern("^(?:[a-fA-F0-9]{16,64}|[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12})$");
+	const auto match = pattern.match(id);
+	return match.hasMatch() && match.capturedLength() == id.size() ? id : QString("none");
+}
+QString safeDiagnosticCode(const QString &code)
+{
+	static const QSet<QString> local{"transport_unavailable", "transport_cancelled", "local_session_busy",
+		"local_credentials_busy", "ingest_local_conflict", "malformed_success", "request_rejected",
+		"output_replay_terminal", "ingest_original_credential_missing", "account_mismatch",
+		"broadcast_local_conflict", "ingest_no_bind_intent", "ingest_release_unproven", "ingest_route_forbidden",
+		"invalid_api_path", "invalid_transport_origin", "local_auth_busy", "local_media_validation_failed",
+		"oauth_temporarily_unavailable", "oauth_unavailable", "object_verification_failed", "response_limit",
+		"sign_in_required", "upload_rejected"};
+	return knownResponseCode(code) || local.contains(code) ? code : QString("request_failed");
+}
 DiagnosticSink setDiagnosticSink(DiagnosticSink sink)
 {
 	return diagnosticSink.exchange(sink);
@@ -251,7 +270,7 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 		} catch (const RequestError &e) {
 			const auto code = QStringList{"transport_unavailable", "transport_cancelled", "local_session_busy",
 				"local_credentials_busy", "ingest_local_conflict", "malformed_success"}.contains(e.code) ? e.code : QString("request_failed");
-			logRequest(method, url, e.status, code, {}, attempt + 1, elapsed,
+			logRequest(method, url, e.status, code, e.requestId, attempt + 1, elapsed,
 				e.code == "transport_cancelled" ? "cancelled" : "exception");
 			throw;
 		} catch (...) {
@@ -261,14 +280,14 @@ QJsonObject ApiClient::request(const QByteArray &method, const QString &path, co
 	}
 	if (result.status < 200 || result.status >= 300) {
 		const auto code = responseCode(result.body);
-		throw RequestError(result.status, code, result.retryAfter);
+		throw RequestError(result.status, code, result.retryAfter, safeDiagnosticRequestId(result.requestId));
 	}
 	QJsonParseError error;
 	auto document = QJsonDocument::fromJson(result.body, &error);
 	if (error.error != QJsonParseError::NoError || !document.isObject() ||
 	    (!schema.isEmpty() && !validWire(schema, document.object())) || !document.object().contains("data") ||
 	    (document.object().contains("error") && !document.object().value("error").isNull()))
-		throw RequestError(result.status, "malformed_success");
+		throw RequestError(result.status, "malformed_success", 0, safeDiagnosticRequestId(result.requestId));
 	return document.object();
 }
 } // namespace hhc

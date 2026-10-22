@@ -113,6 +113,16 @@ int main(int argc, char **argv)
 		check(calls == (mode == 2 ? 2 : 1) && refreshes == (mode == 2 ? 1 : 0), "no permission refresh loop");
 	}
 	mode = 5;
+	hhc::ApiClient correlated(QUrl("https://private-origin.invalid/api"), [](bool) { return QByteArray{}; },
+		[](const auto &, const auto &, const auto &, const auto &) {
+			return hhc::HttpResponse{503, "{\"error\":{\"code\":\"capture_unavailable\"}}", 2,
+				"0123456789abcdef0123456789abcdef"};
+		});
+	try { correlated.request("GET", "/test"); check(false, "503 must throw"); }
+	catch (const hhc::RequestError &e) {
+		check(e.status == 503 && e.retryAfter == 2 && e.requestId == "0123456789abcdef0123456789abcdef",
+			"typed request exception retains safe correlation without altering retry metadata");
+	}
 	bool optionalErrorAccepted = false;
 	try {
 		optionalErrorAccepted =
@@ -129,7 +139,9 @@ int main(int argc, char **argv)
 			return hhc::HttpResponse{403, "{\"error\":{\"code\":\"private-error-body\"}}", 0, "0123456789abcdef\n"};
 		});
 	try { privateRequest.request("POST", "/ingest/streams/open?private-query=yes", {{"streamKey", "private-stream-key"}}, {}, "private-operation-key"); }
-	catch (const hhc::RequestError &) {}
+	catch (const hhc::RequestError &e) {
+		check(e.requestId == "none", "unsafe upstream correlation is not retained in the typed exception");
+	}
 	hhc::ApiClient cancelled(QUrl("https://private-origin.invalid/api"), [](bool) { return QByteArray{}; },
 		[](const auto &, const auto &, const auto &, const auto &) -> hhc::HttpResponse {
 			throw hhc::RequestError(0, "transport_cancelled");

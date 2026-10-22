@@ -40,6 +40,7 @@ private:
 	bool retireUnbound();
 	void tick();
 	void syncDone();
+	void recordFailure(const char *stage, const std::exception *error = nullptr, bool retryable = false) noexcept;
 	void retireOutput();
 	bool hasReleaseProof() const;
 	void pollControl();

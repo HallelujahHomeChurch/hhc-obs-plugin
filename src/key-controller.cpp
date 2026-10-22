@@ -139,6 +139,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 2000;
 		} catch (const RequestError &e) {
 			if (e.outputReleased && e.code == "output_replay_terminal") {
+				recordFailure("control", &e);
 				retireOutput();
 				display();
 				return;
@@ -147,6 +148,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 				paused_ = true;
 				issue_ = e.code;
 				nextControl_ = std::numeric_limits<qint64>::max();
+				recordFailure("control", &e);
 				display();
 				return;
 			}
@@ -158,9 +160,15 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			}
 			issue_ = e.code;
 			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 5000;
+			recordFailure("control", &e, !paused_ && !revoked_);
+		} catch (const std::exception &e) {
+			issue_ = "control_recovery_required";
+			paused_ = true;
+			recordFailure("control", &e);
 		} catch (...) {
 			issue_ = "control_recovery_required";
 			paused_ = true;
+			recordFailure("control");
 		}
 		display();
 	});
@@ -632,18 +640,59 @@ void KeyController::syncDone()
 			// treating local ownership contention as a failed network connection.
 			next_ = QDateTime::currentMSecsSinceEpoch() + 250;
 		} else {
-			if (!failures_) blog(LOG_WARNING, "[HHC] Transfer retry: status=%d code=%s", e.status, qPrintable(e.code));
+			if (!failures_) blog(LOG_WARNING, "[HHC] Transfer retry: status=%d code=%s", e.status, qPrintable(safeDiagnosticCode(e.code)));
 			auto delay = e.retryDelayMs(failures_);
 			paused_ = !delay;
 			next_ = QDateTime::currentMSecsSinceEpoch() + delay.value_or(0);
 		}
+		recordFailure("sync", &e, !paused_ && !released_ && !revoked_);
+	} catch (const std::exception &e) {
+		paused_ = true;
+		issue_ = QString::fromUtf8("恢復資料檢查未完成；原 intent 與素材保留。");
+		recordFailure("sync", &e);
 	} catch (...) {
 		paused_ = true;
 		issue_ = QString::fromUtf8("恢復資料檢查未完成；原 intent 與素材保留。");
+		recordFailure("sync");
 	}
 	if (stopping_ || (paused_ && issue_ == "broadcast_stream_key_invalid"))
 		retireUnbound();
 	display();
+}
+void KeyController::recordFailure(const char *stage, const std::exception *error, bool retryable) noexcept
+{
+	try {
+		const auto *request = dynamic_cast<const RequestError *>(error);
+		// Only exact internal literals may select a code; never persist arbitrary what() text.
+		const auto reason = error && !request ? QByteArray(error->what()) : QByteArray{};
+		const QString code = request ? safeDiagnosticCode(request->code)
+			: reason == "Remote journal commit failed" ? "local_remote_journal_write_failed"
+			: reason == "Queue document unavailable" ? "local_queue_unavailable"
+			: reason == "Queue document corrupt; data retained" ? "local_queue_corrupt"
+			: reason == "Remote journal limit" ? "local_remote_journal_limit"
+			: reason == "Closed upload bytes changed" ? "local_media_changed"
+			: reason == "Remote immutable object differs" ? "local_remote_media_conflict"
+			: reason == "journal commit failed" ? "local_journal_write_failed"
+			: "local_validation_failed";
+		const auto correlation = safeDiagnosticRequestId(request ? request->requestId : QString{});
+		const auto localId = QUuid(id_).isNull() ? QString("unavailable") : id_;
+		const auto observedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+		const QString category = request ? "request" : error ? "std_exception" : "unknown_exception";
+		QDir().mkpath(root_ + "/diagnostics/native");
+		tryObserverJson(root_ + "/diagnostics/native/" + stage + "-error.json",
+			{{"stage", stage}, {"localId", localId}, {"observedAt", observedAt}, {"code", code},
+			 {"category", category}, {"status", request ? QJsonValue(request->status) : QJsonValue(QJsonValue::Null)},
+			 {"requestId", correlation}, {"paused", paused_}, {"retryable", retryable},
+			 {"pauseReason", paused_ ? QJsonValue(request && request->outputReplayUnknown ? "output_authority_unknown" : code) : QJsonValue(QJsonValue::Null)},
+			 {"outputReplayUnknown", request && request->outputReplayUnknown},
+			 {"outputReleasedProof", request && request->outputReleased},
+			 {"stopping", stopping_}, {"released", released_}});
+		diagnostic(QString("[HHC controller] utc=%1 stage=%2 category=%3 code=%4 status=%5 requestId=%6 paused=%7 retryable=%8 localId=%9")
+			.arg(observedAt, stage, category, code).arg(request ? request->status : 0)
+			.arg(correlation).arg(paused_).arg(retryable).arg(localId));
+	} catch (...) {
+		// Optional diagnostics must not alter the original pause or authority fence.
+	}
 }
 void KeyController::launchHelper()
 {

@@ -14,6 +14,8 @@ namespace hhc {
 using DiagnosticSink = void (*)(const QString &);
 DiagnosticSink setDiagnosticSink(DiagnosticSink);
 void diagnostic(const QString &message);
+QString safeDiagnosticCode(const QString &);
+QString safeDiagnosticRequestId(const QString &);
 class HttpCancellationScope {
 public:
 	explicit HttpCancellationScope(const std::atomic<bool> &);
@@ -31,16 +33,18 @@ struct HttpResponse {
 };
 class RequestError : public std::runtime_error {
 public:
-	RequestError(int s, QString c, int retry = 0)
+	RequestError(int s, QString c, int retry = 0, QString correlation = {})
 		: std::runtime_error((QString("HTTP %1: ").arg(s) + c).toStdString()),
 		  status(s),
 		  code(std::move(c)),
-		  retryAfter(retry)
+		  retryAfter(retry),
+		  requestId(std::move(correlation))
 	{
 	}
 	int status;
 	QString code;
 	int retryAfter;
+	QString requestId;
 	bool outputOpening = false;
 	// Set only after validating and durably saving authenticated K5 terminal proof.
 	bool outputReleased = false;
