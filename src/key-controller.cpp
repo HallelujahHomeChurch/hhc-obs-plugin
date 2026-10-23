@@ -426,7 +426,6 @@ void KeyController::startStop()
 		state["stopping"] = true;
 		atomicJson(root_ + "/active.json", state);
 		retireUnbound();
-		recordWithStream(false);
 		display();
 		return;
 	}
@@ -496,11 +495,11 @@ void KeyController::tick()
 {
 	if (networkBlocked_) {
 		// No protected request is needed to honor an already persisted release proof after local stop.
-		if (capture_ && capture_->finished() && !released_) {
+		if ((!capture_ || capture_->finished()) && !released_) {
 			try {
 				if (hasReleaseProof()) {
-					released_ = true; stopping_ = starting_ = false;
 					atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
+					released_ = true; stopping_ = starting_ = paused_ = false;
 				}
 			} catch (...) { paused_ = true; }
 		}

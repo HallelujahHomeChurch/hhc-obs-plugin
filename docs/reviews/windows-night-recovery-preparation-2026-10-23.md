@@ -55,4 +55,14 @@ The90second harness is `http-outage-test`, linked to native `hhc-http-faults` an
 
 Formal installation remains blocked pending producer-first deployment/readback, current CI/package selection, after22:00 safe output/helper idle checks, and real native/private-chain acceptance. Earliest UAC is after22:00 plus these gates; if all are immediately available, a30minute private chain alone makes approximately22:45 the earliest plausible window, not a promise. Backup/rollback uses the verified installed266313c normal package73043580112f05c8b449aa44c0489eb1b12a9a4b49fb9f833a66472f515400cf and preserves OBS32.2.2/settings/credentials/journal/outbox/media.
 
+## Resume: two stop-state regressions22:32
+
+The user authorized fixing the two offline findings after resuming. Before implementation, the new native-stop-state-regression test failed for both a blocked restart with valid terminal proof and opening cancellation invoking the recorder-stop callback. RED evidence is saved in artifacts/night-preparation/stop-state-red-20261023.log. No real OBS or recording was operated.
+
+The minimal production changes allow an absent/stopped local capture to reconcile an existing matching release proof without network access, commit the released pointer before enabling Start, and avoid touching the native recorder when an opening is cancelled before capture starts. Normal HHC Stop keeps the existing recording-option behavior. The network deny marker and original identity remain intact; no new capture is opened automatically.
+
+GREEN covers valid, missing and wrong-identity proofs, release-pointer persistence failure, all four opening-cancellation recording-option combinations, and the existing controller/recovery suite:3/3 passed1.37seconds. Full local/hosted CI is still required for the new head; the previous8c33/33 is not evidence for these fixes. Native OBS encoder and deployed-producer/private-chain coverage remain separate.
+
+At22:32 read-only process/journal sampling found no obs64 process but formal helper67568 still active, original recording49753605-91a8-4c6b-8838-0a8b34400774/captureb5e64f2c2bf4ab8a80e744337ae578de stillvalidating with verified873. Stop/seal receipts are21:55:28.274146084 and21:57:12.379234 UTC+8. Meeting completion is not proof that background processing has ended. No force stop, deletion, installation or UAC. The latest coordination instruction holds installation while the user/Mac session may be unavailable; do not assume the remote agent survives shutdown.
+
 After22:00, recheck OBS streaming/recording and helper completion before any installation. Preserve settings, key, journal/outbox/media, and backup the installed DLL/helper/TLS set. Prefer one verified normal candidate and one user-operated UAC; never install a fault build or force-stop active output/helper. Retain the verified266313c CI package for rollback; this diagnostic-only change adds no journal migration.

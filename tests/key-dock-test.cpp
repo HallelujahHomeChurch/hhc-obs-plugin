@@ -15,9 +15,69 @@
 #include "ingest.hpp"
 #include "windows-path.hpp"
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int stoppedRestartProof()
+	{
+		QFile f("tests/fixtures/k4-identity.json");
+		if (!f.open(QIODevice::ReadOnly)) return 1;
+		const auto opened = QJsonDocument::fromJson(f.readAll()).object()["fixtures"].toArray()[0].toObject()["value"].toObject()["data"].toObject();
+		const auto id = opened["outputSessionId"].toString();
+		auto pin = opened["session"].toObject(); pin.remove("token"); pin.remove("expiresAt");
+		int failed = 0;
+		for (const QString mode : {"valid", "missing", "wrong-identity", "pointer-write-failure"}) {
+			QTemporaryDir root;
+			const auto base = root.path()+"/k3";
+			QDir().mkpath(base+"/intents");
+			QJsonObject proof{{"protocolVersion","k5-2026-10-20.rc1"},{"outputSessionId",id},{"sourceId",opened["sourceId"]},
+				{"recordingId",pin["recordingId"]},{"captureId",pin["captureId"]},{"epoch",pin["epoch"]},{"receipt",opened["receipt"]},{"state","terminal"}};
+			if (mode == "wrong-identity") proof["captureId"] = QString(32,'b');
+			QJsonObject metadata{{"version","k4-2026-10-15.rc1"},{"localId",id},
+				{"intent",QJsonObject{{"protocolVersion","k4-2026-10-15.rc1"},{"outputSessionId",id},{"recoveryVersion","common-watermark-v1"}}},
+				{"sourceId",opened["sourceId"]},{"broadcast",opened["broadcast"]},{"receipt",opened["receipt"]},
+				{"credentialRef","output-key-"+id},{"sessionBinding",pin}};
+			if (mode != "missing") metadata["terminalProof"] = proof;
+			const auto journalPath = base+"/intents/"+id+".json", denyPath = base+"/intents/"+id+".network-blocked";
+			if (!writeAtomicMetadata(journalPath,QJsonDocument(metadata).toJson()) ||
+			    !writeAtomicMetadata(denyPath,"{\"blocked\":true}") ||
+			    !writeAtomicMetadata(base+"/active.json",QJsonDocument(QJsonObject{{"localId",id},{"started",true},{"stopping",true},{"released",false}}).toJson())) return failed+1;
+			KeyController c(root.path()); c.timer_.stop();
+			int recorderCalls = 0; c.recording = [&](bool){ ++recorderCalls; };
+			if (mode == "pointer-write-failure") { QFile::remove(base+"/active.json"); QDir().mkpath(base+"/active.json"); }
+			c.tick(); c.display();
+			const bool expected = mode == "valid";
+			const bool ok = c.released_ == expected && c.action_->isEnabled() == expected && !c.capture_ &&
+				c.id_ == id && !recorderCalls && QFileInfo::exists(journalPath) && QFileInfo::exists(denyPath);
+			if (!ok) { ++failed; std::cerr << "FAIL blocked restart proof " << qPrintable(mode) << '\n'; }
+			if (expected) {
+				QFile active(base+"/active.json");
+				failed += !active.open(QIODevice::ReadOnly) || !QJsonDocument::fromJson(active.readAll()).object()["released"].toBool();
+			}
+			c.closing_ = true;
+		}
+		return failed;
+	}
+	static int openingCancelRecorder()
+	{
+		int failed = 0;
+		for (bool autoRecord : {false,true}) for (bool keepRecording : {false,true}) {
+			QTemporaryDir root;
+			KeyController c(root.path()); c.timer_.stop();
+			c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+			c.starting_ = c.syncAwaiting_ = true;
+			c.savedOptions_[2] = autoRecord; c.savedOptions_[3] = keepRecording;
+			int starts = 0, stops = 0;
+			c.recording = [&](bool start){ start ? ++starts : ++stops; };
+			c.startStop();
+			if (starts || stops || c.capture_ || c.starting_ || !c.stopping_) {
+				++failed; std::cerr << "FAIL opening cancellation must not touch native recorder\n";
+			}
+			c.closing_ = true;
+		}
+		return failed;
+	}
 	static int recoverySafety(QApplication &app)
 	{
 		QTemporaryDir root;
@@ -553,6 +613,7 @@ int main(int argc, char **argv)
 	QApplication app(argc, argv);
 	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
 	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
+	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder();
 	if (app.arguments().contains("--controller-regression")) {
 		QTemporaryDir root;
 		hhc::KeyController c(root.path());
@@ -572,6 +633,8 @@ int main(int argc, char **argv)
 	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
 	failed += hhc::KeyControllerTest::stopDiagnostics();
 	failed += hhc::KeyControllerTest::recoverySafety(app);
+	failed += hhc::KeyControllerTest::stoppedRestartProof();
+	failed += hhc::KeyControllerTest::openingCancelRecorder();
 	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
