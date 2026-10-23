@@ -4,6 +4,9 @@
 #include <optional>
 namespace hhc {
 inline constexpr auto b1Version = "b1-2026-10-10.rc1";
+QJsonObject acceptD2Observation(const QJsonObject &previous, const QJsonObject &incoming,
+			      const QJsonObject &identity, quint64 requestGeneration, quint64 currentGeneration);
+bool d2FallbackAllowed(const RequestError &error);
 class BroadcastControl {
 public:
 	BroadcastControl(QString directory, QString account, QString localId, ApiClient &api, bool ingest = false);

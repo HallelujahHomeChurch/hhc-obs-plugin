@@ -20,6 +20,43 @@ void fields(const QJsonObject &o, const QSet<QString> &allowed)
 		require(allowed.contains(it.key()));
 }
 } // namespace
+bool d2FallbackAllowed(const RequestError &error)
+{
+	return !error.outputReplayUnknown && !error.outputReleased && error.status == 422 &&
+		error.code == "broadcast_protocol_unsupported";
+}
+QJsonObject acceptD2Observation(const QJsonObject &previous, const QJsonObject &incoming,
+			      const QJsonObject &identity, quint64 requestGeneration, quint64 currentGeneration)
+{
+	if (requestGeneration != currentGeneration) return {};
+	auto check = [&](const QJsonObject &c) {
+		require(validWire("BroadcastControlD2", c));
+		for (const auto *key : {"recordingId", "captureId", "epoch"}) require(c[key] == identity[key]);
+		const auto bounds = c["boundaries"].toObject(), end = c["publicEnd"].toObject();
+		require(bounds["startSequence"].isNull() || bounds["endSequenceExclusive"].isNull() ||
+			bounds["startSequence"].toInteger() <= bounds["endSequenceExclusive"].toInteger());
+		if (!end.isEmpty() && !end["endSequenceExclusive"].isNull())
+			require(end["endSequenceExclusive"] == bounds["endSequenceExclusive"]);
+	};
+	check(incoming);
+	if (previous.isEmpty()) return incoming;
+	check(previous);
+	const auto bounds = incoming["boundaries"].toObject(), oldBounds = previous["boundaries"].toObject();
+	if (incoming["revision"].toInteger() < previous["revision"].toInteger() ||
+	    bounds["revision"].toInteger() < oldBounds["revision"].toInteger()) return {};
+	for (const auto *key : {"startSequence", "endSequenceExclusive"})
+		require(oldBounds[key].isNull() || bounds[key] == oldBounds[key]);
+	if (bounds["revision"] == oldBounds["revision"]) require(bounds == oldBounds);
+	auto base = [](QJsonObject c) { c.remove("recovery"); c.remove("publicEnd"); return c; };
+	if (incoming["revision"] == previous["revision"]) require(base(incoming) == base(previous));
+	auto accepted = incoming;
+	if (previous["publicEnd"].isObject()) {
+		if (incoming["publicEnd"].isObject())
+			require(incoming["publicEnd"].toObject()["endSequenceExclusive"] == previous["publicEnd"].toObject()["endSequenceExclusive"]);
+		accepted["publicEnd"] = previous["publicEnd"];
+	}
+	return accepted;
+}
 BroadcastControl::BroadcastControl(QString d, QString a, QString id, ApiClient &api, bool ingest)
 	: directory_(std::move(d)),
 	  account_(std::move(a)),

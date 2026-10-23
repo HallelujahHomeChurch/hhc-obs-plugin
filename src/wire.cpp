@@ -12,6 +12,9 @@
 #include <stdexcept>
 namespace hhc {
 namespace {
+const QJsonObject d2Root = QJsonDocument::fromJson(QByteArray(
+#include "d2-schema.inc"
+)).object();
 const QJsonObject k5Root = QJsonDocument::fromJson(QByteArray(
 #include "k5-schema.inc"
 )).object();
@@ -223,7 +226,8 @@ bool validWire(const QString &schema, const QJsonValue &value)
 {
 	if (k5Root["$defs"].toObject().contains(schema) && schema.startsWith("BroadcastOutputReplay"))
 		return validate(k5Root, resolve(k5Root, "#/$defs/" + schema), value);
-	const auto &root = d1Root["components"].toObject()["schemas"].toObject().contains(schema) ? d1Root
+	const auto &root = d2Root["components"].toObject()["schemas"].toObject().contains(schema) && schema.contains("D2") ? d2Root
+			   : d1Root["components"].toObject()["schemas"].toObject().contains(schema) ? d1Root
 			   : s10Root["components"].toObject()["schemas"].toObject().contains(schema) ? s10Root
 			   : schemaRoot["components"].toObject()["schemas"].toObject().contains(schema) ? schemaRoot
 			   : b1Root["components"].toObject()["schemas"].toObject().contains(schema)   ? b1Root

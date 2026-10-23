@@ -23,4 +23,12 @@ The fixed D2 schema/fixtures/version negotiation and rollback rules are not froz
 
 An existing unannounced manual staff-preview source can validate normal encoding/upload/preview without audience publication. It cannot prove public auto-idle or public End behavior. D2 failure recovery must be tested separately against a safe isolated protocol harness after the fixed contract arrives. No direct auto-announced live source may be called a private test endpoint.
 
+## D2 target parsing checkpoint20:56
+
+The platform owner's20:45 wire target was delivered in full through the trusted coordination message. It is not a deployed-server acceptance result. A separate D2 schema and16 synthetic wire fixtures now cover required/null fields, 32-lowercase-hex capture identity, UTC timestamps, safe integers, unsupported capability and unknown states/reasons. Frozen D1/K4/S10 schemas are unchanged; D2 open-input validation extends the complete S10 input rather than the older K4-only definition.
+
+The pure observation guard checks exact recording/capture/epoch, drops an older request generation or revision, processes recovery changes at equal D1 revision, preserves committed public end while accepting capability loss, and rejects cutoff expansion. Only422/broadcast_protocol_unsupported allows control fallback; generic400,404,500 and unknown-authority errors do not. Local D2 observation tests passed. These guards are not yet connected to native polling, opening, or capture lifecycle: production behavior remains legacy until the integrated implementation is completed and reviewed.
+
+Opening eligibility is unresolved for a single fixed key: before streams/open the client cannot know whether the source targets direct SourceManaged or manual/scheduled. Always offering recovery currently rejects manual targets; omitting it permanently creates a legacy capture. Do not remove the offer after409, mint another output identity, or invent OBS scene selection. Platform owner must resolve this contract gate before a complete D2 installation candidate can be claimed. Manual/private-preview opens must omit the offer under the current target.
+
 After22:00, recheck OBS streaming/recording and helper completion before any installation. Preserve settings, key, journal/outbox/media, and backup the installed DLL/helper/TLS set. Prefer one verified normal candidate and one user-operated UAC; never install a fault build or force-stop active output/helper. Retain the verified266313c CI package for rollback; this diagnostic-only change adds no journal migration.
