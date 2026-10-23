@@ -280,6 +280,7 @@ struct KeyControllerTest {
 			restored.closing_ = true; // No background process or real transport in this mock.
 		}
 		c.lease_->tryLock(0);
+		c.syncGeneration_ = c.generation_.load(); // Following mock completions belong to the current cancelled output.
 		// An error string alone is not authoritative terminal evidence.
 		for (const int status : {403,409}) {
 		c.sync_.setFuture(QtConcurrent::run([status]() -> KeyJob {
