@@ -117,7 +117,7 @@ struct KeyControllerTest {
 		c.paused_ = false;
 		QDir().mkpath(c.root_ + "/intents");
 		failure(RequestError(403, "broadcast_ingest_revoked"), 5000);
-		failed += !c.revoked_ || !QFileInfo::exists(revokePath(c.root_, original));
+		failed += !c.revoked_ || !QFileInfo::exists(c.root_ + "/intents/" + original + ".revoked");
 		RequestError terminal(0, "output_replay_terminal"); terminal.outputReleased = true;
 		c.control_.setFuture(QtConcurrent::run([terminal]() -> KeyJob { throw terminal; }));
 		try { c.control_.waitForFinished(); } catch (...) {}
