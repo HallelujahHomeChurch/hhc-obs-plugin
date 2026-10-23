@@ -553,6 +553,18 @@ int main(int argc, char **argv)
 	QApplication app(argc, argv);
 	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
 	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
+	if (app.arguments().contains("--controller-regression")) {
+		QTemporaryDir root;
+		hhc::KeyController c(root.path());
+		int failed = hhc::KeyControllerTest::pausedDiagnostics(app) + hhc::KeyControllerTest::controlRetry(app) +
+			hhc::KeyControllerTest::unprovenReleasedPointer();
+		failed += hhc::KeyControllerTest::settingsAfterRelease(c);
+		failed += hhc::KeyControllerTest::simpleControls(c);
+		failed += hhc::KeyControllerTest::uploadPacing(c);
+		failed += hhc::KeyControllerTest::k4Recovery(c);
+		failed += hhc::KeyControllerTest::lifecycle(c);
+		return failed ? 1 : 0;
+	}
 	QTemporaryDir root;
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
