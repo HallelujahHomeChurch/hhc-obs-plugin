@@ -15,7 +15,9 @@ public:
 	std::optional<int> serverEnd();
 	static QJsonArray selectable(ApiClient &);
 	QJsonObject bind(const QString &recordingId);
-	QJsonObject poll(std::function<std::optional<int>()> nextBoundary = {}, bool d1 = false);
+	QJsonObject poll(std::function<std::optional<int>()> nextBoundary = {}, bool d1 = false,
+			std::function<bool()> current = {});
+	QJsonObject recoveryControl();
 	void replay();
 
 private:

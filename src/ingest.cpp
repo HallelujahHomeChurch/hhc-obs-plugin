@@ -45,7 +45,7 @@ QString ingestRoute(const QByteArray &method, const QString &path, const QJsonOb
 	}
 	const auto broadcast = "/admin/broadcasts/" + recording;
 	if (url.path() == broadcast + "/control" && method == "GET") {
-		const bool d1 = query.queryItems().size()==3 && query.queryItemValue("controlVersion")=="d1-2026-10-17.rc2";
+		const bool d1 = query.queryItems().size()==3 && QStringList{"d1-2026-10-17.rc2", "d2-2026-10-23.rc1"}.contains(query.queryItemValue("controlVersion"));
 		require((query.queryItems().size() == 2 || d1) && query.queryItemValue("captureId") == capture &&
 			query.queryItemValue("epoch") == QString::number(s["epoch"].toInteger()));
 		return "/ingest/broadcasts/" + recording + "/control?" + url.query();
@@ -88,7 +88,7 @@ KeyIngest::KeyIngest(QString root, QString id, IngestCredentials vault, ApiClien
 		auto intent = journal_["intent"].toObject();
 		intent["streamKey"] = "hhc_stream_" + QString(43, 'A');
 		if (k4) {
-			require(validWire("BroadcastOutputOpenInput", intent) && intent["outputSessionId"] == id_);
+			require(validWire(intent.contains("recoveryVersion") ? "BroadcastOutputOpenD2Input" : "BroadcastOutputOpenInput", intent) && intent["outputSessionId"] == id_);
 			require(!journal_.contains("terminal") || journal_["terminal"].isBool());
 			require(!journal_.contains("credentialRef") || journal_["credentialRef"] == "output-key-" + id_);
 		} else {
@@ -244,14 +244,31 @@ QJsonObject KeyIngest::bind()
 	data.remove("session");
 	return data;
 }
-void KeyIngest::prepareOpen(const QString &mediaProfile)
+bool KeyIngest::requestsRecovery() const
+{
+	return journal_["intent"].toObject()["recoveryVersion"] == "common-watermark-v1";
+}
+void KeyIngest::checkNetwork() const
+{
+	if (requestsRecovery() && QFileInfo::exists(root_ + "/" + id_ + ".network-blocked"))
+		throw RequestError(403, "ingest_network_blocked");
+}
+void KeyIngest::blockNetwork(const RequestError &error) const
+{
+	if (!requestsRecovery() || !(error.status == 401 || error.status == 403 || error.status == 404 ||
+	    error.code == "broadcast_epoch_mismatch" || error.code == "malformed_success" ||
+	    error.code == "capture_terminal" || error.outputReleased || error.outputReplayUnknown)) return;
+	require(writeAtomicMetadata(root_ + "/" + id_ + ".network-blocked", "{\"blocked\":true}"));
+}
+void KeyIngest::prepareOpen(const QString &mediaProfile, const QString &recoveryVersion)
 {
 	require(journal_.isEmpty() && session_.isEmpty());
 	QJsonObject intent{{"protocolVersion", "k4-2026-10-15.rc1"}, {"outputSessionId", id_}};
 	if (!mediaProfile.isEmpty()) intent["mediaProfile"] = mediaProfile;
+	if (!recoveryVersion.isEmpty()) intent["recoveryVersion"] = recoveryVersion;
 	auto check = intent;
 	check["streamKey"] = "hhc_stream_" + QString(43, 'A');
-	require(validWire("BroadcastOutputOpenInput", check));
+	require(validWire(intent.contains("recoveryVersion") ? "BroadcastOutputOpenD2Input" : "BroadcastOutputOpenInput", check));
 	journal_ = {{"version", "k4-2026-10-15.rc1"}, {"localId", id_}, {"intent", intent}};
 	save();
 	const auto original = key();
@@ -285,6 +302,7 @@ void KeyIngest::checkOpened(const QJsonObject &data) const
 QJsonObject KeyIngest::open()
 {
 	try {
+		checkNetwork();
 		checkTerminal();
 		if (journal_.value("terminal").toBool())
 			throw RequestError(409, "ingest_local_conflict");
@@ -294,7 +312,7 @@ QJsonObject KeyIngest::open()
 		}
 		auto body = journal_["intent"].toObject();
 		body["streamKey"] = QString::fromLatin1(outputKey());
-		require(validWire("BroadcastOutputOpenInput", body));
+		require(validWire(body.contains("recoveryVersion") ? "BroadcastOutputOpenD2Input" : "BroadcastOutputOpenInput", body));
 		ApiClient client(
 			QUrl("https://admin.alive.org.tw/api"), [](bool) { return QByteArray{}; },
 			[this](const auto &method, const auto &url, const auto &bytes, const auto &headers) {
@@ -401,6 +419,7 @@ void KeyIngest::replay()
 }
 QByteArray KeyIngest::bearer(bool force)
 {
+	checkNetwork();
 	checkTerminal();
 	if (session_.isEmpty() && journal_["version"] == "k4-2026-10-15.rc1") replay();
 	require(!session_.isEmpty());

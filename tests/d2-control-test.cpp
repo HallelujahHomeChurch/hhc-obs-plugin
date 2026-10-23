@@ -37,6 +37,8 @@ int main(int argc, char **argv)
 	check(reject(wrong), "capture mismatch rejected");
 	wrong = interrupted; wrong["recordingId"] = "44444444-4444-4444-8444-444444444444";
 	check(reject(wrong), "recording mismatch rejected");
+	try { observe(interrupted, wrong); check(false, "wrong identity must fail closed"); }
+	catch (const hhc::RequestError &e) { check(e.code == "malformed_success", "semantic identity mismatch reaches authority-deny fence"); }
 	wrong = interrupted; wrong["phase"] = "preview";
 	check(reject(wrong), "equal revision cannot rewrite D1 fields");
 	wrong = interrupted; wrong["revision"] = 41;
@@ -72,6 +74,8 @@ int main(int argc, char **argv)
 	check(!hhc::validWire("BroadcastOutputOpenInput", open), "old K4 schema unchanged");
 	open["recoveryVersion"] = "future";
 	check(!hhc::validWire("BroadcastOutputOpenD2Input", open), "unknown open recovery version rejected");
+	open["recoveryVersion"] = "";
+	check(!hhc::validWire("BroadcastOutputOpenD2Input", open), "empty offer is not an omitted legacy preference");
 	open.remove("recoveryVersion");
 	check(hhc::validWire("BroadcastOutputOpenD2Input", open) && hhc::validWire("BroadcastOutputOpenInput", open), "omitted offer remains legacy");
 	return failed ? 1 : 0;

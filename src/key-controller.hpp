@@ -42,6 +42,7 @@ private:
 	void syncDone();
 	void recordFailure(const char *stage, const std::exception *error = nullptr, bool retryable = false) noexcept;
 	void recordStopCause(const char *cause, std::optional<int> cutoff = {}) noexcept;
+	bool preserveRecoveryLocal(const RequestError &error) noexcept;
 	void retireOutput();
 	bool hasReleaseProof() const;
 	void pollControl();
@@ -72,6 +73,10 @@ private:
 	std::unique_ptr<CaptureOutput> capture_;
 	std::unique_ptr<QLockFile> lease_;
 	std::atomic<bool> cancelled_{false};
+	std::atomic<quint64> generation_{0};
+	quint64 syncGeneration_ = 0, controlGeneration_ = 0;
+	bool recoveryRequested_ = false, networkBlocked_ = false;
+	QJsonObject recoveryControl_;
 	bool closing_ = false, starting_ = false, stopping_ = false, paused_ = false, syncAwaiting_ = false,
 	     controlAwaiting_ = false;
 	bool released_ = false, revoked_ = false, terminalRetired_ = false;

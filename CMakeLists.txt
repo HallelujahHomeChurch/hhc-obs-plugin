@@ -182,6 +182,8 @@ set_tests_properties(native-obs-ui PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_D
 target_link_libraries(key-dock-test PRIVATE hhc-key-controller)
 add_test(NAME k3-dock COMMAND key-dock-test)
 add_test(NAME native-stop-cause-diagnostics COMMAND key-dock-test --stop-diagnostics)
+add_test(NAME native-recovery-safety COMMAND key-dock-test --recovery-safety)
+set_tests_properties(native-recovery-safety PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;${CMAKE_SOURCE_DIR}/.deps/obs-build/rundir/RelWithDebInfo/bin/64bit\;${CMAKE_SOURCE_DIR}/.deps/prebuilt/bin\;$ENV{PATH};QT_QPA_PLATFORM=windows;QT_PLUGIN_PATH=${CMAKE_SOURCE_DIR}/.deps/qt/plugins")
 set_tests_properties(native-stop-cause-diagnostics PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;${CMAKE_SOURCE_DIR}/.deps/obs-build/rundir/RelWithDebInfo/bin/64bit\;${CMAKE_SOURCE_DIR}/.deps/prebuilt/bin\;$ENV{PATH};QT_QPA_PLATFORM=windows;QT_PLUGIN_PATH=${CMAKE_SOURCE_DIR}/.deps/qt/plugins")
 set_tests_properties(k3-dock PROPERTIES ENVIRONMENT "PATH=${CMAKE_SOURCE_DIR}/.deps/qt/bin\;${CMAKE_SOURCE_DIR}/.deps/obs-build/rundir/RelWithDebInfo/bin/64bit\;${CMAKE_SOURCE_DIR}/.deps/prebuilt/bin\;$ENV{PATH};QT_QPA_PLATFORM=windows;QT_PLUGIN_PATH=${CMAKE_SOURCE_DIR}/.deps/qt/plugins")
 add_executable(controller-lifecycle-test tests/controller-lifecycle-test.cpp)

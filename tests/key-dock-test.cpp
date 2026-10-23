@@ -18,6 +18,32 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int recoverySafety(QApplication &app)
+	{
+		QTemporaryDir root;
+		KeyController c(root.path()); c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		c.recoveryRequested_ = true;
+		int failed = 0, recordingCalls = 0;
+		c.recording = [&](bool){ ++recordingCalls; };
+		failed += c.preserveRecoveryLocal(RequestError(503,"unavailable"));
+		failed += c.networkBlocked_ || c.paused_;
+		const auto generation = c.generation_.load();
+		failed += !c.preserveRecoveryLocal(RequestError(403,"revoked"));
+		failed += !c.networkBlocked_ || !c.paused_ || !c.cancelled_ || c.generation_.load() != generation+1 || recordingCalls;
+		c.controlGeneration_ = generation;
+		c.control_.setFuture(QtConcurrent::run([]{ KeyJob job; job.title = "stale response"; return job; }));
+		c.control_.waitForFinished(); app.processEvents();
+		failed += c.title_ == "stale response" || !c.networkBlocked_ || recordingCalls;
+		// A throwing upload result must not skip joining the other worker during destruction.
+		std::atomic<bool> otherFinished{false};
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob { throw std::runtime_error("fixture failure"); }));
+		c.control_.setFuture(QtConcurrent::run([&]{ QThread::msleep(80); otherFinished = true; return KeyJob{}; }));
+		c.shutdown();
+		failed += !otherFinished.load() || !c.sync_.isFinished() || !c.control_.isFinished() || recordingCalls;
+		if (failed) std::cerr << "FAIL D2 local preservation, generation fence or worker join\n";
+		return failed;
+	}
 	static int stopDiagnostics()
 	{
 		QTemporaryDir root;
@@ -525,12 +551,14 @@ int main(int argc, char **argv)
 {
 	QApplication app(argc, argv);
 	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
+	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
 	QTemporaryDir root;
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
 	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
 	failed += hhc::KeyControllerTest::stopDiagnostics();
+	failed += hhc::KeyControllerTest::recoverySafety(app);
 	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
