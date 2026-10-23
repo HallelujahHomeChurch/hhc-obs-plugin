@@ -25,7 +25,7 @@ def add(name):
     if name not in selected:
         selected[name] = schemas[name]
         visit(selected[name])
-for name in ['BroadcastOutputOpenInput', 'BroadcastOutputOpenedEnvelope', 'RecordingPackageInventory', 'RecordingCaptureEnvelope', 'RecordingLiveProgress']:
+for name in ['BroadcastOutputOpenInput', 'BroadcastOutputOpenedEnvelope', 'RecordingPackageInventory', 'RecordingCaptureEnvelope', 'RecordingCaptureResultEnvelope', 'RecordingLiveProgress']:
     add(name)
 encoded = json.dumps({'components': {'schemas': selected}}, separators=(',', ':'))
 target = Path(__file__).resolve().parents[1]/'src/s10-schema.inc'
