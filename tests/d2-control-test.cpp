@@ -1,5 +1,7 @@
 #include "broadcast-control.hpp"
 #include "wire.hpp"
+#include "session-store.hpp"
+#include "windows-path.hpp"
 #include <QCoreApplication>
 #include <QFile>
 #include <QJsonDocument>
@@ -9,7 +11,72 @@
 #include <QTcpSocket>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QDir>
+#include <QProcess>
 #include <iostream>
+
+static int preparedAfterPoll()
+{
+	QFile identityFile("tests/fixtures/k4-identity.json"), controlFile("tests/fixtures/d2-control.json");
+	if (!identityFile.open(QIODevice::ReadOnly) || !controlFile.open(QIODevice::ReadOnly)) return 1;
+	const auto opened = QJsonDocument::fromJson(identityFile.readAll()).object()["fixtures"].toArray()[0].toObject()["value"].toObject()["data"].toObject();
+	const auto broadcast = opened["broadcast"].toObject(), binding = broadcast["binding"].toObject();
+	const auto fixedControl = QJsonDocument::fromJson(controlFile.readAll()).array()[0].toObject()["value"].toObject();
+	const auto actor = binding["actorId"].toString(), id = opened["outputSessionId"].toString();
+	int failed = 0;
+	auto check = [&](bool ok, const char *what) { if (!ok) { ++failed; std::cerr << "FAIL " << what << '\n'; } };
+	for (bool fallback : {false, true}) {
+		QTemporaryDir root;
+		hhc::SessionStore store(root.path());
+		hhc::CaptureJournal journal; journal.account = actor; journal.localId = id; store.save(journal);
+		const auto directory = store.mediaDirectory(actor, id);
+		hhc::ApiClient client(QUrl("https://fixture.invalid"), [](bool) { return QByteArray{}; },
+			[&](const QByteArray &method, const QUrl &url, const QByteArray &, const QMap<QByteArray,QByteArray> &) {
+				if (method != "GET" || !url.path().endsWith("/control")) throw std::runtime_error("Unexpected preparation request");
+				const bool d2 = url.query().contains("d2-2026-10-23.rc1");
+				if (fallback && d2) return hhc::HttpResponse{422, "{\"error\":{\"code\":\"broadcast_protocol_unsupported\"}}"};
+				auto control = fixedControl;
+				control["recordingId"] = broadcast["recordingId"]; control["captureId"] = binding["captureId"]; control["epoch"] = binding["epoch"];
+				if (!d2) { control.remove("recovery"); control.remove("publicEnd"); control["controlVersion"] = "d1-2026-10-17.rc2"; }
+				return hhc::HttpResponse{200, QJsonDocument(QJsonObject{{"data",control},{"meta",QJsonObject{}},{"error",QJsonValue::Null}}).toJson()};
+			});
+		hhc::BroadcastControl control(directory, actor, id, client, true);
+		control.adoptIngest(opened, {{"protocolVersion","k4-2026-10-15.rc1"},{"outputSessionId",id},{"recoveryVersion","common-watermark-v1"}});
+		check(store.isPrepared(actor,id), "adopted binding remains pristine before first D2 poll");
+		control.poll({},true);
+		const auto metadata = directory + (fallback ? "/control-d1-fallback.json" : "/recovery-control.json");
+		check(QFile::exists(metadata), "actual control poll persists preparation metadata");
+		check(store.isPrepared(actor,id), fallback ? "D1 fallback metadata permits initial encoder start" : "D2 observation metadata permits initial encoder start");
+		QFile unexpected(directory+"/unexpected.json");
+		check(unexpected.open(QIODevice::WriteOnly), "create unknown preparation metadata"); unexpected.write("{}"); unexpected.close();
+		check(!store.isPrepared(actor,id), "D2 preparation rejects unknown metadata");
+		check(unexpected.remove(), "remove only owned unknown fixture");
+		check(QDir().mkpath(directory+"/1080p"), "create owned media directory");
+		check(!store.isPrepared(actor,id), "D2 preparation rejects existing media directories");
+		check(QDir(directory).rmdir("1080p"), "remove only empty owned media directory");
+		for (bool hhc::CaptureJournal::*flag : {&hhc::CaptureJournal::stopIntent,&hhc::CaptureJournal::normalEnd,&hhc::CaptureJournal::sealAcknowledged,&hhc::CaptureJournal::confirmedReady}) {
+			journal.*flag=true; store.save(journal);
+			check(!store.isPrepared(actor,id), "D2 metadata cannot make stopped/finalized journal pristine");
+			journal.*flag=false; store.save(journal);
+		}
+#ifdef Q_OS_WIN
+		QFile original(metadata); check(original.open(QIODevice::ReadOnly), "read owned control metadata"); const auto bytes=original.readAll(); original.close();
+		check(original.remove(), "replace only owned metadata for redirect guard");
+		QTemporaryDir outside;
+		QProcess junction; junction.start("cmd.exe", {"/c","mklink","/J",hhc::lockFilePath(metadata),hhc::lockFilePath(outside.path())});
+		const bool linked=junction.waitForFinished() && junction.exitCode()==0;
+		check(linked, "create owned metadata junction");
+		if (linked) {
+			check(!store.isPrepared(actor,id), "known metadata name cannot redirect outside session");
+			const auto link=hhc::lockFilePath(metadata);
+			check(RemoveDirectoryW(reinterpret_cast<LPCWSTR>(link.utf16()))!=0, "remove only owned junction, preserve destination");
+		}
+		check(original.open(QIODevice::WriteOnly), "restore owned metadata"); original.write(bytes); original.close();
+#endif
+		check(store.isPrepared(actor,id), "guard checks leave valid preparation usable");
+	}
+	return failed;
+}
 
 static int httpRecovery(int durationMs)
 {
@@ -65,6 +132,7 @@ static int httpRecovery(int durationMs)
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	if (app.arguments().contains("--prepared-only")) return preparedAfterPoll();
 	if (app.arguments().contains("--http-outage-ms")) {
 		bool ok = false;
 		const int duration = app.arguments().value(app.arguments().indexOf("--http-outage-ms")+1).toInt(&ok);
@@ -72,6 +140,7 @@ int main(int argc, char **argv)
 		try { return httpRecovery(duration); } catch (const hhc::RequestError &e) { std::cerr << "FAIL D2 HTTP " << qPrintable(e.code) << '\n'; return 1; }
 	}
 	int failed = 0;
+	failed += preparedAfterPoll();
 	auto check = [&](bool ok, const char *what) { if (!ok) { ++failed; std::cerr << "FAIL " << what << '\n'; } };
 	QFile f("tests/fixtures/d2-control.json");
 	if (!f.open(QIODevice::ReadOnly)) return 2;
