@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QCryptographicHash>
 #include <limits>
 #include <algorithm>
 #include <QDesktopServices>
@@ -157,8 +158,10 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			if (e.code == "broadcast_ingest_revoked") {
 				revoked_ = true;
 				markIngestRevoked(root_, id_);
-				if (capture_)
+				if (capture_) {
+					recordStopCause("ingest_revoked");
 					capture_->stop(StopReason::EncoderFailure);
+				}
 			}
 			issue_ = e.code;
 			const auto delay = e.retryDelay(controlFailures_);
@@ -388,12 +391,14 @@ void KeyController::startStop()
 	}
 	if (capture_ && !capture_->finished()) {
 		stopping_ = true;
+		recordStopCause("user_stop");
 		capture_->stop(StopReason::User);
 		recordWithStream(false);
 		display();
 		return;
 	}
 	if (starting_) {
+		recordStopCause("user_cancel_opening");
 		if (QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
 			markIngestStopping(root_, id_);
 		starting_ = false;
@@ -484,6 +489,7 @@ void KeyController::tick()
 	if(capture_ && serverEnd_ && !stopping_) {
 		// Public cutoff is independent of retained media. Stop at the next actual encoder grid.
 		stopping_=capture_->stopAtCommonBoundary();
+		if (stopping_) recordStopCause("server_end", serverEnd_);
 	}
 	if (capture_ && end_ && !serverEnd_ && !stopping_) {
 		// Wait until all public segments are closed; the chosen marker is ahead of the encoder.
@@ -495,6 +501,7 @@ void KeyController::tick()
 		}
 		if (complete) {
 			stopping_ = true;
+			recordStopCause("console_end", end_);
 			capture_->stop(StopReason::User);
 		}
 	}
@@ -556,7 +563,10 @@ void KeyController::retireOutput()
 		issue_ = QString::fromUtf8("無法保存輸出釋放紀錄；原輸出與素材保留，請重試。");
 		return;
 	}
-	if (capture_ && !capture_->finished()) capture_->stop(StopReason::EncoderFailure);
+	if (capture_ && !capture_->finished()) {
+		recordStopCause("output_released");
+		capture_->stop(StopReason::EncoderFailure);
+	}
 	starting_ = stopping_ = paused_ = false;
 	released_ = terminalRetired_ = true;
 	issue_ = QString::fromUtf8("本次輸出已結束；再次按開始直播才會建立下一次輸出。");
@@ -612,8 +622,10 @@ void KeyController::syncDone()
 				QString::fromUtf8("；待傳 %1 MB").arg(double(r.sync.pendingBytes) / 1048576, 0, 'f', 1);
 		if (r.sync.state == "aborted" || r.sync.state == "expired" || r.sync.state == "failed") {
 			starting_ = false;
-			if (capture_ && !capture_->finished())
+			if (capture_ && !capture_->finished()) {
+				recordStopCause("capture_terminal");
 				capture_->stop(StopReason::EncoderFailure);
+			}
 			released_ = true;
 			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
 			paused_ = false;
@@ -631,8 +643,10 @@ void KeyController::syncDone()
 			next_ = std::numeric_limits<qint64>::max();
 		} else if (e.code == "broadcast_ingest_revoked") {
 			revoked_ = true;
-			if (capture_)
+			if (capture_) {
+				recordStopCause("ingest_revoked");
 				capture_->stop(StopReason::EncoderFailure);
+			}
 			next_ = 0;
 		} else if (e.outputReleased && e.code == "output_replay_terminal") {
 			retireOutput();
@@ -662,6 +676,24 @@ void KeyController::syncDone()
 	if (stopping_ || (paused_ && issue_ == "broadcast_stream_key_invalid"))
 		retireUnbound();
 	display();
+}
+void KeyController::recordStopCause(const char *cause, std::optional<int> cutoff) noexcept
+{
+	try {
+		const QString value = QString::fromLatin1(cause);
+		const QString safe = QStringList{"user_stop", "user_cancel_opening", "console_end", "server_end",
+			"ingest_revoked", "output_released", "capture_terminal", "obs_shutdown"}.contains(value) ? value : "unknown";
+		const auto observedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+		const auto output = QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16));
+		QDir().mkpath(root_ + "/diagnostics/native");
+		tryObserverJson(root_ + "/diagnostics/native/stop-cause.json",
+			{{"observedAt", observedAt}, {"output", output}, {"cause", safe}, {"event", "stop_requested"},
+			 {"publicEndSequenceExclusive", cutoff ? QJsonValue(*cutoff) : QJsonValue(QJsonValue::Null)}});
+		diagnostic(QString("[HHC stop] utc=%1 output=%2 cause=%3 event=stop_requested cutoff=%4")
+			.arg(observedAt, output, safe).arg(cutoff.value_or(-1)));
+	} catch (...) {
+		// Optional evidence must never change the requested stop or authority fence.
+	}
 }
 void KeyController::recordFailure(const char *stage, const std::exception *error, bool retryable) noexcept
 {
@@ -740,6 +772,7 @@ void KeyController::shutdown()
 	}
 	cancelled_ = true;
 	if (capture_) {
+		if (!capture_->finished()) recordStopCause("obs_shutdown");
 		capture_->stop(StopReason::User);
 		capture_->wait(6000);
 		capture_.reset();

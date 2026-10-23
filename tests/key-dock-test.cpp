@@ -18,6 +18,36 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int stopDiagnostics()
+	{
+		QTemporaryDir root;
+		KeyController c(root.path());
+		c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		int failed = 0;
+		auto readCause = [&] {
+			QFile f(c.root_ + "/diagnostics/native/stop-cause.json");
+			if (!f.open(QIODevice::ReadOnly)) { ++failed; return QJsonObject{}; }
+			const auto bytes = f.readAll();
+			failed += bytes.contains(c.id_.toUtf8()) || bytes.contains("synthetic-secret") || bytes.contains("https://");
+			return QJsonDocument::fromJson(bytes).object();
+		};
+		c.recordStopCause("server_end", 0);
+		auto d = readCause();
+		failed += d["cause"] != "server_end" || d["publicEndSequenceExclusive"] != 0 ||
+			d["event"] != "stop_requested" || d["output"].toString().size() != 16;
+		c.recordStopCause("user_stop"); d = readCause();
+		failed += d["cause"] != "user_stop" || !d["publicEndSequenceExclusive"].isNull();
+		c.recordStopCause("https://synthetic-secret/signed"); d = readCause();
+		failed += d["cause"] != "unknown";
+		QFile::remove(c.root_ + "/diagnostics/native/stop-cause.json");
+		QDir().mkpath(c.root_ + "/diagnostics/native/stop-cause.json");
+		c.recordStopCause("obs_shutdown");
+		failed += c.paused_ || c.released_ || c.stopping_;
+		c.closing_ = true;
+		if (failed) std::cerr << "FAIL stop trigger evidence, zero cutoff, privacy or failure isolation\n";
+		return failed;
+	}
 	static int pausedDiagnostics(QApplication &app)
 	{
 		QTemporaryDir root;
@@ -494,11 +524,13 @@ struct KeyControllerTest {
 int main(int argc, char **argv)
 {
 	QApplication app(argc, argv);
+	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
 	QTemporaryDir root;
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
 	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
+	failed += hhc::KeyControllerTest::stopDiagnostics();
 	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();

@@ -6,12 +6,20 @@
 #include <QTcpSocket>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QThread>
 #include <iostream>
 
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
 	const bool production = app.arguments().contains("--production");
+	int outageMs = 0;
+	const auto durationIndex = app.arguments().indexOf("--outage-ms");
+	if (durationIndex >= 0) {
+		bool ok = false;
+		outageMs = app.arguments().value(durationIndex + 1).toInt(&ok);
+		if (!ok || production || outageMs < 90000 || outageMs > 120000) return 2;
+	}
 	QTemporaryDir temp;
 	if (!temp.isValid()) return 2;
 	const auto marker = temp.filePath("offline");
@@ -61,6 +69,23 @@ int main(int argc, char **argv)
 		QFile::remove(marker);
 		stall = false;
 		check(request("POST"), "HTTP resumes after in-flight outage");
+		if (outageMs) {
+			check(offline(), "start bounded transport-only outage");
+			const auto beforeCalls = calls;
+			int failedRequests = 0;
+			QElapsedTimer outage; outage.start();
+			while (outage.elapsed() < outageMs) {
+				check(!request("GET"), "outage stays isolated from loopback server");
+				++failedRequests;
+				QThread::msleep(250);
+			}
+			check(calls == beforeCalls, "no transport request escaped outage");
+			QFile::remove(marker);
+			check(request("POST"), "real loopback HTTP recovers after long outage");
+			check(calls == beforeCalls + 1, "exactly one recovery request");
+			std::cout << "Transport-only outage elapsedMs=" << outage.elapsed()
+				  << " failedRequests=" << failedRequests << " recoveryRequests=" << calls - beforeCalls << '\n';
+		}
 	}
 	qunsetenv("HHC_TEST_NETWORK_OFFLINE_FILE");
 	return failed ? 1 : 0;
