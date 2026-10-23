@@ -240,7 +240,7 @@ void BroadcastControl::adoptIngest(const QJsonObject &result, const QJsonObject 
 std::optional<int> BroadcastControl::acceptedEnd()
 {
 	load();
-	if (!recoveryControl().isEmpty()) return {};
+	if (!legacyFallback(directory_) && !recoveryControl().isEmpty()) return {};
 	for (const auto &v : journal_["commands"].toObject()) {
 		const auto s = v.toObject();
 		const auto state = s["receipt"].toObject()["state"].toString();
@@ -271,7 +271,7 @@ QJsonObject BroadcastControl::acceptControl(const QJsonObject &c)
 std::optional<int> BroadcastControl::serverEnd()
 {
 	load();
-	if (!recoveryControl().isEmpty()) return {};
+	if (!legacyFallback(directory_) && !recoveryControl().isEmpty()) return {};
 	const auto c=journal_["controlD1"].toObject(), bounds=c["boundaries"].toObject();
 	if (!c.isEmpty() && !bounds["endSequenceExclusive"].isNull() &&
 	    QStringList{"end_pending","processing","archived"}.contains(c["phase"].toString()))

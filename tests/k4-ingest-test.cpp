@@ -623,8 +623,8 @@ int main(int argc, char **argv)
 					      "durable public End does not request native local stop");
 					protocolGone = true; resumed.poll({},true);
 					check(resumed.recoveryControl()["publicEnd"].isObject() &&
-					      resumed.recoveryControl()["recovery"].toObject()["version"].isNull() && !resumed.serverEnd(),
-					      "producer rollback cannot undo a known public End or silently stop local capture");
+					      resumed.recoveryControl()["recovery"].toObject()["version"].isNull() && resumed.serverEnd() == 21,
+					      "explicit D1 fallback retains legacy boundary behavior without erasing committed public End");
 				}
 			} catch (const RequestError &e) { check((mode == "500" || mode == "404") && requests == 1 && e.status == mode.toInt(), "no generic HTTP fallback"); }
 		}
