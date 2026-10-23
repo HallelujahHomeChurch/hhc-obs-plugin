@@ -43,4 +43,14 @@ At21:28 the final CMS PR312 OpenAPI was fetched at immutable `d4eaf63e0a998fdeca
 
 Not claimed: deployed D2 service, server transaction fencing, actual SourceManaged automatic five-minute recovery, real ongoing encoder recovery, or the normal30-minute private staff-preview chain. A manual unannounced preview validates normal media only, not automatic public End/recovery. No announcement or paid resource is authorized for this test.
 
+## Hosted CI and compatibility supplement21:42
+
+CI39961520055 succeeded for head67813e7bc3f9d78bc56b4cea290673b620618aa4: full native build and32/32 CTest,156.64seconds, media-grid/path checks and both package layouts passed. Its synthetic merge2a4c82b672949dc5bd81b524babdbde1184e90e5 has parents266313c and67813e7. Every package manifest file was independently hashed. Modern ZIP SHA-25696253a03b17722b70d00e15540621b09e4e2008d9f43f8daad18472efe28daa4; legacy9a26a96b53195b19f697323eabcf64e2e12b1476bff4a8d596c9e25f7410a1f1. Neither was installed.
+
+An additional native-library regression covers a manual/scheduled-style D2 unsupported preview without requesting local stop, plus opted-in session renewal/K5 replay under success,429,503 and transport timeout. It retains the original output/capture/epoch/receipt/profile/preference and does not reopen or downgrade; replay authority uncertainty remains fail closed. The expanded ingest test passed locally15.91seconds. This supplement changes tests/docs only and requires its own final CI; it is not real OBS encoder or deployed-producer evidence.
+
+The90second harness is `http-outage-test`, linked to native `hhc-http-faults` and Qt Network, using a process-local fault marker and loopback HTTP. It is not libobs/NVENC, KeyController ongoing capture, D2 server recovery or production outage proof. Controller policy and D2 metadata are separate deterministic native-library/mock tests. No claim combines these into an end-to-end recovery pass.
+
+Formal installation remains blocked pending producer-first deployment/readback, current CI/package selection, after22:00 safe output/helper idle checks, and real native/private-chain acceptance. Earliest UAC is after22:00 plus these gates; if all are immediately available, a30minute private chain alone makes approximately22:45 the earliest plausible window, not a promise. Backup/rollback uses the verified installed266313c normal package73043580112f05c8b449aa44c0489eb1b12a9a4b49fb9f833a66472f515400cf and preserves OBS32.2.2/settings/credentials/journal/outbox/media.
+
 After22:00, recheck OBS streaming/recording and helper completion before any installation. Preserve settings, key, journal/outbox/media, and backup the installed DLL/helper/TLS set. Prefer one verified normal candidate and one user-operated UAC; never install a fault build or force-stop active output/helper. Retain the verified266313c CI package for rollback; this diagnostic-only change adds no journal migration.
