@@ -108,7 +108,7 @@ QString safeDiagnosticCode(const QString &code)
 		"output_replay_terminal", "ingest_original_credential_missing", "account_mismatch",
 		"broadcast_local_conflict", "ingest_no_bind_intent", "ingest_release_unproven", "ingest_route_forbidden",
 		"invalid_api_path", "invalid_transport_origin", "local_auth_busy", "local_media_validation_failed",
-		"oauth_temporarily_unavailable", "oauth_unavailable", "object_verification_failed", "response_limit",
+		"oauth_temporarily_unavailable", "oauth_unavailable", "object_verification_failed", "response_limit", "ingest_network_blocked",
 		"sign_in_required", "upload_rejected"};
 	return knownResponseCode(code) || local.contains(code) ? code : QString("request_failed");
 }

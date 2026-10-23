@@ -19,7 +19,54 @@ void fields(const QJsonObject &o, const QSet<QString> &allowed)
 	for (auto it = o.begin(); it != o.end(); ++it)
 		require(allowed.contains(it.key()));
 }
+bool legacyFallback(const QString &directory)
+{
+	QFile file(directory + "/control-d1-fallback.json");
+	if (!file.exists()) return false;
+	require(!QFileInfo(file).isSymLink() && file.size() <= 64 && openSharedJsonRead(file));
+	const auto object = QJsonDocument::fromJson(file.readAll()).object();
+	require(object.size() == 1 && object["fallback"] == true);
+	return true;
+}
 } // namespace
+bool d2FallbackAllowed(const RequestError &error)
+{
+	return !error.outputReplayUnknown && !error.outputReleased && error.status == 422 &&
+		error.code == "broadcast_protocol_unsupported";
+}
+QJsonObject acceptD2Observation(const QJsonObject &previous, const QJsonObject &incoming,
+			      const QJsonObject &identity, quint64 requestGeneration, quint64 currentGeneration)
+{
+	if (requestGeneration != currentGeneration) return {};
+	auto require = [](bool ok) { if (!ok) throw RequestError(200, "malformed_success"); };
+	auto check = [&](const QJsonObject &c) {
+		require(validWire("BroadcastControlD2", c));
+		for (const auto *key : {"recordingId", "captureId", "epoch"}) require(c[key] == identity[key]);
+		const auto bounds = c["boundaries"].toObject(), end = c["publicEnd"].toObject();
+		require(bounds["startSequence"].isNull() || bounds["endSequenceExclusive"].isNull() ||
+			bounds["startSequence"].toInteger() <= bounds["endSequenceExclusive"].toInteger());
+		if (!end.isEmpty() && !end["endSequenceExclusive"].isNull())
+			require(end["endSequenceExclusive"] == bounds["endSequenceExclusive"]);
+	};
+	check(incoming);
+	if (previous.isEmpty()) return incoming;
+	check(previous);
+	const auto bounds = incoming["boundaries"].toObject(), oldBounds = previous["boundaries"].toObject();
+	if (incoming["revision"].toInteger() < previous["revision"].toInteger() ||
+	    bounds["revision"].toInteger() < oldBounds["revision"].toInteger()) return {};
+	for (const auto *key : {"startSequence", "endSequenceExclusive"})
+		require(oldBounds[key].isNull() || bounds[key] == oldBounds[key]);
+	if (bounds["revision"] == oldBounds["revision"]) require(bounds == oldBounds);
+	auto base = [](QJsonObject c) { c.remove("recovery"); c.remove("publicEnd"); return c; };
+	if (incoming["revision"] == previous["revision"]) require(base(incoming) == base(previous));
+	auto accepted = incoming;
+	if (previous["publicEnd"].isObject()) {
+		if (incoming["publicEnd"].isObject())
+			require(incoming["publicEnd"].toObject()["endSequenceExclusive"] == previous["publicEnd"].toObject()["endSequenceExclusive"]);
+		accepted["publicEnd"] = previous["publicEnd"];
+	}
+	return accepted;
+}
 BroadcastControl::BroadcastControl(QString d, QString a, QString id, ApiClient &api, bool ingest)
 	: directory_(std::move(d)),
 	  account_(std::move(a)),
@@ -52,7 +99,7 @@ void BroadcastControl::load()
 	if (opened) {
 		auto input = bind["body"].toObject();
 		input["streamKey"] = "hhc_stream_" + QString(43, 'A');
-		require(ingest_ && validWire("BroadcastOutputOpenInput", input) && input["outputSessionId"] == id_ &&
+		require(ingest_ && validWire(input.contains("recoveryVersion") ? "BroadcastOutputOpenD2Input" : "BroadcastOutputOpenInput", input) && input["outputSessionId"] == id_ &&
 			bind["receipt"].toObject()["state"] == "completed" && journal_["binding"].isObject());
 	} else
 		require(validWire("BroadcastBindInput", bind["body"]) &&
@@ -164,7 +211,7 @@ void BroadcastControl::adoptIngest(const QJsonObject &result, const QJsonObject 
 	if (opened) {
 		auto input = intent;
 		input["streamKey"] = "hhc_stream_" + QString(43, 'A');
-		require(validWire("BroadcastOutputOpenInput", input) && input["outputSessionId"] == id_ &&
+		require(validWire(input.contains("recoveryVersion") ? "BroadcastOutputOpenD2Input" : "BroadcastOutputOpenInput", input) && input["outputSessionId"] == id_ &&
 			result["receipt"].toObject()["operation"] == "bind" &&
 			result["receipt"].toObject()["state"] == "completed");
 	}
@@ -193,6 +240,7 @@ void BroadcastControl::adoptIngest(const QJsonObject &result, const QJsonObject 
 std::optional<int> BroadcastControl::acceptedEnd()
 {
 	load();
+	if (!legacyFallback(directory_) && !recoveryControl().isEmpty()) return {};
 	for (const auto &v : journal_["commands"].toObject()) {
 		const auto s = v.toObject();
 		const auto state = s["receipt"].toObject()["state"].toString();
@@ -223,6 +271,7 @@ QJsonObject BroadcastControl::acceptControl(const QJsonObject &c)
 std::optional<int> BroadcastControl::serverEnd()
 {
 	load();
+	if (!legacyFallback(directory_) && !recoveryControl().isEmpty()) return {};
 	const auto c=journal_["controlD1"].toObject(), bounds=c["boundaries"].toObject();
 	if (!c.isEmpty() && !bounds["endSequenceExclusive"].isNull() &&
 	    QStringList{"end_pending","processing","archived"}.contains(c["phase"].toString()))
@@ -350,7 +399,22 @@ void BroadcastControl::replay()
 		ack(it.key(), saved); // Reconcile only saved markers; never choose a new inactive marker.
 	}
 }
-QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBoundary, bool d1)
+QJsonObject BroadcastControl::recoveryControl()
+{
+	load();
+	if (journal_["bind"].toObject()["body"].toObject()["recoveryVersion"] != "common-watermark-v1") return {};
+	QFile file(directory_ + "/recovery-control.json");
+	if (!file.exists()) return {};
+	require(!QFileInfo(file).isSymLink() && file.size() <= 65536 && openSharedJsonRead(file));
+	const auto c = QJsonDocument::fromJson(file.readAll()).object(), binding = journal_["binding"].toObject();
+	auto accepted = acceptD2Observation({}, c, {{"recordingId", journal_["recordingId"]}, {"captureId", binding["captureId"]}, {"epoch", binding["epoch"]}}, 0, 0);
+	if (legacyFallback(directory_))
+		accepted["recovery"] = QJsonObject{{"version", QJsonValue::Null}, {"state", "unsupported"},
+			{"deadline", QJsonValue::Null}, {"lastCommonConfirmedAt", QJsonValue::Null},
+			{"commonConfirmedEndSequenceExclusive", QJsonValue::Null}};
+	return accepted;
+}
+QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBoundary, bool d1, std::function<bool()> current)
 {
 	QLockFile lock(lockFilePath(directory_ + "/broadcast.lock"));
 	lock.setStaleLockTime(0);
@@ -360,22 +424,42 @@ QJsonObject BroadcastControl::poll(std::function<std::optional<int>()> nextBound
 	load();
 	require(journal_["binding"].isObject());
 	auto binding = journal_["binding"].toObject();
+	bool d2 = d1 && journal_["bind"].toObject()["body"].toObject()["recoveryVersion"] == "common-watermark-v1" &&
+		!legacyFallback(directory_);
+	if (current && !current()) return {};
 	QJsonObject control;
 	try {
-		control = api_.request("GET",
-				       "/admin/broadcasts/" + journal_["recordingId"].toString() +
-					       "/control?captureId=" + binding["captureId"].toString() +
-					       "&epoch=" + QString::number(binding["epoch"].toInteger()) +
-					       (d1 ? "&controlVersion=d1-2026-10-17.rc2" : ""),
-				       {}, d1 ? "BroadcastControlD1Envelope" : "BroadcastControlEnvelope")["data"]
-				  .toObject();
+		auto request = [&](bool recovery) {
+			return api_.request("GET", "/admin/broadcasts/" + journal_["recordingId"].toString() +
+				"/control?captureId=" + binding["captureId"].toString() + "&epoch=" + QString::number(binding["epoch"].toInteger()) +
+				(recovery ? "&controlVersion=d2-2026-10-23.rc1" : d1 ? "&controlVersion=d1-2026-10-17.rc2" : ""), {},
+				recovery ? "BroadcastControlD2Envelope" : d1 ? "BroadcastControlD1Envelope" : "BroadcastControlEnvelope")["data"].toObject();
+		};
+		try { control = request(d2); }
+		catch (const RequestError &e) {
+			if (!d2 || !d2FallbackAllowed(e)) throw;
+			if (current && !current()) return {};
+			require(writeAtomicMetadata(directory_ + "/control-d1-fallback.json", "{\"fallback\":true}"));
+			d2 = false;
+			control = request(false);
+		}
 	} catch (const RequestError &e) {
 		if (!e.outputReplayUnknown && !e.outputReleased && (e.status == 409 || e.status == 412))
 			view();
 		throw;
 	}
+	if (current && !current()) return {};
+	if (d2) {
+		const auto previous = recoveryControl();
+		control = acceptD2Observation(previous, control, {{"recordingId", journal_["recordingId"]}, {"captureId", binding["captureId"]}, {"epoch", binding["epoch"]}}, 0, 0);
+		if (control.isEmpty()) return {};
+		auto legacy = control;
+		legacy.remove("recovery"); legacy.remove("publicEnd"); legacy["controlVersion"] = "d1-2026-10-17.rc2";
+		acceptControl(legacy);
+		require(writeAtomicMetadata(directory_ + "/recovery-control.json", QJsonDocument(control).toJson(QJsonDocument::Compact)));
+	}
 	if(d1) {
-		control=acceptControl(control);
+		if (!d2) control=acceptControl(control);
 		if(!control["boundaries"].toObject()["endSequenceExclusive"].isNull()) return control;
 	}
 	auto command = control["pendingCommand"].toObject(), commands = journal_["commands"].toObject();

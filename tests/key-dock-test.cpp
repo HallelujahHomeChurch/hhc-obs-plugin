@@ -15,9 +15,125 @@
 #include "ingest.hpp"
 #include "windows-path.hpp"
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int stoppedRestartProof()
+	{
+		QFile f("tests/fixtures/k4-identity.json");
+		if (!f.open(QIODevice::ReadOnly)) return 1;
+		const auto opened = QJsonDocument::fromJson(f.readAll()).object()["fixtures"].toArray()[0].toObject()["value"].toObject()["data"].toObject();
+		const auto id = opened["outputSessionId"].toString();
+		auto pin = opened["session"].toObject(); pin.remove("token"); pin.remove("expiresAt");
+		int failed = 0;
+		for (const QString mode : {"valid", "missing", "wrong-identity", "pointer-write-failure"}) {
+			QTemporaryDir root;
+			const auto base = root.path()+"/k3";
+			QDir().mkpath(base+"/intents");
+			QJsonObject proof{{"protocolVersion","k5-2026-10-20.rc1"},{"outputSessionId",id},{"sourceId",opened["sourceId"]},
+				{"recordingId",pin["recordingId"]},{"captureId",pin["captureId"]},{"epoch",pin["epoch"]},{"receipt",opened["receipt"]},{"state","terminal"}};
+			if (mode == "wrong-identity") proof["captureId"] = QString(32,'b');
+			QJsonObject metadata{{"version","k4-2026-10-15.rc1"},{"localId",id},
+				{"intent",QJsonObject{{"protocolVersion","k4-2026-10-15.rc1"},{"outputSessionId",id},{"recoveryVersion","common-watermark-v1"}}},
+				{"sourceId",opened["sourceId"]},{"broadcast",opened["broadcast"]},{"receipt",opened["receipt"]},
+				{"credentialRef","output-key-"+id},{"sessionBinding",pin}};
+			if (mode != "missing") metadata["terminalProof"] = proof;
+			const auto journalPath = base+"/intents/"+id+".json", denyPath = base+"/intents/"+id+".network-blocked";
+			if (!writeAtomicMetadata(journalPath,QJsonDocument(metadata).toJson()) ||
+			    !writeAtomicMetadata(denyPath,"{\"blocked\":true}") ||
+			    !writeAtomicMetadata(base+"/active.json",QJsonDocument(QJsonObject{{"localId",id},{"started",true},{"stopping",true},{"released",false}}).toJson())) return failed+1;
+			KeyController c(root.path()); c.timer_.stop();
+			int recorderCalls = 0; c.recording = [&](bool){ ++recorderCalls; };
+			if (mode == "pointer-write-failure") { QFile::remove(base+"/active.json"); QDir().mkpath(base+"/active.json"); }
+			c.tick(); c.display();
+			const bool expected = mode == "valid";
+			const bool ok = c.released_ == expected && c.action_->isEnabled() == expected && !c.capture_ &&
+				c.id_ == id && !recorderCalls && QFileInfo::exists(journalPath) && QFileInfo::exists(denyPath);
+			if (!ok) { ++failed; std::cerr << "FAIL blocked restart proof " << qPrintable(mode) << '\n'; }
+			if (expected) {
+				QFile active(base+"/active.json");
+				failed += !active.open(QIODevice::ReadOnly) || !QJsonDocument::fromJson(active.readAll()).object()["released"].toBool();
+			}
+			c.closing_ = true;
+		}
+		return failed;
+	}
+	static int openingCancelRecorder()
+	{
+		int failed = 0;
+		for (bool autoRecord : {false,true}) for (bool keepRecording : {false,true}) {
+			QTemporaryDir root;
+			KeyController c(root.path()); c.timer_.stop();
+			c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+			c.starting_ = c.syncAwaiting_ = true;
+			c.savedOptions_[2] = autoRecord; c.savedOptions_[3] = keepRecording;
+			int starts = 0, stops = 0;
+			c.recording = [&](bool start){ start ? ++starts : ++stops; };
+			c.startStop();
+			if (starts || stops || c.capture_ || c.starting_ || !c.stopping_) {
+				++failed; std::cerr << "FAIL opening cancellation must not touch native recorder\n";
+			}
+			c.closing_ = true;
+		}
+		return failed;
+	}
+	static int recoverySafety(QApplication &app)
+	{
+		QTemporaryDir root;
+		KeyController c(root.path()); c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		c.recoveryRequested_ = true;
+		int failed = 0, recordingCalls = 0;
+		c.recording = [&](bool){ ++recordingCalls; };
+		failed += c.preserveRecoveryLocal(RequestError(503,"unavailable"));
+		failed += c.networkBlocked_ || c.paused_;
+		const auto generation = c.generation_.load();
+		failed += !c.preserveRecoveryLocal(RequestError(403,"revoked"));
+		failed += !c.networkBlocked_ || !c.paused_ || !c.cancelled_ || c.generation_.load() != generation+1 || recordingCalls;
+		c.controlGeneration_ = generation;
+		c.control_.setFuture(QtConcurrent::run([]{ KeyJob job; job.title = "stale response"; return job; }));
+		c.control_.waitForFinished(); app.processEvents();
+		failed += c.title_ == "stale response" || !c.networkBlocked_ || recordingCalls;
+		// A throwing upload result must not skip joining the other worker during destruction.
+		std::atomic<bool> otherFinished{false};
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob { throw std::runtime_error("fixture failure"); }));
+		c.control_.setFuture(QtConcurrent::run([&]{ QThread::msleep(80); otherFinished = true; return KeyJob{}; }));
+		c.shutdown();
+		failed += !otherFinished.load() || !c.sync_.isFinished() || !c.control_.isFinished() || recordingCalls;
+		if (failed) std::cerr << "FAIL D2 local preservation, generation fence or worker join\n";
+		return failed;
+	}
+	static int stopDiagnostics()
+	{
+		QTemporaryDir root;
+		KeyController c(root.path());
+		c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		int failed = 0;
+		auto readCause = [&] {
+			QFile f(c.root_ + "/diagnostics/native/stop-cause.json");
+			if (!f.open(QIODevice::ReadOnly)) { ++failed; return QJsonObject{}; }
+			const auto bytes = f.readAll();
+			failed += bytes.contains(c.id_.toUtf8()) || bytes.contains("synthetic-secret") || bytes.contains("https://");
+			return QJsonDocument::fromJson(bytes).object();
+		};
+		c.recordStopCause("server_end", 0);
+		auto d = readCause();
+		failed += d["cause"] != "server_end" || d["publicEndSequenceExclusive"] != 0 ||
+			d["event"] != "stop_requested" || d["output"].toString().size() != 16;
+		c.recordStopCause("user_stop"); d = readCause();
+		failed += d["cause"] != "user_stop" || !d["publicEndSequenceExclusive"].isNull();
+		c.recordStopCause("https://synthetic-secret/signed"); d = readCause();
+		failed += d["cause"] != "unknown";
+		QFile::remove(c.root_ + "/diagnostics/native/stop-cause.json");
+		QDir().mkpath(c.root_ + "/diagnostics/native/stop-cause.json");
+		c.recordStopCause("obs_shutdown");
+		failed += c.paused_ || c.released_ || c.stopping_;
+		c.closing_ = true;
+		if (failed) std::cerr << "FAIL stop trigger evidence, zero cutoff, privacy or failure isolation\n";
+		return failed;
+	}
 	static int pausedDiagnostics(QApplication &app)
 	{
 		QTemporaryDir root;
@@ -224,6 +340,7 @@ struct KeyControllerTest {
 			restored.closing_ = true; // No background process or real transport in this mock.
 		}
 		c.lease_->tryLock(0);
+		c.syncGeneration_ = c.generation_.load(); // Following mock completions belong to the current cancelled output.
 		// An error string alone is not authoritative terminal evidence.
 		for (const int status : {403,409}) {
 		c.sync_.setFuture(QtConcurrent::run([status]() -> KeyJob {
@@ -494,11 +611,30 @@ struct KeyControllerTest {
 int main(int argc, char **argv)
 {
 	QApplication app(argc, argv);
+	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
+	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
+	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder();
+	if (app.arguments().contains("--controller-regression")) {
+		QTemporaryDir root;
+		hhc::KeyController c(root.path());
+		int failed = hhc::KeyControllerTest::pausedDiagnostics(app) + hhc::KeyControllerTest::controlRetry(app) +
+			hhc::KeyControllerTest::unprovenReleasedPointer();
+		failed += hhc::KeyControllerTest::settingsAfterRelease(c);
+		failed += hhc::KeyControllerTest::simpleControls(c);
+		failed += hhc::KeyControllerTest::uploadPacing(c);
+		failed += hhc::KeyControllerTest::k4Recovery(c);
+		failed += hhc::KeyControllerTest::lifecycle(c);
+		return failed ? 1 : 0;
+	}
 	QTemporaryDir root;
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
 	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
+	failed += hhc::KeyControllerTest::stopDiagnostics();
+	failed += hhc::KeyControllerTest::recoverySafety(app);
+	failed += hhc::KeyControllerTest::stoppedRestartProof();
+	failed += hhc::KeyControllerTest::openingCancelRecorder();
 	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();

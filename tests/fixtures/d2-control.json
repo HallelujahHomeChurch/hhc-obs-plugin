@@ -1,0 +1,434 @@
+[
+  {
+    "name": "interrupted",
+    "schema": "BroadcastControlD2",
+    "valid": true,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "legacy_unsupported",
+    "schema": "BroadcastControlD2",
+    "valid": true,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": null,
+        "state": "unsupported",
+        "deadline": null,
+        "lastCommonConfirmedAt": null,
+        "commonConfirmedEndSequenceExclusive": null
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "idle_end",
+    "schema": "BroadcastControlD2",
+    "valid": true,
+    "value": {
+      "revision": 42,
+      "phase": "processing",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": 21,
+        "revision": 2
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "ended",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": {
+        "reason": "idle_timeout",
+        "endSequenceExclusive": 21
+      }
+    }
+  },
+  {
+    "name": "zero_public_end",
+    "schema": "BroadcastControlD2",
+    "valid": true,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 0,
+        "endSequenceExclusive": 0,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": {
+        "reason": "manual_end",
+        "endSequenceExclusive": 0
+      }
+    }
+  },
+  {
+    "name": "safe_integer_maximum",
+    "schema": "BroadcastControlD2",
+    "valid": true,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 9007199254740991
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "missing_recovery",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "missing_public_end",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      }
+    }
+  },
+  {
+    "name": "missing_deadline",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "unknown_state",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "future",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "unknown_version",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "future",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "unsupported_with_deadline",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": null,
+        "state": "unsupported",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "uuid_capture",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222-2222-4222-8222-222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "negative_watermark",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": -1
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "unsafe_integer",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 9007199254740992
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "non_utc_deadline",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T22:05:00+08:00",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": null
+    }
+  },
+  {
+    "name": "unknown_end_reason",
+    "schema": "BroadcastControlD2",
+    "valid": false,
+    "value": {
+      "revision": 42,
+      "phase": "live",
+      "pendingCommand": null,
+      "controlVersion": "d2-2026-10-23.rc1",
+      "recordingId": "11111111-1111-4111-8111-111111111111",
+      "captureId": "22222222222222222222222222222222",
+      "epoch": 1,
+      "boundaries": {
+        "startSequence": 3,
+        "endSequenceExclusive": null,
+        "revision": 1
+      },
+      "recovery": {
+        "version": "common-watermark-v1",
+        "state": "interrupted",
+        "deadline": "2026-10-23T14:05:00Z",
+        "lastCommonConfirmedAt": "2026-10-23T14:00:00Z",
+        "commonConfirmedEndSequenceExclusive": 21
+      },
+      "publicEnd": {
+        "reason": "future",
+        "endSequenceExclusive": 21
+      }
+    }
+  }
+]

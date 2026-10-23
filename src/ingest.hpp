@@ -16,7 +16,10 @@ public:
 	static void validateKey(const QByteArray &);
 	bool hasKey() const;
 	QByteArray key() const;
-	void prepareOpen(const QString &mediaProfile = {});
+	void prepareOpen(const QString &mediaProfile = {}, const QString &recoveryVersion = {});
+	bool requestsRecovery() const;
+	void checkNetwork() const;
+	void blockNetwork(const RequestError &error) const;
 	QJsonObject bind();
 	QByteArray bearer(bool force = false);
 	ApiClient api();

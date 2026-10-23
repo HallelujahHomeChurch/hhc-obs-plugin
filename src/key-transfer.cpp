@@ -26,7 +26,7 @@ void markIngestStopping(const QString &root, const QString &id)
 }
 KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool revoked, bool preparing,
 		       bool &validated, const std::atomic<bool> *cancelled, IngestCredentials vault,
-		       ApiClient::Transport transport, std::function<void(quint64)> uploaded)
+		       ApiClient::Transport transport, std::function<void(quint64)> uploaded, std::function<bool()> current)
 {
 	QDir().mkpath(root + "/intents");
 	QLockFile lock(lockFilePath(root + "/intents/" + id + ".work.lock"));
@@ -38,12 +38,20 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		throw RequestError(409, "local_session_busy");
 	}
 	KeyIngest ingest(root + "/intents", id, std::move(vault), std::move(transport));
+	if (ingest.requestsRecovery() && (revoked || QFileInfo::exists(revokePath(root, id)))) {
+		const RequestError error(403, "broadcast_ingest_revoked");
+		ingest.blockNetwork(error);
+		throw error;
+	}
 	if (!preparing && ingest.metadata().isEmpty())
 		throw RequestError(409, "ingest_no_bind_intent");
 	if (ingest.metadata()["version"] == "k4-2026-10-15.rc1" && !active && !preparing)
 		markIngestStopping(root, id);
 	preparing = preparing && !QFileInfo::exists(root + "/intents/" + id + ".stopping");
-	const auto result = ingest.bind(), b = result["broadcast"].toObject();
+	QJsonObject result;
+	try { result = ingest.bind(); }
+	catch (const RequestError &e) { ingest.blockNetwork(e); throw; }
+	const auto b = result["broadcast"].toObject();
 	// A late open response can describe an already ended event, but its transport still needs cleanup.
 	const bool canStart =
 		preparing && b["boundaries"].toObject()["endSequenceExclusive"].isNull() &&
@@ -53,6 +61,7 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 	out.actor = b["binding"].toObject()["actorId"].toString();
 	out.title = b["title"].toString();
 	out.mediaProfile = ingest.metadata()["intent"].toObject()["mediaProfile"].toString();
+	out.recoveryRequested = ingest.requestsRecovery();
 	auto api = ingest.api();
 	SessionStore store(root + "/queue");
 	const auto directory = store.mediaDirectory(out.actor, id);
@@ -66,7 +75,8 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 	BroadcastControl control(directory, out.actor, id, api, true);
 	control.adoptIngest(result, ingest.metadata()["intent"].toObject());
 	CaptureSync sync(root + "/queue", out.actor, id, api,
-		[uploaded](const QByteArray &method, const QUrl &url, const QByteArray &body, const QMap<QByteArray, QByteArray> &headers) {
+		[uploaded, &ingest](const QByteArray &method, const QUrl &url, const QByteArray &body, const QMap<QByteArray, QByteArray> &headers) {
+			ingest.checkNetwork();
 			auto response = httpRequest(method, url, body, headers);
 			if (uploaded && response.status >= 200 && response.status < 300) uploaded(quint64(body.size()));
 			return response;
@@ -78,7 +88,8 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		if(!out.mediaProfile.isEmpty() && !out.sync.sealAccepted &&
 		   !QStringList{"aborted","failed","expired","ready"}.contains(out.sync.state) &&
 		   !revoked && !QFileInfo::exists(revokePath(root,id)))
-			control.poll({},true);
+			control.poll({},true,current);
+		out.recoveryControl = control.recoveryControl();
 		out.end = control.acceptedEnd();
 		out.serverEnd = control.serverEnd();
 		if (revoked || QFileInfo::exists(revokePath(root, id)))
@@ -93,6 +104,7 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			out.sync = sync.step(active, [&] { control.replay(); });
 		}
 	} catch (const RequestError &e) {
+		ingest.blockNetwork(e);
 		if (!e.outputReplayUnknown && e.code == "broadcast_ingest_revoked")
 			markIngestRevoked(root, id);
 		throw;

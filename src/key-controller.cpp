@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QCryptographicHash>
 #include <limits>
 #include <algorithm>
 #include <QDesktopServices>
@@ -129,17 +130,22 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	connect(&sync_, &QFutureWatcher<KeyJob>::finished, this, [this] { syncDone(); });
 	connect(&control_, &QFutureWatcher<KeyJob>::finished, this, [this] {
 		controlAwaiting_ = false;
-		if (closing_ || terminalRetired_) {
+		if (closing_ || terminalRetired_ || controlGeneration_ != generation_.load()) {
 			if (!closing_) display();
 			return;
 		}
 		try {
 			auto r = workerResult(control_.future());
+			if (!r.id.isEmpty() && r.id != id_) return;
+			recoveryRequested_ = r.recoveryRequested;
+			recoveryControl_ = r.recoveryControl;
+			if (!recoveryControl_.isEmpty()) { end_.reset(); serverEnd_.reset(); }
 			controlFailures_ = 0;
 			end_ = r.end;
 			if(r.serverEnd) serverEnd_=r.serverEnd;
 			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 2000;
 		} catch (const RequestError &e) {
+			if (preserveRecoveryLocal(e)) { recordFailure("control", &e); display(); return; }
 			if (e.outputReleased && e.code == "output_replay_terminal") {
 				recordFailure("control", &e);
 				retireOutput();
@@ -157,8 +163,10 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			if (e.code == "broadcast_ingest_revoked") {
 				revoked_ = true;
 				markIngestRevoked(root_, id_);
-				if (capture_)
+				if (capture_) {
+					recordStopCause("ingest_revoked");
 					capture_->stop(StopReason::EncoderFailure);
+				}
 			}
 			issue_ = e.code;
 			const auto delay = e.retryDelay(controlFailures_);
@@ -191,6 +199,8 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			const auto a = read(root_ + "/active.json");
 			if (!a["released"].toBool()) {
 				id_ = a["localId"].toString();
+				recoveryRequested_ = KeyIngest(root_ + "/intents", id_).requestsRecovery();
+				networkBlocked_ = recoveryRequested_ && QFileInfo::exists(root_ + "/intents/" + id_ + ".network-blocked");
 				stopping_ = a["stopping"].toBool() ||
 					    QFileInfo::exists(root_ + "/intents/" + id_ + ".stopping");
 				starting_ = !a["started"].toBool() && !stopping_;
@@ -274,7 +284,11 @@ void KeyController::display()
 	if (!pendingBytes_) pendingSince_ = -1;
 	else if (pendingSince_ == -1) pendingSince_ = now;
 	const bool finalizing = !running && !starting_ && !id_.isEmpty() && !released_;
-	const auto state = paused_ ? QString::fromUtf8("需要處理") : failures_ ? QString::fromUtf8("重連中") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("未連線");
+	const auto recovery = recoveryControl_["recovery"].toObject();
+	const bool localOnly = running && (networkBlocked_ || recoveryControl_["publicEnd"].isObject());
+	const auto state = localOnly ? QString::fromUtf8("本機保存中") : paused_ ? QString::fromUtf8("需要處理") :
+		running && recovery["state"] == "interrupted" ? QString::fromUtf8("等待恢復") :
+		failures_ ? QString::fromUtf8("重連中") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("未連線");
 	QString text = QString::fromUtf8("HHC：%1").arg(state);
 	// Routine segment uploads fluctuate; show sustained pending work without calling it a network failure.
 	if (pendingBytes_ && (paused_ || failures_ || finalizing || now - pendingSince_ >= 60000))
@@ -282,6 +296,9 @@ void KeyController::display()
 	status_->setText(text + QString::fromUtf8("  |  GPU 編碼：%1").arg(gpuPercent_ >= 0 ? QString::number(gpuPercent_) + "%" : QString::fromUtf8("—")));
 	status_->setToolTip(title_ + "\n" + issue_ + QString::fromUtf8("\n上傳：%1 Mbps（最近 30 秒成功傳送的媒體平均值）\n待傳：%2 MB（尚未確認的媒體，正常分段傳送也會短暫增加）\n待傳持續 60 秒未清空、重連或補傳時顯示於狀態列；不代表會員播放狀態。\nGPU：整張 NVIDIA 顯示卡的 Video Encode 使用率，包含本機錄影與其他程式；多卡或讀取失敗顯示 —。")
 		.arg(mbps, 0, 'f', 1).arg(double(pendingBytes_) / 1048576, 0, 'f', 1));
+	if (!recoveryControl_.isEmpty() && recovery["version"].isNull())
+		status_->setToolTip(status_->toolTip() + QString::fromUtf8("\n本場未啟用五分鐘恢復能力；不依本機時間推算期限。"));
+	if (localOnly) status_->setToolTip(status_->toolTip() + QString::fromUtf8("\n公開播放已結束或網路授權需處理；HHC 本機擷取仍在運作，OBS 原生錄影狀態請看錄影按鈕。"));
 	status_->setStyleSheet(paused_ ? "color: #e76f51" : "");
 }
 bool KeyController::validateSettings()
@@ -387,13 +404,17 @@ void KeyController::startStop()
 		if (stopping != (starting_ || (capture_ && !capture_->finished()))) return;
 	}
 	if (capture_ && !capture_->finished()) {
+		++generation_;
 		stopping_ = true;
+		recordStopCause("user_stop");
 		capture_->stop(StopReason::User);
 		recordWithStream(false);
 		display();
 		return;
 	}
 	if (starting_) {
+		++generation_;
+		recordStopCause("user_cancel_opening");
 		if (QFileInfo::exists(root_ + "/intents/" + id_ + ".json"))
 			markIngestStopping(root_, id_);
 		starting_ = false;
@@ -405,7 +426,6 @@ void KeyController::startStop()
 		state["stopping"] = true;
 		atomicJson(root_ + "/active.json", state);
 		retireUnbound();
-		recordWithStream(false);
 		display();
 		return;
 	}
@@ -437,9 +457,10 @@ void KeyController::startStop()
 		launchHelper();
 	}
 	capture_.reset();
+	++generation_;
 	id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 	try {
-		KeyIngest(root_ + "/intents", id_).prepareOpen("obs-hls-10s-v1");
+		KeyIngest(root_ + "/intents", id_).prepareOpen("obs-hls-10s-v1", "common-watermark-v1");
 		atomicJson(root_ + "/active.json", {{"localId", id_},
 						    {"protocolVersion", "k4-2026-10-15.rc1"},
 						    {"released", false},
@@ -453,6 +474,10 @@ void KeyController::startStop()
 		return;
 	}
 	actor_.clear();
+	recoveryRequested_ = true;
+	networkBlocked_ = false;
+	cancelled_ = false;
+	recoveryControl_ = {};
 	title_.clear();
 	recoveryValidated_ = false;
 	starting_ = true;
@@ -468,6 +493,18 @@ void KeyController::startStop()
 }
 void KeyController::tick()
 {
+	if (networkBlocked_) {
+		// No protected request is needed to honor an already persisted release proof after local stop.
+		if ((!capture_ || capture_->finished()) && !released_) {
+			try {
+				if (hasReleaseProof()) {
+					atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
+					released_ = true; stopping_ = starting_ = paused_ = false;
+				}
+			} catch (...) { paused_ = true; }
+		}
+		return;
+	}
 	if (closing_ || paused_ || terminalRetired_ || !lease_->isLocked() || id_.isEmpty())
 		return;
 	if (!QFileInfo::exists(root_ + "/intents/" + id_ + ".json") && QFileInfo::exists(root_ + "/active.json") &&
@@ -484,6 +521,7 @@ void KeyController::tick()
 	if(capture_ && serverEnd_ && !stopping_) {
 		// Public cutoff is independent of retained media. Stop at the next actual encoder grid.
 		stopping_=capture_->stopAtCommonBoundary();
+		if (stopping_) recordStopCause("server_end", serverEnd_);
 	}
 	if (capture_ && end_ && !serverEnd_ && !stopping_) {
 		// Wait until all public segments are closed; the chosen marker is ahead of the encoder.
@@ -495,6 +533,7 @@ void KeyController::tick()
 		}
 		if (complete) {
 			stopping_ = true;
+			recordStopCause("console_end", end_);
 			capture_->stop(StopReason::User);
 		}
 	}
@@ -504,9 +543,12 @@ void KeyController::tick()
 	const auto id = id_;
 	const bool active = capture_ && !capture_->finished(), revoked = revoked_, preparing = starting_;
 	syncAwaiting_ = true;
-	sync_.setFuture(QtConcurrent::run([this, id, active, revoked, preparing] {
+	syncGeneration_ = generation_.load();
+	const auto generation = syncGeneration_;
+	sync_.setFuture(QtConcurrent::run([this, id, active, revoked, preparing, generation] {
 		HttpCancellationScope cancellation(cancelled_);
-		return keyTransferStep(root_, id, active, revoked, preparing, recoveryValidated_, &cancelled_, {}, httpRequest, [this](quint64 n) { uploadedBytes_.fetch_add(n); });
+		return keyTransferStep(root_, id, active, revoked, preparing, recoveryValidated_, &cancelled_, {}, httpRequest,
+			[this](quint64 n) { uploadedBytes_.fetch_add(n); }, [this, generation] { return generation_.load() == generation; });
 	}));
 }
 void KeyController::pollControl()
@@ -517,14 +559,20 @@ void KeyController::pollControl()
 	const auto id = id_, actor = actor_;
 	const auto boundary = capture_->boundaryClock();
 	controlAwaiting_ = true;
-	control_.setFuture(QtConcurrent::run([this, id, actor, boundary] {
+	controlGeneration_ = generation_.load();
+	const auto generation = controlGeneration_;
+	control_.setFuture(QtConcurrent::run([this, id, actor, boundary, generation] {
 		HttpCancellationScope cancellation(cancelled_);
 		KeyIngest ingest(root_ + "/intents", id);
 		auto api = ingest.api();
 		BroadcastControl control(SessionStore(root_ + "/queue").mediaDirectory(actor, id), actor, id, api,
 					 true);
-		control.poll(boundary, true);
+		try { control.poll(boundary, true, [this, generation] { return generation_.load() == generation; }); }
+		catch (const RequestError &e) { ingest.blockNetwork(e); throw; }
 		KeyJob out;
+		out.id = id;
+		out.recoveryRequested = ingest.requestsRecovery();
+		out.recoveryControl = control.recoveryControl();
 		out.end = control.acceptedEnd();
 		out.serverEnd = control.serverEnd();
 		return out;
@@ -556,7 +604,10 @@ void KeyController::retireOutput()
 		issue_ = QString::fromUtf8("無法保存輸出釋放紀錄；原輸出與素材保留，請重試。");
 		return;
 	}
-	if (capture_ && !capture_->finished()) capture_->stop(StopReason::EncoderFailure);
+	if (capture_ && !capture_->finished()) {
+		recordStopCause("output_released");
+		capture_->stop(StopReason::EncoderFailure);
+	}
 	starting_ = stopping_ = paused_ = false;
 	released_ = terminalRetired_ = true;
 	issue_ = QString::fromUtf8("本次輸出已結束；再次按開始直播才會建立下一次輸出。");
@@ -565,12 +616,16 @@ void KeyController::syncDone()
 {
 	syncAwaiting_ = false;
 	// Control can persist release before an already-running upload reports its old result.
-	if (closing_ || terminalRetired_) {
+	if (closing_ || terminalRetired_ || syncGeneration_ != generation_.load()) {
 		if (!closing_) display();
 		return;
 	}
 	try {
 		const auto r = workerResult(sync_.future());
+		if (!r.id.isEmpty() && r.id != id_) return;
+		recoveryRequested_ = r.recoveryRequested;
+		recoveryControl_ = r.recoveryControl;
+		if (!recoveryControl_.isEmpty()) { end_.reset(); serverEnd_.reset(); }
 		pendingBytes_ = r.sync.pendingBytes;
 		actor_ = r.actor;
 		title_ = r.title;
@@ -611,9 +666,12 @@ void KeyController::syncDone()
 			issue_ +=
 				QString::fromUtf8("；待傳 %1 MB").arg(double(r.sync.pendingBytes) / 1048576, 0, 'f', 1);
 		if (r.sync.state == "aborted" || r.sync.state == "expired" || r.sync.state == "failed") {
+			if (preserveRecoveryLocal(RequestError(409, "capture_terminal"))) { display(); return; }
 			starting_ = false;
-			if (capture_ && !capture_->finished())
+			if (capture_ && !capture_->finished()) {
+				recordStopCause("capture_terminal");
 				capture_->stop(StopReason::EncoderFailure);
+			}
 			released_ = true;
 			atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
 			paused_ = false;
@@ -626,13 +684,21 @@ void KeyController::syncDone()
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {
 		issue_ = e.code;
+		if (preserveRecoveryLocal(e)) { recordFailure("sync", &e); display(); return; }
+		if (e.outputOpening && recoveryRequested_ && e.status == 400) {
+			paused_ = true;
+			issue_ = QString::fromUtf8("平台拒絕 D2 開始請求；請確認伺服器支援或輸入，原開始紀錄保留。");
+			recordFailure("sync", &e); display(); return;
+		}
 		if (e.outputReplayUnknown) {
 			paused_ = true;
 			next_ = std::numeric_limits<qint64>::max();
 		} else if (e.code == "broadcast_ingest_revoked") {
 			revoked_ = true;
-			if (capture_)
+			if (capture_) {
+				recordStopCause("ingest_revoked");
 				capture_->stop(StopReason::EncoderFailure);
+			}
 			next_ = 0;
 		} else if (e.outputReleased && e.code == "output_replay_terminal") {
 			retireOutput();
@@ -662,6 +728,37 @@ void KeyController::syncDone()
 	if (stopping_ || (paused_ && issue_ == "broadcast_stream_key_invalid"))
 		retireUnbound();
 	display();
+}
+bool KeyController::preserveRecoveryLocal(const RequestError &error) noexcept
+{
+	if (!recoveryRequested_ || !(error.status == 401 || error.status == 403 || error.status == 404 ||
+	    error.code == "broadcast_epoch_mismatch" || error.code == "malformed_success" ||
+	    error.code == "capture_terminal" || error.outputReleased || error.outputReplayUnknown)) return false;
+	networkBlocked_ = paused_ = true;
+	cancelled_ = true;
+	++generation_;
+	next_ = nextControl_ = std::numeric_limits<qint64>::max();
+	issue_ = QString::fromUtf8("網路授權／原場狀態需確認；已停止網路操作，本機素材保留。");
+	try { KeyIngest(root_ + "/intents", id_).blockNetwork(error); } catch (...) {}
+	return true;
+}
+void KeyController::recordStopCause(const char *cause, std::optional<int> cutoff) noexcept
+{
+	try {
+		const QString value = QString::fromLatin1(cause);
+		const QString safe = QStringList{"user_stop", "user_cancel_opening", "console_end", "server_end",
+			"ingest_revoked", "output_released", "capture_terminal", "obs_shutdown"}.contains(value) ? value : "unknown";
+		const auto observedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+		const auto output = QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16));
+		QDir().mkpath(root_ + "/diagnostics/native");
+		tryObserverJson(root_ + "/diagnostics/native/stop-cause.json",
+			{{"observedAt", observedAt}, {"output", output}, {"cause", safe}, {"event", "stop_requested"},
+			 {"publicEndSequenceExclusive", cutoff ? QJsonValue(*cutoff) : QJsonValue(QJsonValue::Null)}});
+		diagnostic(QString("[HHC stop] utc=%1 output=%2 cause=%3 event=stop_requested cutoff=%4")
+			.arg(observedAt, output, safe).arg(cutoff.value_or(-1)));
+	} catch (...) {
+		// Optional evidence must never change the requested stop or authority fence.
+	}
 }
 void KeyController::recordFailure(const char *stage, const std::exception *error, bool retryable) noexcept
 {
@@ -726,6 +823,7 @@ void KeyController::shutdown()
 	if (closing_)
 		return;
 	closing_ = true;
+	++generation_;
 	timer_.stop();
 	if (starting_ && QFileInfo::exists(root_ + "/active.json")) {
 		try {
@@ -740,16 +838,15 @@ void KeyController::shutdown()
 	}
 	cancelled_ = true;
 	if (capture_) {
+		if (!capture_->finished()) recordStopCause("obs_shutdown");
 		capture_->stop(StopReason::User);
 		capture_->wait(6000);
 		capture_.reset();
 	}
-	try {
-		gpu_.waitForFinished();
-		sync_.waitForFinished();
-		control_.waitForFinished();
-	} catch (...) {
-	}
-	launchHelper();
+	// Each future can throw; one failure must not skip joining the other workers.
+	try { gpu_.waitForFinished(); } catch (...) {}
+	try { sync_.waitForFinished(); } catch (...) {}
+	try { control_.waitForFinished(); } catch (...) {}
+	if (!networkBlocked_) launchHelper();
 }
 } // namespace hhc

@@ -536,6 +536,99 @@ int main(int argc, char **argv)
 		try { resumed.poll({},true); } catch(const RequestError &){conflict=true;}
 		check(conflict && posts==0,"reject wrong capture without mutation");
 	}
+	// Recovery is a durable preference, never an excuse to retry a different opening identity.
+	{
+		QTemporaryDir recovery;
+		secrets.remove("session-" + id);
+		QByteArray first;
+		int requests = 0;
+		auto opened = response;
+		auto data = opened["data"].toObject(); data["mediaProfile"] = "obs-hls-10s-v1"; opened["data"] = data;
+		auto transport = [&](const auto &, const QUrl &url, const QByteArray &bytes, const auto &) {
+			++requests;
+			check(url.path() == "/api/ingest/streams/open", "D2 opening never falls back to resolve/bind");
+			if (first.isEmpty()) first = bytes;
+			check(first == bytes && read(recovery.path()+"/"+id+".json")["intent"].toObject()["recoveryVersion"] == "common-watermark-v1",
+			      "same opening body and recovery preference persisted before request");
+			if (requests == 1) return HttpResponse{400, "{\"error\":{\"code\":\"request_rejected\"}}"};
+			if (requests == 2) throw RequestError(0,"transport_unavailable");
+			return HttpResponse{200, QJsonDocument(opened).toJson()};
+		};
+		KeyIngest firstOpen(recovery.path(), id, vault, transport);
+		firstOpen.prepareOpen("obs-hls-10s-v1", "common-watermark-v1");
+		bool rejected = false;
+		try { firstOpen.bind(); } catch (const RequestError &e) { rejected = e.status == 400; }
+		check(rejected && requests == 1, "generic 400 never retries without recovery preference");
+		KeyIngest restarted(recovery.path(), id, vault, transport);
+		try { restarted.bind(); check(false, "lost opening response must propagate"); } catch (const RequestError &e) { check(e.status == 0, "lost opening response retained"); }
+		KeyIngest recovered(recovery.path(), id, vault, transport); recovered.bind();
+		check(recovered.requestsRecovery() && requests == 3, "restart after lost response retries original preference, body and output ID");
+		recovered.blockNetwork(RequestError(503, "unavailable")); recovered.checkNetwork();
+		check(requests == 3, "transient failure does not revoke network authority");
+		recovered.blockNetwork(RequestError(403, "revoked"));
+		KeyIngest blocked(recovery.path(), id, vault, transport);
+		try { blocked.bind(); check(false, "blocked output cannot reopen"); } catch (const RequestError &e) {
+			check(e.code == "ingest_network_blocked" && requests == 3, "revocation fence survives restart with zero protected calls");
+		}
+		check(QFile::exists(recovery.path()+"/"+id+".json"), "authority loss preserves original journal");
+	}
+	{
+		QFile file("tests/fixtures/d2-control.json"); check(file.open(QIODevice::ReadOnly), "D2 fixtures readable");
+		auto control = QJsonDocument::fromJson(file.readAll()).array()[0].toObject()["value"].toObject();
+		const auto original = fixtures[0].toObject()["value"].toObject()["data"].toObject();
+		const auto broadcast = original["broadcast"].toObject(), binding = broadcast["binding"].toObject();
+		control["recordingId"] = broadcast["recordingId"]; control["captureId"] = binding["captureId"]; control["epoch"] = binding["epoch"];
+		for (const QString mode : {"normal", "unsupported", "stale", "fallback", "500", "404"}) {
+			QTemporaryDir root;
+			int requests = 0;
+			bool current = true, protocolGone = false;
+			ApiClient client(QUrl("https://fixture.invalid/api"), [](bool){ return QByteArray("fake"); },
+				[&](const auto &, const QUrl &url, const auto &, const auto &) -> HttpResponse {
+					++requests;
+					if (protocolGone && url.query().contains("controlVersion=d2-2026-10-23.rc1"))
+						throw RequestError(422, "broadcast_protocol_unsupported");
+					if (requests == 1 && (mode == "fallback" || mode == "500" || mode == "404"))
+						throw RequestError(mode == "fallback" ? 422 : mode.toInt(), mode == "fallback" ? "broadcast_protocol_unsupported" : "unavailable");
+					auto c = control;
+					if (mode == "unsupported") {
+						c["phase"] = "preview";
+						c["publicEnd"] = QJsonValue::Null;
+						c["boundaries"] = QJsonObject{{"startSequence",QJsonValue::Null},{"endSequenceExclusive",QJsonValue::Null},{"revision",1}};
+						c["recovery"] = QJsonObject{{"version",QJsonValue::Null},{"state","unsupported"},{"deadline",QJsonValue::Null},
+							{"lastCommonConfirmedAt",QJsonValue::Null},{"commonConfirmedEndSequenceExclusive",QJsonValue::Null}};
+					}
+					if (mode == "stale") current = false;
+					if (mode == "fallback" || protocolGone) {
+						check(url.query().contains("controlVersion=d1-2026-10-17.rc2"), "exact unsupported response selects frozen D1");
+						c.remove("recovery"); c.remove("publicEnd"); c["controlVersion"] = "d1-2026-10-17.rc2";
+					} else check(url.query().contains("controlVersion=d2-2026-10-23.rc1"), "D2 explicitly negotiated");
+					return {200,QJsonDocument(QJsonObject{{"data",c},{"meta",QJsonObject{}},{"error",QJsonValue::Null}}).toJson()};
+				});
+			BroadcastControl state(root.path(), binding["actorId"].toString(), id, client, true);
+			state.adoptIngest(original, {{"protocolVersion","k4-2026-10-15.rc1"},{"outputSessionId",id},{"recoveryVersion","common-watermark-v1"}});
+			try {
+				const auto observed = state.poll({},true,[&]{return current;});
+				check(mode != "500" && mode != "404", "HTTP authority/transient failures propagate without downgrade");
+				if (mode == "stale") check(observed.isEmpty() && state.recoveryControl().isEmpty(), "old generation response never committed");
+				if (mode == "fallback") check(requests == 2 && state.recoveryControl().isEmpty(), "authorized fallback is durable legacy capability");
+				if (mode == "unsupported") check(requests == 1 && !state.recoveryControl().isEmpty() && !state.serverEnd() && !state.acceptedEnd(),
+					"manual or scheduled unsupported capability is accepted without requesting native stop");
+				if (mode == "normal") {
+					control["revision"] = 43; control["phase"] = "end_pending";
+					auto bounds = control["boundaries"].toObject(); bounds["endSequenceExclusive"] = 21; bounds["revision"] = 2; control["boundaries"] = bounds;
+					control["publicEnd"] = QJsonObject{{"reason","idle_timeout"},{"endSequenceExclusive",21}};
+					state.poll({},true);
+					BroadcastControl resumed(root.path(), binding["actorId"].toString(), id, client, true);
+					check(resumed.recoveryControl()["publicEnd"].isObject() && !resumed.serverEnd() && !resumed.acceptedEnd(),
+					      "durable public End does not request native local stop");
+					protocolGone = true; resumed.poll({},true);
+					check(resumed.recoveryControl()["publicEnd"].isObject() &&
+					      resumed.recoveryControl()["recovery"].toObject()["version"].isNull() && resumed.serverEnd() == 21,
+					      "explicit D1 fallback retains legacy boundary behavior without erasing committed public End");
+				}
+			} catch (const RequestError &e) { check((mode == "500" || mode == "404") && requests == 1 && e.status == mode.toInt(), "no generic HTTP fallback"); }
+		}
+	}
 	// Preserve canonical bytes independently of checkout newlines and runtime schema embedding.
 	for (const auto &[name, hash] : QMap<QString, QByteArray>{
 		{"manifest.json","17d02cb529d45b6f5b2820b2e2d89fce553017978fa5e08a4be029e499aa249d"},
@@ -556,7 +649,9 @@ int main(int argc, char **argv)
 		check(validWire(f["schema"].toString(), f["value"]) == f["valid"].toBool(), qPrintable(f["name"].toString()));
 	}
 	// Renewal recovery is read/renew-only: no second open, resolve, bind or new output.
-	for (const QString mode : {"renewed", "active", "terminal", "401", "403", "404", "409", "422", "429", "503", "timeout", "cancelled", "malformed", "201", "version", "output", "source", "capture", "epoch", "recording", "profile", "receipt", "terminal-session", "terminal-lock", "active-session", "no-pin", "missing-key", "missing-receipt", "accepted-receipt", "legacy900"}) {
+	for (QString mode : {"renewed", "active", "terminal", "401", "403", "404", "409", "422", "429", "503", "timeout", "cancelled", "malformed", "201", "version", "output", "source", "capture", "epoch", "recording", "profile", "receipt", "terminal-session", "terminal-lock", "active-session", "no-pin", "missing-key", "missing-receipt", "accepted-receipt", "legacy900", "d2-renewed", "d2-active", "d2-429", "d2-503", "d2-timeout"}) {
+		const bool d2 = mode.startsWith("d2-");
+		if (d2) mode.remove(0,3);
 		QTemporaryDir recovery;
 		auto opened = fixtures[0].toObject()["value"].toObject();
 		auto data = opened["data"].toObject();
@@ -578,6 +673,7 @@ int main(int argc, char **argv)
 			if (url.path() == "/api/ingest/streams/open") {
 				++opens;
 				check(opens == 1, "K5 recovery must never invoke K4 open");
+				check(request.contains("recoveryVersion") == d2, "native replay starts with original recovery preference");
 				return opens == 1 ? HttpResponse{200, QJsonDocument(opened).toJson()} : failure(409, "broadcast_output_terminal");
 			}
 			if (url.path().endsWith("/session")) {
@@ -621,7 +717,7 @@ int main(int argc, char **argv)
 			return {mode == "201" ? 201 : 200, QJsonDocument(QJsonObject{{"data", replay}, {"meta", QJsonObject{}}, {"error", QJsonValue::Null}}).toJson()};
 		};
 		KeyIngest initial(recovery.path(), id, vault, recover);
-		initial.prepareOpen(shortProfile ? "obs-hls-10s-v1" : "");
+		initial.prepareOpen(shortProfile ? "obs-hls-10s-v1" : "", d2 ? "common-watermark-v1" : "");
 		initial.bind();
 		secrets["stream-key"] = "hhc_stream_" + QByteArray(42, 'B') + 'A';
 		if (mode == "no-pin" || mode == "missing-receipt" || mode == "accepted-receipt") {
@@ -664,6 +760,8 @@ int main(int argc, char **argv)
 		check(accepted == (mode == "renewed" || mode == "active" || mode == "legacy900"), qPrintable("K5 renew/replay " + mode));
 		check(terminal == (mode == "terminal"), qPrintable("only authenticated 200 terminal releases: " + mode));
 		check(opens == 1 && renews <= 1 && replays == (mode == "renewed" || lacksProof ? 0 : 1), "no implicit new output or fallback");
+		check(read(recovery.path()+"/"+id+".json")["intent"].toObject().contains("recoveryVersion") == d2,
+		      "renewal, replay and429/503 preserve the original durable capability preference");
 		check(secrets["session-" + id] == credentialBefore, "rejected identity never overwrites credential");
 		check(retained.open(QIODevice::ReadOnly) && retained.readAll() == "original-media", "all results retain original media");
 		if (mode == "terminal") {
