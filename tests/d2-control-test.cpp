@@ -4,11 +4,73 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QTemporaryDir>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QElapsedTimer>
+#include <QThread>
 #include <iostream>
+
+static int httpRecovery(int durationMs)
+{
+	QFile identityFile("tests/fixtures/k4-identity.json"), controlFile("tests/fixtures/d2-control.json");
+	if (!identityFile.open(QIODevice::ReadOnly) || !controlFile.open(QIODevice::ReadOnly)) return 2;
+	const auto opened = QJsonDocument::fromJson(identityFile.readAll()).object()["fixtures"].toArray()[0].toObject()["value"].toObject()["data"].toObject();
+	const auto broadcast = opened["broadcast"].toObject(), binding = broadcast["binding"].toObject();
+	auto control = QJsonDocument::fromJson(controlFile.readAll()).array()[0].toObject()["value"].toObject();
+	for (const auto *key : {"recordingId", "captureId", "epoch"}) control[key] = key == QString("recordingId") ? broadcast[key] : binding[key];
+	QTcpServer server;
+	if (!server.listen(QHostAddress::LocalHost, 0)) return 2;
+	bool outage = false;
+	int failures = 0, requests = 0, failedRequests = 0;
+	QObject::connect(&server, &QTcpServer::newConnection, [&] {
+		auto *socket = server.nextPendingConnection();
+		QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+		QObject::connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
+			const auto request = socket->readAll(); ++requests;
+			failures += !request.startsWith("GET /admin/broadcasts/") || !request.contains("controlVersion=d2-2026-10-23.rc1") ||
+				!request.contains(binding["captureId"].toString().toUtf8());
+			const auto body = outage ? QByteArray("{\"error\":{\"code\":\"temporarily_unavailable\"}}") :
+				QJsonDocument(QJsonObject{{"data",control},{"meta",QJsonObject{}},{"error",QJsonValue::Null}}).toJson(QJsonDocument::Compact);
+			socket->write(QByteArray("HTTP/1.1 ") + (outage ? "503 Unavailable" : "200 OK") + "\r\nContent-Type: application/json\r\nContent-Length: " +
+				QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+			socket->disconnectFromHost();
+		});
+	});
+	QTemporaryDir root;
+	hhc::ApiClient client(QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())), [](bool){ return QByteArray{}; });
+	const auto id = opened["outputSessionId"].toString();
+	hhc::BroadcastControl state(root.path(), binding["actorId"].toString(), id, client, true);
+	state.adoptIngest(opened, {{"protocolVersion","k4-2026-10-15.rc1"},{"outputSessionId",id},{"recoveryVersion","common-watermark-v1"}});
+	state.poll({},true);
+	const auto before = state.recoveryControl();
+	outage = true;
+	QElapsedTimer elapsed; elapsed.start();
+	while (elapsed.elapsed() < durationMs) {
+		try { state.poll({},true); ++failures; }
+		catch (const hhc::RequestError &e) { unsigned retries = 0; failures += e.status != 503 || !e.retryDelayMs(retries); ++failedRequests; }
+		QThread::msleep(250);
+	}
+	failures += state.recoveryControl() != before || state.serverEnd().has_value();
+	outage = false;
+	auto recovery = control["recovery"].toObject(); recovery["state"] = "healthy"; control["recovery"] = recovery;
+	state.poll({},true);
+	hhc::BroadcastControl restarted(root.path(), binding["actorId"].toString(), id, client, true);
+	failures += restarted.recoveryControl()["recovery"].toObject()["state"] != "healthy" || restarted.serverEnd().has_value();
+	std::cout << "D2 native control+HTTP elapsedMs=" << elapsed.elapsed() << " failedRequests=" << failedRequests
+		<< " requests=" << requests << " sameOutput=true encoder=false controllerRetryLoop=false\n";
+	return failures ? 1 : 0;
+}
 
 int main(int argc, char **argv)
 {
 	QCoreApplication app(argc, argv);
+	if (app.arguments().contains("--http-outage-ms")) {
+		bool ok = false;
+		const int duration = app.arguments().value(app.arguments().indexOf("--http-outage-ms")+1).toInt(&ok);
+		if (!ok || (duration != 1000 && (duration < 90000 || duration > 120000))) return 2;
+		try { return httpRecovery(duration); } catch (const hhc::RequestError &e) { std::cerr << "FAIL D2 HTTP " << qPrintable(e.code) << '\n'; return 1; }
+	}
 	int failed = 0;
 	auto check = [&](bool ok, const char *what) { if (!ok) { ++failed; std::cerr << "FAIL " << what << '\n'; } };
 	QFile f("tests/fixtures/d2-control.json");
