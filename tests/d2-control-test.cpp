@@ -75,7 +75,7 @@ int main(int argc, char **argv)
 	open["recoveryVersion"] = "future";
 	check(!hhc::validWire("BroadcastOutputOpenD2Input", open), "unknown open recovery version rejected");
 	open["recoveryVersion"] = "";
-	check(!hhc::validWire("BroadcastOutputOpenD2Input", open), "empty offer is not an omitted legacy preference");
+	check(hhc::validWire("BroadcastOutputOpenD2Input", open), "fixed producer schema accepts explicit empty legacy preference");
 	open.remove("recoveryVersion");
 	check(hhc::validWire("BroadcastOutputOpenD2Input", open) && hhc::validWire("BroadcastOutputOpenInput", open), "omitted offer remains legacy");
 	return failed ? 1 : 0;
