@@ -45,7 +45,7 @@ int main(int argc, char **argv)
 		}
 		QTcpServer server;
 		server.listen(QHostAddress::LocalHost, 0);
-		int titleCreates = 0, captureCreates = 0, aborts = 0, stops = 0;
+		int titleCreates = 0, captureCreates = 0, aborts = 0, stops = 0, cancellations = 0, lastSequence = -1;
 		bool keysPresent = true, declarationsUnavailable = false;
 		QVector<QJsonObject> declarations;
 		QByteArray seen;
@@ -94,6 +94,7 @@ int main(int argc, char **argv)
 					s->disconnectFromHost();
 					return;
 				} else if (line.startsWith("DELETE ")) {
+					++cancellations;
 					response = create;
 					auto data = response["data"].toObject(), r = data["receipt"].toObject(),
 					     c = data["capture"].toObject();
@@ -130,10 +131,16 @@ int main(int argc, char **argv)
 				auto data = response["data"].toObject();
 				if (data.contains("capture")) {
 					auto c = data["capture"].toObject();
+					auto progress = c["progress"].toObject();
+					progress["lastSequence"] = lastSequence;
+					c["progress"] = progress;
 					c["expiresAt"] = "2099-10-08T00:00:00Z";
 					c["serverNow"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 					data["capture"] = c;
 				} else if (data.contains("captureId")) {
+					auto progress = data["progress"].toObject();
+					progress["lastSequence"] = lastSequence;
+					data["progress"] = progress;
 					data["expiresAt"] = "2099-10-08T00:00:00Z";
 					data["serverNow"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 				}
@@ -243,6 +250,18 @@ int main(int argc, char **argv)
 		check(!QFile::exists(longStore.mediaDirectory(account, id) + "/sync.lock"),
 		      "long Windows session lock is removed after a mutation");
 		longSync.begin("SYNTHETIC", false, false);
+		lastSequence = 1440;
+		const auto beforeCancel = cancellations;
+		check(longSync.control(false).lastSequence == 1440, "S10 mutation response advances progress");
+		QFile savedMutation(longSync.directory() + "/remote-journal.json");
+		check(savedMutation.open(QIODevice::ReadOnly), "S10 mutation journal readable");
+		auto savedRemote = QJsonDocument::fromJson(savedMutation.readAll()).object();
+		savedMutation.close();
+		check(savedRemote["mutations"].toObject()["cancel_auto_publish"].toObject()["receipt"].isObject(),
+		      "S10 accepted mutation receipt is durable beyond legacy progress limit");
+		hhc::CaptureSync resumedLong(longRoot, account, id, api);
+		resumedLong.control(false);
+		check(cancellations == beforeCancel + 1, "restart reuses S10 receipt without duplicate mutation");
 		return errors ? 1 : 0;
 	} catch (const std::exception &e) {
 		std::cerr << "TEST EXCEPTION " << e.what() << "\n";
