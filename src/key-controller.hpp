@@ -75,7 +75,7 @@ private:
 	     controlAwaiting_ = false;
 	bool released_ = false, revoked_ = false, terminalRetired_ = false;
 	bool keyAvailable_ = false, recoveryValidated_ = false;
-	unsigned failures_ = 0;
+	unsigned failures_ = 0, controlFailures_ = 0;
 	qint64 next_ = 0, nextControl_ = 0;
 	std::optional<int> end_;
 	std::optional<int> serverEnd_;
