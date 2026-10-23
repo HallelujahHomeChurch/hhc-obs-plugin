@@ -9,6 +9,7 @@
 #include <limits>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QPromise>
 #include <QDateTime>
 #include "ingest.hpp"
@@ -72,6 +73,58 @@ struct KeyControllerTest {
 		failed += !c.paused_ || c.id_ != original || c.released_;
 		c.closing_ = true; // Mock workers only; never launch a background recovery process.
 		if (failed) std::cerr << "FAIL durable, privacy-safe worker diagnostics preserve pause and identity\n";
+		return failed;
+	}
+	static int controlRetry(QApplication &app)
+	{
+		QTemporaryDir root;
+		KeyController c(root.path());
+		c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		const auto original = c.id_;
+		int failed = 0;
+		c.failures_ = 4;
+		auto failure = [&](RequestError error, qint64 expectedMs) {
+			const auto before = QDateTime::currentMSecsSinceEpoch();
+			c.control_.setFuture(QtConcurrent::run([error]() -> KeyJob { throw error; }));
+			try { c.control_.waitForFinished(); } catch (...) {}
+			app.processEvents();
+			failed += c.nextControl_ < before + expectedMs ||
+				c.nextControl_ > QDateTime::currentMSecsSinceEpoch() + expectedMs;
+			failed += c.failures_ != 4 || c.id_ != original || c.released_;
+		};
+		failure(RequestError(429, "rate_limited", 120), 120000);
+		failed += c.paused_ || c.controlFailures_ != 1;
+		c.controlFailures_ = 0;
+		for (const auto delay : {5000, 5000, 8000, 16000, 32000, 60000, 60000}) {
+			failure(RequestError(503, "unavailable"), delay);
+			failed += c.paused_;
+		}
+		c.control_.setFuture(QtConcurrent::run([] { return KeyJob{}; }));
+		c.control_.waitForFinished(); app.processEvents();
+		failed += c.controlFailures_ != 0 || c.failures_ != 4;
+		failure(RequestError(503, "unavailable"), 5000);
+		failed += c.controlFailures_ != 1;
+		// Permanent errors retain the existing cadence; authority fences remain separate.
+		failure(RequestError(403, "forbidden"), 5000);
+		failed += c.controlFailures_ != 1;
+		RequestError unknown(503, "unavailable"); unknown.outputReplayUnknown = true;
+		c.control_.setFuture(QtConcurrent::run([unknown]() -> KeyJob { throw unknown; }));
+		try { c.control_.waitForFinished(); } catch (...) {}
+		app.processEvents();
+		failed += !c.paused_ || c.released_ || c.id_ != original ||
+			c.nextControl_ != std::numeric_limits<qint64>::max();
+		c.paused_ = false;
+		QDir().mkpath(c.root_ + "/intents");
+		failure(RequestError(403, "broadcast_ingest_revoked"), 5000);
+		failed += !c.revoked_ || !QFileInfo::exists(revokePath(c.root_, original));
+		RequestError terminal(0, "output_replay_terminal"); terminal.outputReleased = true;
+		c.control_.setFuture(QtConcurrent::run([terminal]() -> KeyJob { throw terminal; }));
+		try { c.control_.waitForFinished(); } catch (...) {}
+		app.processEvents();
+		failed += !c.released_ || !c.terminalRetired_ || c.id_ != original;
+		c.closing_ = true; // Synthetic workers must never launch recovery or start a capture.
+		if (failed) std::cerr << "FAIL control Retry-After/backoff/reset or authority fence\n";
 		return failed;
 	}
 	static int outputOptions()
@@ -446,6 +499,7 @@ int main(int argc, char **argv)
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
 	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
+	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
 	failed += gpu < -1 || gpu > 100;

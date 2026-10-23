@@ -19,6 +19,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <limits>
+#include <algorithm>
 #include <QDesktopServices>
 #include <QCoreApplication>
 #include <QProcess>
@@ -122,7 +123,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	connect(retry_, &QPushButton::clicked, this, [this] {
 		paused_ = false;
 		next_ = nextControl_ = 0;
-		failures_ = 0;
+		failures_ = controlFailures_ = 0;
 		tick();
 	});
 	connect(&sync_, &QFutureWatcher<KeyJob>::finished, this, [this] { syncDone(); });
@@ -134,6 +135,7 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 		}
 		try {
 			auto r = workerResult(control_.future());
+			controlFailures_ = 0;
 			end_ = r.end;
 			if(r.serverEnd) serverEnd_=r.serverEnd;
 			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 2000;
@@ -159,7 +161,8 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 					capture_->stop(StopReason::EncoderFailure);
 			}
 			issue_ = e.code;
-			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 5000;
+			const auto delay = e.retryDelay(controlFailures_);
+			nextControl_ = QDateTime::currentMSecsSinceEpoch() + qint64((std::max)(5, delay.value_or(5))) * 1000;
 			recordFailure("control", &e, !paused_ && !revoked_);
 		} catch (const std::exception &e) {
 			issue_ = "control_recovery_required";
@@ -453,6 +456,7 @@ void KeyController::startStop()
 	title_.clear();
 	recoveryValidated_ = false;
 	starting_ = true;
+	controlFailures_ = 0;
 	terminalRetired_ = false;
 	stopping_ = released_ = revoked_ = paused_ = false;
 	end_.reset();
