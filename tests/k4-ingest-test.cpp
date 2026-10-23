@@ -72,7 +72,31 @@ int main(int argc, char **argv)
 	QJsonObject status;
 	for (const auto &v : QJsonDocument::fromJson(c1.readAll()).array())
 		if(v.toObject()["schema"]=="RecordingCaptureStatus" && v.toObject()["valid"].toBool()) {status=v.toObject()["value"].toObject(); break;}
+	// Validate the complete mutation envelope, not only its directly selected status schema.
+	QJsonObject result;
+	c1.seek(0);
+	for (const auto &v : QJsonDocument::fromJson(c1.readAll()).array())
+		if (v.toObject()["name"] == "create_receipt") result = v.toObject()["value"].toObject();
+	for (int sequence : {1439, 1440, 4319, 4320}) {
+		auto data = result["data"].toObject(), capture = data["capture"].toObject();
+		auto progress = capture["progress"].toObject();
+		progress["lastSequence"] = sequence;
+		capture["progress"] = progress;
+		data["capture"] = capture;
+		result["data"] = data;
+		check(validWire("RecordingCaptureResultEnvelope", result) == (sequence <= 4319),
+		      "S10 complete mutation response progress boundary");
+	}
 	for (int count : {10000,13000,13001}) {
+		auto data = result["data"].toObject(), capture = data["capture"].toObject();
+		auto progress = capture["progress"].toObject();
+		progress["lastSequence"] = 4319;
+		capture["progress"] = progress;
+		capture["declaredObjects"] = count;
+		data["capture"] = capture;
+		result["data"] = data;
+		check(validWire("RecordingCaptureResultEnvelope", result) == (count <= 13000),
+		      "S10 complete mutation response object-count boundary");
 		status["declaredObjects"]=count;
 		check(validWire("RecordingCaptureStatus",status)==(count<=13000), "S10 declared total boundary");
 		QJsonArray objects;
