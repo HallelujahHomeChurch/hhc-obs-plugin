@@ -267,9 +267,12 @@ void KeyController::setStreamActive(bool active)
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
-	setStreamActive(running);
-	action_->setText(running || starting_ ? QString::fromUtf8("停止 HHC 串流") : QString::fromUtf8("開始 HHC 串流"));
-	action_->setEnabled(lease_->isLocked() && (running || starting_ || !paused_) &&
+	const bool stopping = stopping_ && !released_;
+	const bool finalizing = !running && !starting_ && !id_.isEmpty() && !released_;
+	setStreamActive(running && !stopping);
+	action_->setText(stopping ? (finalizing ? QString::fromUtf8("HHC 串流收尾中…") : QString::fromUtf8("HHC 串流停止中…")) :
+		finalizing ? QString::fromUtf8("HHC 串流收尾中…") : running || starting_ ? QString::fromUtf8("停止 HHC 串流") : QString::fromUtf8("開始 HHC 串流"));
+	action_->setEnabled(!stopping && lease_->isLocked() && (running || starting_ || !paused_) &&
 			    (id_.isEmpty() || released_ || running || starting_));
 	key_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ &&
 			  !syncAwaiting_ && !controlAwaiting_);
@@ -283,10 +286,9 @@ void KeyController::display()
 	const double mbps = dt > 0 ? double(uploadedBytes_.load() - rateSamples_.front().second) * 0.008 / dt : 0;
 	if (!pendingBytes_) pendingSince_ = -1;
 	else if (pendingSince_ == -1) pendingSince_ = now;
-	const bool finalizing = !running && !starting_ && !id_.isEmpty() && !released_;
 	const auto recovery = recoveryControl_["recovery"].toObject();
 	const bool localOnly = running && (networkBlocked_ || recoveryControl_["publicEnd"].isObject());
-	const auto state = localOnly ? QString::fromUtf8("本機保存中") : paused_ ? QString::fromUtf8("需要處理") :
+	const auto state = stopping ? (finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("停止中")) : localOnly ? QString::fromUtf8("本機保存中") : paused_ ? QString::fromUtf8("需要處理") :
 		running && recovery["state"] == "interrupted" ? QString::fromUtf8("等待恢復") :
 		failures_ ? QString::fromUtf8("重連中") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("未連線");
 	QString text = QString::fromUtf8("HHC：%1").arg(state);
@@ -393,7 +395,7 @@ bool KeyController::retireUnbound()
 }
 void KeyController::startStop()
 {
-	if (closing_ || !lease_->isLocked())
+	if (closing_ || (stopping_ && !released_) || !lease_->isLocked())
 		return;
 	const bool stopping = starting_ || (capture_ && !capture_->finished());
 	if (savedOptions_[stopping ? 1 : 0] && view_->isVisible()) {
@@ -401,11 +403,13 @@ void KeyController::startStop()
 		    QString::fromUtf8(stopping ? "確定要停止 HHC 串流嗎？" : "確定要開始 HHC 串流嗎？"),
 		    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
 		// Control polling can finish this output while the modal confirmation is open.
-		if (stopping != (starting_ || (capture_ && !capture_->finished()))) return;
+		if (stopping_ || stopping != (starting_ || (capture_ && !capture_->finished()))) return;
 	}
 	if (capture_ && !capture_->finished()) {
 		++generation_;
 		stopping_ = true;
+		display();
+		action_->repaint();
 		recordStopCause("user_stop");
 		capture_->stop(StopReason::User);
 		recordWithStream(false);
@@ -419,6 +423,8 @@ void KeyController::startStop()
 			markIngestStopping(root_, id_);
 		starting_ = false;
 		stopping_ = true;
+		display();
+		action_->repaint();
 		auto state = QFileInfo::exists(root_ + "/active.json") ? read(root_ + "/active.json") : QJsonObject{};
 		state["localId"] = id_;
 		state["released"] = false;
