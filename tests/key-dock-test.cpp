@@ -19,6 +19,32 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int immediateStopFeedback()
+	{
+		QTemporaryDir root;
+		KeyController c(root.path()); c.timer_.stop();
+		c.id_ = "stop-feedback-test";
+		c.starting_ = c.stopping_ = c.syncAwaiting_ = true;
+		c.savedOptions_[0] = c.savedOptions_[1] = false;
+		int recorderCalls = 0; c.recording = [&](bool){ ++recorderCalls; };
+		c.display();
+		int failed = c.action_->isEnabled() || !c.action_->text().contains(QString::fromUtf8("停止中")) ||
+			!c.status_->text().contains(QString::fromUtf8("停止中"));
+		const auto generation = c.generation_.load();
+		c.startStop();
+		failed += c.generation_.load() != generation || recorderCalls || !c.starting_ || !c.stopping_;
+		c.starting_ = false;
+		c.display();
+		failed += c.action_->isEnabled() || !c.action_->text().contains(QString::fromUtf8("收尾中"));
+		c.pendingBytes_ = 1024; c.display();
+		failed += c.action_->isEnabled() || !c.status_->text().contains(QString::fromUtf8("補傳中"));
+		c.released_ = true; c.stopping_ = c.syncAwaiting_ = false; c.display();
+		failed += !c.action_->isEnabled() || !c.action_->text().contains(QString::fromUtf8("開始"));
+		c.closing_ = true;
+		if (failed) std::cerr << "FAIL Stop must disable immediately, ignore duplicate action, retain finalization and reenable after release\n";
+		return failed;
+	}
+
 	static int stoppedRestartProof()
 	{
 		QFile f("tests/fixtures/k4-identity.json");
@@ -613,7 +639,7 @@ int main(int argc, char **argv)
 	QApplication app(argc, argv);
 	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
 	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
-	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder();
+	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder() + hhc::KeyControllerTest::immediateStopFeedback();
 	if (app.arguments().contains("--controller-regression")) {
 		QTemporaryDir root;
 		hhc::KeyController c(root.path());
@@ -635,6 +661,7 @@ int main(int argc, char **argv)
 	failed += hhc::KeyControllerTest::recoverySafety(app);
 	failed += hhc::KeyControllerTest::stoppedRestartProof();
 	failed += hhc::KeyControllerTest::openingCancelRecorder();
+	failed += hhc::KeyControllerTest::immediateStopFeedback();
 	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();
