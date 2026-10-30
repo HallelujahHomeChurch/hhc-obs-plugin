@@ -26,7 +26,7 @@ static void require(bool ok, const char *msg)
 void atomicJson(const QString &path, const QJsonObject &j)
 {
 	const auto bytes = QJsonDocument(j).toJson();
-	require(writeAtomicMetadata(path, bytes), "journal commit failed");
+	writeRequiredMetadata(path, bytes);
 }
 bool tryObserverJson(const QString &path, const QJsonObject &j)
 {

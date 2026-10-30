@@ -385,8 +385,9 @@ int main(int argc, char **argv)
 		}
 	}
 	// Actual transfer/adoption code: lost response, stopping, restart, original abort. No encoder or network.
-	for (int cleanupCase : {0,1,2}) {
+	for (int cleanupCase : {0,1,2,3,4}) {
 		const bool endedBeforeResponse=cleanupCase==1, endedOnControl=cleanupCase==2;
+		const bool localFailure = cleanupCase >= 3, lostAbort = cleanupCase == 4;
 		QTemporaryDir transfer;
 		secrets.remove("session-" + id);
 		auto data = response["data"].toObject();
@@ -413,6 +414,7 @@ int main(int argc, char **argv)
 		state["captureId"] = session["captureId"];
 		state["expiresAt"] = "2099-01-01T00:00:00Z";
 		int opens = 0, aborts = 0;
+		QString abortKey;
 		auto pipeline = [&](const QByteArray &method, const QUrl &url, const QByteArray &bytes, const auto &) {
 			QJsonObject result = state;
 			if (url.path() == "/api/ingest/streams/open") {
@@ -431,7 +433,11 @@ int main(int argc, char **argv)
 			} else if (method == "POST") {
 				check(url.path().endsWith("/abort"), "unstarted cleanup only aborts original");
 				++aborts;
+				const auto key = QJsonDocument::fromJson(bytes).object()["operationKey"].toString();
+				check(abortKey.isEmpty() || key == abortKey, "lost abort receipt replays the same operation key");
+				abortKey = key;
 				state["state"] = "aborted";
+				if (lostAbort && aborts == 1) throw RequestError(0, "transport_unavailable");
 				result = {{"capture", state},
 					  {"receipt",
 					   QJsonObject{{"operationKey",
@@ -455,13 +461,31 @@ int main(int argc, char **argv)
 		}
 		if (cleanupCase==0)
 			markIngestStopping(transfer.path(), id);
+		if (localFailure) {
+			markIngestAborting(transfer.path(), id);
+			const auto actor = data["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
+			const auto media = SessionStore(transfer.path()+"/queue").mediaDirectory(actor,id);
+			QDir().mkpath(media);
+			writeRequiredMetadata(media+"/journal.json", "corrupt retained media journal");
+			writeRequiredMetadata(media+"/broadcast-journal.json", "corrupt retained control journal");
+		}
 		try {
+			if (lostAbort) {
+				try { keyTransferStep(transfer.path(), id, false, false, true, validated, nullptr, vault, pipeline); }
+				catch (const RequestError &) {}
+			}
 			auto result = keyTransferStep(transfer.path(), id, false, false, true, validated, nullptr,
 						      vault, pipeline);
-			check(!result.bound && result.sync.state == "aborted" && opens == 2 && aborts == 1,
+			check(!result.bound && result.sync.state == "aborted" && opens == 2 && aborts == (lostAbort ? 2 : 1),
 			      "cancel/restart or End before response cleans original without starting encoder");
 			keyTransferStep(transfer.path(), id, false, false, false, validated, nullptr, vault, pipeline);
-			check(opens == 2 && aborts == 1, "settled recovery does not reopen or repeat abort");
+			check(opens == 2 && aborts == (lostAbort ? 2 : 1), "settled recovery does not reopen or repeat abort");
+			if (localFailure) {
+				const auto actor = data["broadcast"].toObject()["binding"].toObject()["actorId"].toString();
+				const auto media = SessionStore(transfer.path()+"/queue").mediaDirectory(actor,id);
+				QFile retained(media+"/journal.json");
+				check(retained.open(QIODevice::ReadOnly) && retained.readAll() == "corrupt retained media journal", "fatal abort preserves damaged originals");
+			}
 		} catch (const std::exception &e) {
 			std::cerr << "FAIL cleanup " << e.what() << '\n';
 			++failures;

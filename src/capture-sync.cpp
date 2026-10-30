@@ -18,15 +18,15 @@
 #include <algorithm>
 namespace hhc {
 namespace {
-void require(bool ok, const char *why)
+void require(bool ok, const char *why, std::source_location site = std::source_location::current())
 {
 	if (!ok)
-		throw std::runtime_error(why);
+		throw LocalStateError(why, site);
 }
 QJsonObject readJson(const QString &path)
 {
 	QFile f(path);
-	require(!QFileInfo(f).isSymLink() && f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f),
+	require(!QFileInfo(f).isSymLink() && f.size() <= 8 * 1024 * 1024 && openRequiredJsonRead(f),
 		"Queue document unavailable");
 	QJsonParseError e;
 	auto d = QJsonDocument::fromJson(f.readAll(), &e);
@@ -215,7 +215,7 @@ void CaptureSync::persistControl(const QString &root, const QString &account, co
 	auto tag = live ? QString("close_live") : QString("cancel_auto_publish");
 	intent[tag] = id + "." + tag;
 	auto bytes = QJsonDocument(intent).toJson(QJsonDocument::Compact);
-	require(writeAtomicMetadata(path, bytes), "Control intent commit failed");
+	writeRequiredMetadata(path, bytes);
 }
 bool CaptureSync::hasReleaseReceipt(const QString &recordingId, const QString &captureId) const
 {
@@ -235,7 +235,7 @@ void CaptureSync::save()
 		"Remote queue directory unavailable");
 	auto bytes = QJsonDocument(journal_).toJson(QJsonDocument::Compact);
 	require(bytes.size() <= 8 * 1024 * 1024, "Remote journal limit");
-	require(writeAtomicMetadata(directory() + "/remote-journal.json", bytes), "Remote journal commit failed");
+	writeRequiredMetadata(directory() + "/remote-journal.json", bytes);
 }
 void CaptureSync::apply(const QJsonObject &capture)
 {

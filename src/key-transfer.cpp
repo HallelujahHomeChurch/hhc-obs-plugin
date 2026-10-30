@@ -24,6 +24,11 @@ void markIngestStopping(const QString &root, const QString &id)
 	if (!writeAtomicMetadata(root + "/intents/" + id + ".stopping", "{\"stopping\":true}"))
 		throw RequestError(409, "ingest_local_conflict");
 }
+void markIngestAborting(const QString &root, const QString &id)
+{
+	markIngestStopping(root, id);
+	writeRequiredMetadata(root + "/intents/" + id + ".abort", "{\"abort\":true}");
+}
 KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool revoked, bool preparing,
 		       bool &validated, const std::atomic<bool> *cancelled, IngestCredentials vault,
 		       ApiClient::Transport transport, std::function<void(quint64)> uploaded, std::function<bool()> current)
@@ -36,6 +41,16 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			<< "output=" + QString::fromLatin1(QCryptographicHash::hash(id.toUtf8(), QCryptographicHash::Sha256).toHex().left(16))
 			<< "operation=transfer result=busy code=local_session_busy";
 		throw RequestError(409, "local_session_busy");
+	}
+	const auto abortPath = root + "/intents/" + id + ".abort";
+	const bool aborting = QFileInfo::exists(abortPath);
+	if (aborting) {
+		QFile marker(abortPath);
+		if (QFileInfo(marker).isSymLink() || marker.size() > 64)
+			throw LocalStateError("Invalid abort intent");
+		openRequiredJsonRead(marker);
+		if (QJsonDocument::fromJson(marker.readAll()).object() != QJsonObject{{"abort", true}})
+			throw LocalStateError("Invalid abort intent");
 	}
 	KeyIngest ingest(root + "/intents", id, std::move(vault), std::move(transport));
 	if (ingest.requestsRecovery() && (revoked || QFileInfo::exists(revokePath(root, id)))) {
@@ -57,12 +72,20 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		preparing && b["boundaries"].toObject()["endSequenceExclusive"].isNull() &&
 		!QStringList{"processing", "archived", "cancelled", "failed"}.contains(b["phase"].toString());
 	KeyJob out;
+	out.aborting = aborting;
 	out.id = id;
 	out.actor = b["binding"].toObject()["actorId"].toString();
 	out.title = b["title"].toString();
 	out.mediaProfile = ingest.metadata()["intent"].toObject()["mediaProfile"].toString();
 	out.recoveryRequested = ingest.requestsRecovery();
 	auto api = ingest.api();
+	if (out.aborting) {
+		// Abort only the authenticated original binding; damaged local media/control files are not read.
+		CaptureSync sync(root + "/queue", out.actor, id, api);
+		out.sync = sync.adopt(b, true);
+		if (!QStringList{"failed", "expired", "ready"}.contains(out.sync.state)) out.sync = sync.abort();
+		return out;
+	}
 	SessionStore store(root + "/queue");
 	const auto directory = store.mediaDirectory(out.actor, id);
 	const bool prepared = !QFileInfo::exists(directory + "/journal.json");

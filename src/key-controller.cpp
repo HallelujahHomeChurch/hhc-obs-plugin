@@ -114,19 +114,11 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 	action_ = new QPushButton;
 	action_->setObjectName("hhcStreamButton");
 	layout->addWidget(action_);
-	retry_ = new QPushButton(QString::fromUtf8("重試"));
-	layout->addWidget(retry_);
 	settings_->hide();
 	status_->setWordWrap(false);
 	status_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
 	rateClock_.start();
 	connect(action_, &QPushButton::clicked, this, [this] { startStop(); });
-	connect(retry_, &QPushButton::clicked, this, [this] {
-		paused_ = false;
-		next_ = nextControl_ = 0;
-		failures_ = controlFailures_ = 0;
-		tick();
-	});
 	connect(&sync_, &QFutureWatcher<KeyJob>::finished, this, [this] { syncDone(); });
 	connect(&control_, &QFutureWatcher<KeyJob>::finished, this, [this] {
 		controlAwaiting_ = false;
@@ -140,20 +132,21 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 			recoveryRequested_ = r.recoveryRequested;
 			recoveryControl_ = r.recoveryControl;
 			if (!recoveryControl_.isEmpty()) { end_.reset(); serverEnd_.reset(); }
+			recordRecovery("control");
 			controlFailures_ = 0;
+			controlIssue_.clear();
 			end_ = r.end;
 			if(r.serverEnd) serverEnd_=r.serverEnd;
-			nextControl_ = QDateTime::currentMSecsSinceEpoch() + 2000;
+			nextControl_ = now_() + 2000;
 		} catch (const RequestError &e) {
-			if (preserveRecoveryLocal(e)) { recordFailure("control", &e); display(); return; }
 			if (e.outputReleased && e.code == "output_replay_terminal") {
-				recordFailure("control", &e);
 				retireOutput();
 				display();
 				return;
 			}
+			if (preserveRecoveryLocal(e)) { recordFailure("control", &e); display(); return; }
 			if (e.outputReplayUnknown) {
-				paused_ = true;
+				paused_ = controlPaused_ = true;
 				issue_ = e.code;
 				nextControl_ = std::numeric_limits<qint64>::max();
 				recordFailure("control", &e);
@@ -169,17 +162,17 @@ KeyController::KeyController(QString root, QObject *parent, std::function<unsign
 				}
 			}
 			issue_ = e.code;
+			controlIssue_ = safeDiagnosticCode(e.code);
 			const auto delay = e.retryDelay(controlFailures_);
-			nextControl_ = QDateTime::currentMSecsSinceEpoch() + qint64((std::max)(5, delay.value_or(5))) * 1000;
-			recordFailure("control", &e, !paused_ && !revoked_);
+			if (!delay && !revoked_) {
+				controlPaused_ = true;
+				stopForFailure(controlIssue_);
+			} else nextControl_ = now_() + qint64((std::max)(5, delay.value_or(5))) * 1000;
+			recordFailure("control", &e, delay.has_value() && !paused_ && !revoked_);
 		} catch (const std::exception &e) {
-			issue_ = "control_recovery_required";
-			paused_ = true;
-			recordFailure("control", &e);
+			localFailure("control", &e);
 		} catch (...) {
-			issue_ = "control_recovery_required";
-			paused_ = true;
-			recordFailure("control");
+			localFailure("control");
 		}
 		display();
 	});
@@ -272,13 +265,12 @@ void KeyController::display()
 	setStreamActive(running && !stopping);
 	action_->setText(stopping ? (finalizing ? QString::fromUtf8("HHC 串流收尾中…") : QString::fromUtf8("HHC 串流停止中…")) :
 		finalizing ? QString::fromUtf8("HHC 串流收尾中…") : running || starting_ ? QString::fromUtf8("停止 HHC 串流") : QString::fromUtf8("開始 HHC 串流"));
-	action_->setEnabled(!stopping && lease_->isLocked() && (running || starting_ || !paused_) &&
+	action_->setEnabled(!stopping && lease_->isLocked() && (running || starting_ || !paused_ || id_.isEmpty()) &&
 			    (id_.isEmpty() || released_ || running || starting_));
 	key_->setEnabled(lease_->isLocked() && (id_.isEmpty() || released_) && !running && !starting_ &&
 			  !syncAwaiting_ && !controlAwaiting_);
 	key_->setPlaceholderText(keyAvailable_ ? QString::fromUtf8("已設定；可更換金鑰")
 					       : QString::fromUtf8("串流金鑰"));
-	retry_->setVisible(paused_ && lease_->isLocked());
 	const auto now = rateClock_.elapsed();
 	rateSamples_.emplace_back(now, uploadedBytes_.load());
 	while (rateSamples_.size() > 1 && rateSamples_[1].first <= now - 30000) rateSamples_.pop_front();
@@ -290,7 +282,7 @@ void KeyController::display()
 	const bool localOnly = running && (networkBlocked_ || recoveryControl_["publicEnd"].isObject());
 	const auto state = stopping ? (finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("停止中")) : localOnly ? QString::fromUtf8("本機保存中") : paused_ ? QString::fromUtf8("需要處理") :
 		running && recovery["state"] == "interrupted" ? QString::fromUtf8("等待恢復") :
-		failures_ ? QString::fromUtf8("重連中") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("未連線");
+		failures_ || controlFailures_ ? QString::fromUtf8("重連中") : starting_ ? QString::fromUtf8("連線中") : running ? QString::fromUtf8("傳送中") : finalizing ? (pendingBytes_ ? QString::fromUtf8("補傳中") : QString::fromUtf8("收尾中")) : QString::fromUtf8("未連線");
 	QString text = QString::fromUtf8("HHC：%1").arg(state);
 	// Routine segment uploads fluctuate; show sustained pending work without calling it a network failure.
 	if (pendingBytes_ && (paused_ || failures_ || finalizing || now - pendingSince_ >= 60000))
@@ -302,6 +294,10 @@ void KeyController::display()
 		status_->setToolTip(status_->toolTip() + QString::fromUtf8("\n本場未啟用五分鐘恢復能力；不依本機時間推算期限。"));
 	if (localOnly) status_->setToolTip(status_->toolTip() + QString::fromUtf8("\n公開播放已結束或網路授權需處理；HHC 本機擷取仍在運作，OBS 原生錄影狀態請看錄影按鈕。"));
 	status_->setStyleSheet(paused_ ? "color: #e76f51" : "");
+	if (!fatalIssue_.isEmpty() && !released_) {
+		status_->setText(QString::fromUtf8("HHC：本機已停止，平台結束待確認"));
+		status_->setToolTip(fatalIssue_ + "\n" + issue_);
+	} else if (!controlIssue_.isEmpty()) status_->setToolTip(status_->toolTip() + "\n" + controlIssue_);
 }
 bool KeyController::validateSettings()
 {
@@ -408,6 +404,7 @@ void KeyController::startStop()
 	if (capture_ && !capture_->finished()) {
 		++generation_;
 		stopping_ = true;
+		if (!networkBlocked_) { paused_ = false; next_ = 0; }
 		display();
 		action_->repaint();
 		recordStopCause("user_stop");
@@ -423,6 +420,7 @@ void KeyController::startStop()
 			markIngestStopping(root_, id_);
 		starting_ = false;
 		stopping_ = true;
+		if (!networkBlocked_) { paused_ = false; next_ = 0; }
 		display();
 		action_->repaint();
 		auto state = QFileInfo::exists(root_ + "/active.json") ? read(root_ + "/active.json") : QJsonObject{};
@@ -490,6 +488,8 @@ void KeyController::startStop()
 	controlFailures_ = 0;
 	terminalRetired_ = false;
 	stopping_ = released_ = revoked_ = paused_ = false;
+	controlPaused_ = abortPersisted_ = false;
+	fatalIssue_.clear(); syncIssue_.clear(); controlIssue_.clear();
 	end_.reset();
 	serverEnd_.reset();
 	next_ = 0;
@@ -511,8 +511,14 @@ void KeyController::tick()
 		}
 		return;
 	}
-	if (closing_ || paused_ || terminalRetired_ || !lease_->isLocked() || id_.isEmpty())
+	if (closing_ || terminalRetired_ || !lease_->isLocked() || id_.isEmpty())
 		return;
+	if (!fatalIssue_.isEmpty() && !abortPersisted_ && !released_ && now_() >= next_) {
+		try { markIngestAborting(root_, id_); abortPersisted_ = true; paused_ = false; next_ = 0; }
+		catch (const std::exception &e) { next_ = now_() + localRetryDelayMs(failures_); recordFailure("sync", &e, true); }
+	}
+	if (capture_ && capture_->finished() && !capture_->error().isEmpty() && fatalIssue_.isEmpty())
+		stopForFailure("local_capture_failed");
 	if (!QFileInfo::exists(root_ + "/intents/" + id_ + ".json") && QFileInfo::exists(root_ + "/active.json") &&
 	    read(root_ + "/active.json")["protocolVersion"] == "k4-2026-10-15.rc1") {
 		paused_ = true;
@@ -544,7 +550,7 @@ void KeyController::tick()
 		}
 	}
 	pollControl();
-	if (syncAwaiting_ || QDateTime::currentMSecsSinceEpoch() < next_)
+	if (paused_ || syncAwaiting_ || now_() < next_)
 		return;
 	const auto id = id_;
 	const bool active = capture_ && !capture_->finished(), revoked = revoked_, preparing = starting_;
@@ -553,23 +559,23 @@ void KeyController::tick()
 	const auto generation = syncGeneration_;
 	sync_.setFuture(QtConcurrent::run([this, id, active, revoked, preparing, generation] {
 		HttpCancellationScope cancellation(cancelled_);
-		return keyTransferStep(root_, id, active, revoked, preparing, recoveryValidated_, &cancelled_, {}, httpRequest,
+		return keyTransferStep(root_, id, active, revoked, preparing, recoveryValidated_, &cancelled_, credentials_, transport_,
 			[this](quint64 n) { uploadedBytes_.fetch_add(n); }, [this, generation] { return generation_.load() == generation; });
 	}));
 }
 void KeyController::pollControl()
 {
-	if (controlAwaiting_ || starting_ || actor_.isEmpty() || !capture_ || capture_->finished() || stopping_ ||
-	    revoked_ || QDateTime::currentMSecsSinceEpoch() < nextControl_)
+	if (controlPaused_ || controlAwaiting_ || starting_ || actor_.isEmpty() || released_ ||
+	    revoked_ || now_() < nextControl_)
 		return;
 	const auto id = id_, actor = actor_;
-	const auto boundary = capture_->boundaryClock();
+	const auto boundary = capture_ ? capture_->boundaryClock() : std::function<std::optional<int>()>{};
 	controlAwaiting_ = true;
 	controlGeneration_ = generation_.load();
 	const auto generation = controlGeneration_;
 	control_.setFuture(QtConcurrent::run([this, id, actor, boundary, generation] {
 		HttpCancellationScope cancellation(cancelled_);
-		KeyIngest ingest(root_ + "/intents", id);
+		KeyIngest ingest(root_ + "/intents", id, credentials_, transport_);
 		auto api = ingest.api();
 		BroadcastControl control(SessionStore(root_ + "/queue").mediaDirectory(actor, id), actor, id, api,
 					 true);
@@ -602,20 +608,24 @@ bool KeyController::hasReleaseProof() const
 void KeyController::retireOutput()
 {
 	next_ = std::numeric_limits<qint64>::max();
-	try {
-		atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
-	} catch (...) {
-		paused_ = true;
-		released_ = false;
-		issue_ = QString::fromUtf8("無法保存輸出釋放紀錄；原輸出與素材保留，請重試。");
-		return;
-	}
 	if (capture_ && !capture_->finished()) {
 		recordStopCause("output_released");
 		capture_->stop(StopReason::EncoderFailure);
 	}
+	try {
+		atomicJson(root_ + "/active.json", {{"localId", id_}, {"released", true}});
+	} catch (const std::exception &error) {
+		paused_ = false;
+		next_ = now_() + localRetryDelayMs(failures_);
+		released_ = false;
+		issue_ = QString::fromUtf8("平台已結束；正在自動補存輸出釋放紀錄，原輸出與素材保留。");
+		recordFailure("sync", &error, true);
+		return;
+	}
 	starting_ = stopping_ = paused_ = false;
 	released_ = terminalRetired_ = true;
+	recordRecovery("sync", true);
+	recordRecovery("control", true);
 	issue_ = QString::fromUtf8("本次輸出已結束；再次按開始直播才會建立下一次輸出。");
 }
 void KeyController::syncDone()
@@ -635,7 +645,9 @@ void KeyController::syncDone()
 		pendingBytes_ = r.sync.pendingBytes;
 		actor_ = r.actor;
 		title_ = r.title;
+		recordRecovery("sync");
 		failures_ = 0;
+		syncIssue_.clear();
 		const auto dir = SessionStore(root_ + "/queue").mediaDirectory(actor_, id_);
 		if (starting_ && r.bound) {
 			starting_ = false;
@@ -672,6 +684,7 @@ void KeyController::syncDone()
 			issue_ +=
 				QString::fromUtf8("；待傳 %1 MB").arg(double(r.sync.pendingBytes) / 1048576, 0, 'f', 1);
 		if (r.sync.state == "aborted" || r.sync.state == "expired" || r.sync.state == "failed") {
+			if (r.aborting && hasReleaseProof()) { retireOutput(); display(); return; }
 			if (preserveRecoveryLocal(RequestError(409, "capture_terminal"))) { display(); return; }
 			starting_ = false;
 			if (capture_ && !capture_->finished()) {
@@ -683,13 +696,16 @@ void KeyController::syncDone()
 			paused_ = false;
 			next_ = std::numeric_limits<qint64>::max();
 		} else
-			next_ = QDateTime::currentMSecsSinceEpoch() + (r.sync.pendingBytes ? 0 : 3000);
+			next_ = now_() + (r.sync.pendingBytes ? 0 : 3000);
 		if (r.sync.state == "ready" && !r.sync.localCleanupComplete)
 			issue_ = QString::fromUtf8("收錄完成；本機暫存清理將自動重試。");
 		if (r.sync.state == "ready" && r.sync.autoPublish != "pending" && r.sync.localCleanupComplete)
 			next_ = std::numeric_limits<qint64>::max();
 	} catch (const RequestError &e) {
 		issue_ = e.code;
+		if (e.outputReleased && e.code == "output_replay_terminal") {
+			retireOutput(); display(); return;
+		}
 		if (preserveRecoveryLocal(e)) { recordFailure("sync", &e); display(); return; }
 		if (e.outputOpening && recoveryRequested_ && e.status == 400) {
 			paused_ = true;
@@ -697,7 +713,7 @@ void KeyController::syncDone()
 			recordFailure("sync", &e); display(); return;
 		}
 		if (e.outputReplayUnknown) {
-			paused_ = true;
+			paused_ = controlPaused_ = true;
 			next_ = std::numeric_limits<qint64>::max();
 		} else if (e.code == "broadcast_ingest_revoked") {
 			revoked_ = true;
@@ -706,30 +722,27 @@ void KeyController::syncDone()
 				capture_->stop(StopReason::EncoderFailure);
 			}
 			next_ = 0;
-		} else if (e.outputReleased && e.code == "output_replay_terminal") {
-			retireOutput();
 		} else if (!e.outputOpening && e.code == "broadcast_source_not_prepared") {
 			issue_ = QString::fromUtf8("平台尚未準備接收，正在自動重試。");
-			next_ = QDateTime::currentMSecsSinceEpoch() + 5000 + QRandomGenerator::global()->bounded(1000);
+			next_ = now_() + 5000 + QRandomGenerator::global()->bounded(1000);
 		} else if (e.code == "local_session_busy") {
 			// Upload adoption and control polling share a journal lock. Yield without
 			// treating local ownership contention as a failed network connection.
-			next_ = QDateTime::currentMSecsSinceEpoch() + 250;
+			next_ = now_() + 250;
 		} else {
-			if (!failures_) blog(LOG_WARNING, "[HHC] Transfer retry: status=%d code=%s", e.status, qPrintable(safeDiagnosticCode(e.code)));
 			auto delay = e.retryDelayMs(failures_);
-			paused_ = !delay;
-			next_ = QDateTime::currentMSecsSinceEpoch() + delay.value_or(0);
+			if (delay) next_ = now_() + *delay;
+			else if (e.outputOpening) {
+				// An unproven opening error cannot authorize aborting or replacing the original output.
+				paused_ = controlPaused_ = true;
+				next_ = nextControl_ = std::numeric_limits<qint64>::max();
+			} else stopForFailure(safeDiagnosticCode(e.code));
 		}
-		recordFailure("sync", &e, !paused_ && !released_ && !revoked_);
+		recordFailure("sync", &e, !paused_ && !released_ && !revoked_ && fatalIssue_.isEmpty());
 	} catch (const std::exception &e) {
-		paused_ = true;
-		issue_ = QString::fromUtf8("恢復資料檢查未完成；原 intent 與素材保留。");
-		recordFailure("sync", &e);
+		localFailure("sync", &e);
 	} catch (...) {
-		paused_ = true;
-		issue_ = QString::fromUtf8("恢復資料檢查未完成；原 intent 與素材保留。");
-		recordFailure("sync");
+		localFailure("sync");
 	}
 	if (stopping_ || (paused_ && issue_ == "broadcast_stream_key_invalid"))
 		retireUnbound();
@@ -737,10 +750,12 @@ void KeyController::syncDone()
 }
 bool KeyController::preserveRecoveryLocal(const RequestError &error) noexcept
 {
-	if (!recoveryRequested_ || !(error.status == 401 || error.status == 403 || error.status == 404 ||
+	const bool invalidKey = error.code == "broadcast_stream_key_invalid" || error.code == "broadcast_ingest_session_invalid";
+	if ((!recoveryRequested_ && !invalidKey) || !(error.status == 401 || error.status == 403 || error.status == 404 ||
 	    error.code == "broadcast_epoch_mismatch" || error.code == "malformed_success" ||
 	    error.code == "capture_terminal" || error.outputReleased || error.outputReplayUnknown)) return false;
 	networkBlocked_ = paused_ = true;
+	stopForFailure("authorization_or_output_unavailable");
 	cancelled_ = true;
 	++generation_;
 	next_ = nextControl_ = std::numeric_limits<qint64>::max();
@@ -748,12 +763,57 @@ bool KeyController::preserveRecoveryLocal(const RequestError &error) noexcept
 	try { KeyIngest(root_ + "/intents", id_).blockNetwork(error); } catch (...) {}
 	return true;
 }
+void KeyController::stopForFailure(const QString &code)
+{
+	if (fatalIssue_.isEmpty()) recordStopCause("local_failure");
+	fatalIssue_ = code;
+	stopping_ = true;
+	starting_ = false;
+	if (capture_ && !capture_->finished()) capture_->stop(StopReason::EncoderFailure);
+	// Keep an abort intent independently of media validation; never claim a server receipt here.
+	try { markIngestAborting(root_, id_); abortPersisted_ = true; }
+	catch (...) { abortPersisted_ = false; }
+	if (!networkBlocked_) { paused_ = !abortPersisted_; next_ = 0; }
+	issue_ = QString::fromUtf8("HHC 擷取已停止；素材保留，等待平台確認結束。 ") + code;
+}
+void KeyController::localFailure(const char *stage, const std::exception *error)
+{
+	const bool control = QByteArray(stage) == "control";
+	const auto failure = classifyLocalFailure(error);
+	(control ? controlIssue_ : syncIssue_) = failure.code;
+	if (failure.retryable) {
+		const auto delay = localRetryDelayMs(control ? controlFailures_ : failures_);
+		(control ? nextControl_ : next_) = now_() + delay;
+		issue_ = QString::fromUtf8("暫時無法完成操作，正在自動恢復。 ") + failure.code;
+	} else {
+		if (control) controlPaused_ = true;
+		if (!abortPersisted_) stopForFailure(failure.code);
+		else {
+			// A damaged required journal may also prevent abort; retain it and retry finalization safely.
+			next_ = now_() + localRetryDelayMs(failures_);
+		}
+	}
+	recordFailure(stage, error, failure.retryable);
+}
+void KeyController::recordRecovery(const char *stage, bool outputReleased) noexcept
+{
+	try {
+		const bool control = QByteArray(stage) == "control";
+		if (!outputReleased && !(control ? controlFailures_ : failures_)) return;
+		const auto observedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+		const auto event = outputReleased ? "output_released" : "recovered";
+		tryObserverJson(root_ + "/diagnostics/native/" + stage + "-error.json",
+			{{"event", event}, {"active", false}, {"stage", stage}, {"observedAt", observedAt},
+			 {"localId", id_}, {"code", "none"}, {"severity", "info"}, {"retryable", false}, {"outputReleasedProof", outputReleased}});
+		diagnostic(QString("[HHC controller] utc=%1 stage=%2 event=%3 severity=info").arg(observedAt, stage, event));
+	} catch (...) {}
+}
 void KeyController::recordStopCause(const char *cause, std::optional<int> cutoff) noexcept
 {
 	try {
 		const QString value = QString::fromLatin1(cause);
 		const QString safe = QStringList{"user_stop", "user_cancel_opening", "console_end", "server_end",
-			"ingest_revoked", "output_released", "capture_terminal", "obs_shutdown"}.contains(value) ? value : "unknown";
+			"ingest_revoked", "output_released", "capture_terminal", "obs_shutdown", "local_failure"}.contains(value) ? value : "unknown";
 		const auto observedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 		const auto output = QString::fromLatin1(QCryptographicHash::hash(id_.toUtf8(), QCryptographicHash::Sha256).toHex().left(16));
 		QDir().mkpath(root_ + "/diagnostics/native");
@@ -771,32 +831,31 @@ void KeyController::recordFailure(const char *stage, const std::exception *error
 	try {
 		const auto *request = dynamic_cast<const RequestError *>(error);
 		// Only exact internal literals may select a code; never persist arbitrary what() text.
-		const auto reason = error && !request ? QByteArray(error->what()) : QByteArray{};
-		const QString code = request ? safeDiagnosticCode(request->code)
-			: reason == "Remote journal commit failed" ? "local_remote_journal_write_failed"
-			: reason == "Queue document unavailable" ? "local_queue_unavailable"
-			: reason == "Queue document corrupt; data retained" ? "local_queue_corrupt"
-			: reason == "Remote journal limit" ? "local_remote_journal_limit"
-			: reason == "Closed upload bytes changed" ? "local_media_changed"
-			: reason == "Remote immutable object differs" ? "local_remote_media_conflict"
-			: reason == "journal commit failed" ? "local_journal_write_failed"
-			: "local_validation_failed";
+		const auto local = classifyLocalFailure(error);
+		const QString code = request ? safeDiagnosticCode(request->code) : local.code;
 		const auto correlation = safeDiagnosticRequestId(request ? request->requestId : QString{});
 		const auto localId = QUuid(id_).isNull() ? QString("unavailable") : id_;
 		const auto observedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 		const QString category = request ? "request" : error ? "std_exception" : "unknown_exception";
 		QDir().mkpath(root_ + "/diagnostics/native");
+		const auto next = QByteArray(stage) == "control" ? nextControl_ : next_;
+		const auto severity = retryable ? "warning" : "error";
+		const bool stagePaused = networkBlocked_ || (QByteArray(stage) == "control" ? controlPaused_ : paused_);
 		tryObserverJson(root_ + "/diagnostics/native/" + stage + "-error.json",
 			{{"stage", stage}, {"localId", localId}, {"observedAt", observedAt}, {"code", code},
+			 {"event", retryable ? "retry_scheduled" : !fatalIssue_.isEmpty() ? "stop_pending" : "blocked"}, {"active", true}, {"severity", severity},
+			 {"uploadPaused", paused_}, {"controlPaused", controlPaused_}, {"networkBlocked", networkBlocked_},
+			 {"check", local.check}, {"systemError", qint64(local.systemError)},
+			 {"nextAttemptAt", retryable ? QJsonValue(QDateTime::fromMSecsSinceEpoch(next, Qt::UTC).toString(Qt::ISODateWithMs)) : QJsonValue(QJsonValue::Null)},
 			 {"category", category}, {"status", request ? QJsonValue(request->status) : QJsonValue(QJsonValue::Null)},
-			 {"requestId", correlation}, {"paused", paused_}, {"retryable", retryable},
-			 {"pauseReason", paused_ ? QJsonValue(request && request->outputReplayUnknown ? "output_authority_unknown" : code) : QJsonValue(QJsonValue::Null)},
+			 {"requestId", correlation}, {"paused", stagePaused}, {"retryable", retryable},
+			 {"pauseReason", stagePaused ? QJsonValue(request && request->outputReplayUnknown ? "output_authority_unknown" : code) : QJsonValue(QJsonValue::Null)},
 			 {"outputReplayUnknown", request && request->outputReplayUnknown},
 			 {"outputReleasedProof", request && request->outputReleased},
 			 {"stopping", stopping_}, {"released", released_}});
-		diagnostic(QString("[HHC controller] utc=%1 stage=%2 category=%3 code=%4 status=%5 requestId=%6 paused=%7 retryable=%8 localId=%9")
+		diagnostic(QString("[HHC controller] utc=%1 stage=%2 category=%3 code=%4 status=%5 requestId=%6 paused=%7 retryable=%8 localId=%9 severity=%10 check=%11 systemError=%12 nextAttemptMs=%13")
 			.arg(observedAt, stage, category, code).arg(request ? request->status : 0)
-			.arg(correlation).arg(paused_).arg(retryable).arg(localId));
+			.arg(correlation).arg(stagePaused).arg(retryable).arg(localId, severity, local.check).arg(local.systemError).arg(retryable ? next : 0));
 	} catch (...) {
 		// Optional diagnostics must not alter the original pause or authority fence.
 	}

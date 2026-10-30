@@ -19,6 +19,145 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int automaticRecovery(QApplication &app)
+	{
+		QTemporaryDir root;
+		KeyController c(root.path()); c.timer_.stop();
+		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+		const auto original = c.id_;
+		c.next_ = std::numeric_limits<qint64>::max();
+		int failed = 0;
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
+			throw std::runtime_error("https://synthetic-secret/unclassified");
+		}));
+		try { c.sync_.waitForFinished(); } catch (...) {}
+		app.processEvents();
+		if (c.paused_ || c.next_ <= QDateTime::currentMSecsSinceEpoch() || c.id_ != original || c.released_) {
+			++failed; std::cerr << "FAIL an unclassified upload exception must schedule automatic recovery of the same output\n";
+		}
+		QFile diagnostic(c.root_ + "/diagnostics/native/sync-error.json");
+		if (!diagnostic.open(QIODevice::ReadOnly)) ++failed;
+		else {
+			const auto bytes = diagnostic.readAll();
+			const auto event = QJsonDocument::fromJson(bytes).object();
+			if (event["code"] == "local_validation_failed" || !event["retryable"].toBool() ||
+			    bytes.contains("synthetic-secret") || bytes.contains("https://")) {
+				++failed; std::cerr << "FAIL an unknown exception must not claim local corruption or expose its text\n";
+			}
+		}
+		for (auto *button : c.view()->findChildren<QPushButton *>())
+			if (button->text() == QString::fromUtf8("重試")) {
+				++failed; std::cerr << "FAIL native controls must not require a Retry button\n";
+			}
+		c.closing_ = true;
+		return failed;
+	}
+	static int serverOutageRecovery(QApplication &app)
+	{
+		int failed = 0;
+		for (int status : {0, 429, 503}) {
+			QTemporaryDir root;
+			KeyController c(root.path()); c.timer_.stop();
+			c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
+			const auto original = c.id_;
+			qint64 now = QDateTime::currentMSecsSinceEpoch(), began = now;
+			c.now_ = [&] { return now; };
+			int recorderActions = 0; c.recording = [&](bool) { ++recorderActions; };
+			qint64 elapsed = 0;
+			// Advance a simulated outage by the controller's scheduled delays, not wall-clock sleeps.
+			while (elapsed < 15 * 60 * 1000) {
+				const auto before = now;
+				c.sync_.setFuture(QtConcurrent::run([status]() -> KeyJob {
+					throw RequestError(status, status == 0 ? "transport_unavailable" : "unavailable", status == 429 ? 120 : 0);
+				}));
+				try { c.sync_.waitForFinished(); } catch (...) {}
+				app.processEvents();
+				now = c.next_;
+				elapsed = now - began;
+				if (c.paused_ || c.stopping_ || c.released_ || c.id_ != original || c.next_ <= before || recorderActions) {
+					++failed; std::cerr << "FAIL transient outage must not end or replace the original output\n"; break;
+				}
+			}
+			c.sync_.setFuture(QtConcurrent::run([original] {
+				KeyJob job; job.id = original; job.actor = "fixture-account"; job.sync.state = "uploading"; return job;
+			}));
+			c.sync_.waitForFinished(); app.processEvents();
+			QFile event(c.root_ + "/diagnostics/native/sync-error.json");
+			if (!event.open(QIODevice::ReadOnly)) ++failed;
+			else {
+				const auto record = QJsonDocument::fromJson(event.readAll()).object();
+				failed += record["event"] != "recovered" || record["active"].toBool();
+			}
+			failed += c.failures_ || c.stopping_ || c.released_ || c.id_ != original || recorderActions;
+			c.closing_ = true;
+		}
+		return failed;
+	}
+	static int independentControl(QApplication &app)
+	{
+		int failed = 0;
+		for (bool stopping : {false, true}) {
+			QTemporaryDir root;
+			KeyController c(root.path()); c.timer_.stop();
+			c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces); c.actor_ = "fixture-account";
+			QDir().mkpath(c.root_ + "/intents");
+			writeRequiredMetadata(c.root_ + "/intents/" + c.id_ + ".json", "{}");
+			c.paused_ = true; c.stopping_ = stopping;
+			c.next_ = std::numeric_limits<qint64>::max();
+			c.credentials_ = {[](const QString &) -> std::optional<QByteArray> { return {}; }, [](const QString &, const QByteArray &) {}};
+			c.transport_ = [](const auto &, const auto &, const auto &, const auto &) -> HttpResponse { throw std::runtime_error("Unexpected fixture transport"); };
+			c.tick();
+			if (!c.controlAwaiting_ || c.syncAwaiting_) {
+				++failed; std::cerr << "FAIL upload pause or local Stop must not suppress control polling\n";
+			}
+			c.closing_ = true;
+			try { c.control_.waitForFinished(); } catch (...) {}
+			app.processEvents();
+		}
+		return failed;
+	}
+	static int fatalRecovery(QApplication &app)
+	{
+		int failed = 0;
+		for (const auto error : {std::make_exception_ptr(LocalIoError(ERROR_DISK_FULL)),
+			std::make_exception_ptr(LocalStateError("Closed upload bytes changed")),
+			std::make_exception_ptr(RequestError(401, "broadcast_stream_key_invalid"))}) {
+			QTemporaryDir root;
+			KeyController c(root.path()); c.timer_.stop();
+			c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces); const auto original = c.id_;
+			QDir().mkpath(c.root_ + "/intents");
+			writeRequiredMetadata(c.root_ + "/intents/" + c.id_ + ".json", "{}");
+			int recorderCalls = 0; c.recording = [&](bool) { ++recorderCalls; };
+			c.sync_.setFuture(QtConcurrent::run([error]() -> KeyJob { std::rethrow_exception(error); }));
+			try { c.sync_.waitForFinished(); } catch (...) {}
+			app.processEvents();
+			if (!c.stopping_ || c.fatalIssue_.isEmpty() || c.released_ || c.id_ != original || recorderCalls ||
+			    !QFileInfo::exists(c.root_ + "/intents/" + original + ".abort")) {
+				++failed; std::cerr << "FAIL permanent fault durable stop: code=" << qPrintable(c.fatalIssue_)
+					<< " stopping=" << c.stopping_ << " released=" << c.released_ << " persisted=" << c.abortPersisted_ << '\n';
+			}
+			c.display();
+			failed += !c.status_->text().contains(QString::fromUtf8("平台結束待確認"));
+			c.closing_ = true;
+		}
+		// Exercise actual Windows sharing failure and recovery, not just a synthetic message.
+		QTemporaryDir ioRoot;
+		const auto path = ioRoot.path() + "/journal.json";
+		writeRequiredMetadata(path, "original");
+		HANDLE held = CreateFileW(reinterpret_cast<LPCWSTR>(lockFilePath(path).utf16()), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (held == INVALID_HANDLE_VALUE) return failed + 1;
+		bool busy = false;
+		try { writeRequiredMetadata(path, "replacement"); }
+		catch (const LocalIoError &e) { busy = classifyLocalFailure(&e).retryable; }
+		QFile blocked(path); bool readBusy = false;
+		try { openRequiredJsonRead(blocked); }
+		catch (const LocalIoError &e) { readBusy = classifyLocalFailure(&e).retryable; }
+		CloseHandle(held);
+		writeRequiredMetadata(path, "replacement");
+		QFile file(path); failed += !file.open(QIODevice::ReadOnly);
+		failed += !busy || !readBusy || file.readAll() != "replacement";
+		return failed;
+	}
 	static int immediateStopFeedback()
 	{
 		QTemporaryDir root;
@@ -168,9 +307,14 @@ struct KeyControllerTest {
 		c.id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
 		const auto original = c.id_;
 		int failed = 0;
+		QDir().mkpath(c.root_ + "/intents");
+		writeRequiredMetadata(c.root_ + "/intents/" + c.id_ + ".json", "{}");
 		auto failWorker = [&](bool control, std::exception_ptr error) {
 			auto &watcher = control ? c.control_ : c.sync_;
 			c.paused_ = false;
+			c.networkBlocked_ = c.stopping_ = c.controlPaused_ = c.abortPersisted_ = false;
+			c.fatalIssue_.clear();
+			c.syncGeneration_ = c.controlGeneration_ = c.generation_.load();
 			watcher.setFuture(QtConcurrent::run([error]() -> KeyJob { std::rethrow_exception(error); }));
 			try { watcher.waitForFinished(); } catch (...) {}
 			app.processEvents();
@@ -182,19 +326,18 @@ struct KeyControllerTest {
 			failed += record["localId"] != original || record["stage"] != (control ? "control" : "sync");
 			return record;
 		};
-		auto record = failWorker(false, std::make_exception_ptr(std::runtime_error("Remote journal commit failed")));
-		failed += !c.paused_ || record["code"] != "local_remote_journal_write_failed" ||
-			  record["paused"] != true || record["retryable"] != false;
-		c.tick(); c.startStop();
+		auto record = failWorker(false, std::make_exception_ptr(LocalIoError(ERROR_SHARING_VIOLATION)));
+		failed += c.paused_ || record["code"] != "local_io_busy" ||
+			  record["paused"] != false || record["retryable"] != true || record["systemError"].toInteger() != ERROR_SHARING_VIOLATION;
 		failed += c.id_ != original || c.released_ || c.syncAwaiting_;
 		record = failWorker(true, std::make_exception_ptr(std::runtime_error("https://synthetic-secret/signed")));
-		failed += !c.paused_ || record["code"] != "local_validation_failed" || record["stage"] != "control";
+		failed += c.paused_ || record["code"] != "internal_unclassified_exception" || record["stage"] != "control" || !record["retryable"].toBool();
 		record = failWorker(false, std::make_exception_ptr(RequestError(503, "capture_unavailable", 2,
 			"0123456789abcdef0123456789abcdef")));
 		failed += c.paused_ || record["status"] != 503 || record["retryable"] != true ||
 			  record["requestId"] != "0123456789abcdef0123456789abcdef";
 		record = failWorker(false, std::make_exception_ptr(RequestError(401, "unauthorized")));
-		failed += !c.paused_ || c.released_ || c.id_ != original || record["status"] != 401;
+		failed += !c.stopping_ || c.released_ || c.id_ != original || record["status"] != 401;
 		RequestError unknownAuthority(503, "capture_unavailable");
 		unknownAuthority.outputReplayUnknown = true;
 		for (bool control : {false, true}) {
@@ -204,17 +347,17 @@ struct KeyControllerTest {
 		}
 		record = failWorker(false, std::make_exception_ptr(RequestError(403, "https://synthetic-secret/signed", 0,
 			"https://synthetic-secret/request")));
-		failed += record["code"] != "request_failed" || record["requestId"] != "none" || !c.paused_;
+		failed += record["code"] != "request_failed" || record["requestId"] != "none" || !c.stopping_;
 		record = failWorker(true, std::make_exception_ptr(123));
-		failed += !c.paused_ || record["category"] != "unknown_exception";
+		failed += c.paused_ || record["category"] != "unknown_exception" || !record["retryable"].toBool();
 		const auto diagnosticPath = c.root_ + "/diagnostics/native/sync-error.json";
 		QFile::remove(diagnosticPath); QDir().mkpath(diagnosticPath);
-		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob { throw std::runtime_error("Queue document unavailable"); }));
+		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob { throw LocalStateError("Queue document corrupt; data retained"); }));
 		try { c.sync_.waitForFinished(); } catch (...) {}
 		app.processEvents();
-		failed += !c.paused_ || c.id_ != original || c.released_;
+		failed += !c.stopping_ || c.fatalIssue_.isEmpty() || c.id_ != original || c.released_;
 		c.closing_ = true; // Mock workers only; never launch a background recovery process.
-		if (failed) std::cerr << "FAIL durable, privacy-safe worker diagnostics preserve pause and identity\n";
+		if (failed) std::cerr << "FAIL typed faults, automatic recovery, privacy-safe diagnostics or identity\n";
 		return failed;
 	}
 	static int controlRetry(QApplication &app)
@@ -247,9 +390,11 @@ struct KeyControllerTest {
 		failed += c.controlFailures_ != 0 || c.failures_ != 4;
 		failure(RequestError(503, "unavailable"), 5000);
 		failed += c.controlFailures_ != 1;
-		// Permanent errors retain the existing cadence; authority fences remain separate.
-		failure(RequestError(403, "forbidden"), 5000);
-		failed += c.controlFailures_ != 1;
+		// Permanent control failures stop HHC input; the upload worker retains the abort task.
+		c.control_.setFuture(QtConcurrent::run([]() -> KeyJob { throw RequestError(403, "forbidden"); }));
+		try { c.control_.waitForFinished(); } catch (...) {}
+		app.processEvents();
+		failed += c.controlFailures_ != 1 || !c.stopping_ || !c.controlPaused_;
 		RequestError unknown(503, "unavailable"); unknown.outputReplayUnknown = true;
 		c.control_.setFuture(QtConcurrent::run([unknown]() -> KeyJob { throw unknown; }));
 		try { c.control_.waitForFinished(); } catch (...) {}
@@ -397,7 +542,7 @@ struct KeyControllerTest {
 		}));
 		try { c.sync_.waitForFinished(); } catch (...) {}
 		try { c.syncDone(); } catch (...) { ++failed; }
-		failed += !c.paused_ || c.released_ || c.id_ != original || c.action_->isEnabled();
+		failed += c.released_ || c.id_ != original || c.action_->isEnabled() || c.next_ == std::numeric_limits<qint64>::max();
 		QDir().rmdir(c.root_+"/active.json");
 		c.paused_ = true; // Invalid-session retry had disabled Start before authoritative terminal.
 		c.sync_.setFuture(QtConcurrent::run([]() -> KeyJob {
@@ -411,7 +556,13 @@ struct KeyControllerTest {
 		}
 		c.syncDone();
 		failed += !c.released_ || c.starting_ || c.stopping_ || c.id_ != original;
-		failed += c.paused_ || !c.action_->isEnabled() || !c.retry_->isHidden();
+		failed += c.paused_ || !c.action_->isEnabled();
+		QFile releasedEvent(c.root_ + "/diagnostics/native/sync-error.json");
+		if (!releasedEvent.open(QIODevice::ReadOnly)) ++failed;
+		else {
+			const auto event = QJsonDocument::fromJson(releasedEvent.readAll()).object();
+			failed += event["event"] != "output_released" || event["active"].toBool() || !event["outputReleasedProof"].toBool();
+		}
 		failed += recorderActions != 0;
 		QFile preserved(sentinel);
 		failed += !preserved.open(QIODevice::ReadOnly) || preserved.readAll()!="{\"stopIntent\":true,\"sealKey\":\"original.seal\"}";
@@ -481,7 +632,7 @@ struct KeyControllerTest {
 		c.keyAvailable_ = true;
 		c.paused_ = false;
 		c.display();
-		int failed = c.settings_->isWindow() || !c.retry_->isHidden();
+		int failed = c.settings_->isWindow();
 		failed += c.action_->text() != QString::fromUtf8("開始 HHC 串流");
 		c.starting_ = true;
 		c.display();
@@ -559,9 +710,9 @@ struct KeyControllerTest {
 		c.openSettings = {};
 		c.paused_ = true;
 		c.display();
-		failed += c.retry_->isHidden();
-		c.retry_->click(); // No active input: this must not create a capture.
-		failed += c.paused_ || !c.id_.isEmpty();
+		for (auto *button : c.view()->findChildren<QPushButton *>()) failed += button->text() == QString::fromUtf8("重試");
+		failed += !c.id_.isEmpty();
+		c.paused_ = false;
 		c.audioTrackProvider_ = [] {
 			return 0u;
 		};
@@ -637,6 +788,12 @@ struct KeyControllerTest {
 int main(int argc, char **argv)
 {
 	QApplication app(argc, argv);
+	if (app.arguments().contains("--fatal-recovery")) return hhc::KeyControllerTest::fatalRecovery(app);
+	if (app.arguments().contains("--independent-control")) return hhc::KeyControllerTest::independentControl(app);
+	if (app.arguments().contains("--server-outage")) return hhc::KeyControllerTest::serverOutageRecovery(app);
+	if (app.arguments().contains("--automatic-recovery")) return hhc::KeyControllerTest::automaticRecovery(app) +
+		hhc::KeyControllerTest::serverOutageRecovery(app) + hhc::KeyControllerTest::independentControl(app) +
+		hhc::KeyControllerTest::fatalRecovery(app);
 	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
 	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
 	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder() + hhc::KeyControllerTest::immediateStopFeedback();
@@ -656,6 +813,8 @@ int main(int argc, char **argv)
 	hhc::KeyController controller(root.path());
 	auto *view = controller.view();
 	int failed = hhc::KeyControllerTest::outputOptions();
+	failed += hhc::KeyControllerTest::automaticRecovery(app) + hhc::KeyControllerTest::serverOutageRecovery(app) +
+		hhc::KeyControllerTest::independentControl(app) + hhc::KeyControllerTest::fatalRecovery(app);
 	failed += hhc::KeyControllerTest::pausedDiagnostics(app);
 	failed += hhc::KeyControllerTest::stopDiagnostics();
 	failed += hhc::KeyControllerTest::recoverySafety(app);

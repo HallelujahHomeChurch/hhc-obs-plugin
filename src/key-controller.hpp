@@ -2,6 +2,7 @@
 #include "capture-output.hpp"
 #include "key-transfer.hpp"
 #include <QElapsedTimer>
+#include <QDateTime>
 #include <deque>
 #include <QPointer>
 #include <QWidget>
@@ -41,6 +42,9 @@ private:
 	void tick();
 	void syncDone();
 	void recordFailure(const char *stage, const std::exception *error = nullptr, bool retryable = false) noexcept;
+	void recordRecovery(const char *stage, bool outputReleased = false) noexcept;
+	void localFailure(const char *stage, const std::exception *error = nullptr);
+	void stopForFailure(const QString &code);
 	void recordStopCause(const char *cause, std::optional<int> cutoff = {}) noexcept;
 	bool preserveRecoveryLocal(const RequestError &error) noexcept;
 	void retireOutput();
@@ -49,7 +53,7 @@ private:
 	void launchHelper();
 	void display();
 	void setStreamActive(bool active);
-	QString root_, id_, actor_, title_, issue_, theme_;
+	QString root_, id_, actor_, title_, issue_, theme_, fatalIssue_, syncIssue_, controlIssue_;
 	QPointer<QWidget> view_;
 	QLineEdit *key_;
 	unsigned audioTrack_ = 1;
@@ -63,7 +67,7 @@ private:
 	std::deque<std::pair<qint64, quint64>> rateSamples_;
 	quint64 pendingBytes_ = 0;
 	qint64 pendingSince_ = -1;
-	QPushButton *action_, *retry_, *showKey_;
+	QPushButton *action_, *showKey_;
 	QLabel *status_;
 	QTimer timer_;
 	QFutureWatcher<KeyJob> sync_, control_;
@@ -81,6 +85,10 @@ private:
 	     controlAwaiting_ = false;
 	bool released_ = false, revoked_ = false, terminalRetired_ = false;
 	bool keyAvailable_ = false, recoveryValidated_ = false;
+	bool controlPaused_ = false, abortPersisted_ = false;
+	ApiClient::Transport transport_ = httpRequest;
+	IngestCredentials credentials_;
+	std::function<qint64()> now_ = [] { return QDateTime::currentMSecsSinceEpoch(); };
 	unsigned failures_ = 0, controlFailures_ = 0;
 	qint64 next_ = 0, nextControl_ = 0;
 	std::optional<int> end_;
