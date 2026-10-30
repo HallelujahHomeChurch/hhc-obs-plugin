@@ -8,6 +8,7 @@ struct KeyJob {
 	SyncState sync;
 	bool bound = false;
 	bool recoveryRequested = false;
+	bool aborting = false;
 	QJsonObject recoveryControl;
 	std::optional<int> end;
 	std::optional<int> serverEnd;
@@ -18,4 +19,5 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		       std::function<bool()> current = {});
 void markIngestStopping(const QString &root, const QString &id);
 void markIngestRevoked(const QString &root, const QString &id);
+void markIngestAborting(const QString &root, const QString &id);
 } // namespace hhc
