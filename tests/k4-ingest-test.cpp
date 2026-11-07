@@ -339,6 +339,30 @@ int main(int argc, char **argv)
 			std::cout << "pagination objects=" << count << " GETs=" << reads << '\n';
 			check(reads == 1 + (count + 999) / 1000, "active round has one authority summary and one full status traversal");
 			check(result.sync.pendingObjects == 0 && unexpected == 0, "paged active round retains all queued objects without writes");
+			const auto journalPath = lockFilePath(mediaDir + "/journal.json");
+			const HANDLE exclusive = CreateFileW(reinterpret_cast<LPCWSTR>(journalPath.utf16()), GENERIC_READ,
+							     0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			check(exclusive != INVALID_HANDLE_VALUE, "hold active journal with exclusive sharing");
+			bool journalBusy = false;
+			try { keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire); }
+			catch (const RequestError &e) {
+				unsigned retryCount = 0;
+				journalBusy = e.code == "local_session_busy" && e.retryDelayMs(retryCount).has_value();
+			} catch (const std::exception &) {}
+			if (exclusive != INVALID_HANDLE_VALUE)
+				CloseHandle(exclusive);
+			check(journalBusy && writes == 0 && unexpected == 0, "journal sharing denial retries without capture mutation");
+			const auto resumedJournal = keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire);
+			check(resumedJournal.sync.pendingObjects == 0 && writes == 0, "original capture resumes after journal sharing denial");
+			const auto journal = mediaDir + "/journal.json";
+			const auto snapshot = journal + ".snapshot";
+			check(QFile::rename(journal, snapshot), "hide active journal to model replacement window");
+			journalBusy = false;
+			try { keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire); }
+			catch (const RequestError &e) { journalBusy = e.code == "local_session_busy"; }
+			catch (const std::exception &) {}
+			check(journalBusy && !QFile::exists(journal) && writes == 0, "active sync never initializes a missing journal");
+			check(QFile::rename(snapshot, journal), "restore original active journal snapshot");
 			wrongIdentity = true;
 			bool rejected = false;
 			try { keyTransferStep(paged.path(), id, true, false, false, validated, nullptr, vault, wire); }

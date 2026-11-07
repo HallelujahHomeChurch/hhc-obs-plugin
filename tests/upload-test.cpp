@@ -74,6 +74,47 @@ int main(int argc, char **argv)
 		check(thrown, name);
 	};
 	hhc::SessionStore store(root.path());
+	const QString raceAccount = "race-account", raceId = "late-journal";
+	const auto raceDir = store.mediaDirectory(raceAccount, raceId);
+	const auto raceJournal = raceDir + "/journal.json";
+	check(!QFileInfo::exists(raceJournal), "initializer first observes a missing journal");
+	check(store.initialize(raceAccount, raceId) && store.isPrepared(raceAccount, raceId),
+	      "first initializer creates a valid empty journal");
+	const auto nativeRaceJournal = hhc::lockFilePath(raceJournal);
+	const HANDLE preparing = CreateFileW(reinterpret_cast<LPCWSTR>(nativeRaceJournal.utf16()), GENERIC_READ,
+					     0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	check(preparing != INVALID_HANDLE_VALUE, "hold prepared journal with exclusive sharing");
+	bool journalBusy = false;
+	check(!store.initialize(raceAccount, raceId) && !store.isPrepared(raceAccount, raceId, &journalBusy) &&
+		      journalBusy, "preparation distinguishes sharing denial from invalid journal");
+	if (preparing != INVALID_HANDLE_VALUE)
+		CloseHandle(preparing);
+	QFile initialJournal(raceJournal);
+	check(hhc::openSharedJsonRead(initialJournal), "open initial journal snapshot");
+	const auto initial = initialJournal.readAll();
+	initialJournal.close();
+	check(QDir().mkpath(raceDir + "/1080p"), "create race fixture media directory");
+	QFile raceMedia(raceDir + "/1080p/init.mp4");
+	check(raceMedia.open(QIODevice::WriteOnly) && raceMedia.write("x") == 1, "write race fixture segment");
+	raceMedia.close();
+	const auto raceHash = QString::fromLatin1(QCryptographicHash::hash("x", QCryptographicHash::Sha256).toHex());
+	store.checkpointLocal(raceAccount, raceId, {{"1080p/init.mp4", 1, raceHash, false}}, false, false);
+	QFile beforeRace(raceJournal);
+	check(hhc::openSharedJsonRead(beforeRace), "open journal after concurrent checkpoint");
+	const auto checkpoint = beforeRace.readAll();
+	beforeRace.close();
+	DWORD collision;
+	check(!hhc::writeAtomicMetadata(raceJournal, initial, hhc::MetadataWrite::CreateOnly, &collision) &&
+		      (collision == ERROR_ALREADY_EXISTS || collision == ERROR_FILE_EXISTS),
+	      "stale initializer loses to a journal that already has media");
+	QFile afterRace(raceJournal);
+	check(store.initialize(raceAccount, raceId) && hhc::openSharedJsonRead(afterRace) &&
+		      afterRace.readAll() == checkpoint, "initializer adopts existing journal byte for byte");
+	afterRace.close();
+	hhc::CaptureJournal stale;
+	stale.account = raceAccount;
+	stale.localId = raceId;
+	rejects([&] { store.save(stale); }, "general save still rejects missing immutable media");
 	hhc::CaptureJournal j;
 	j.account = "account-a";
 	j.localId = "capture-001";
@@ -234,6 +275,7 @@ int main(int argc, char **argv)
 	check(corrupt.open(QIODevice::WriteOnly), "open corrupt journal fixture");
 	corrupt.write("{interrupted-json");
 	corrupt.close();
+	rejects([&] { store.initialize(active.account, active.localId); }, "initializer refuses an existing corrupt journal");
 	auto report = store.scanPending("account-a");
 	check(report.sessions.size() == 1 && report.sessions[0].localId == blocked.localId,
 	      "recover healthy session alongside corrupt journal and changed media");

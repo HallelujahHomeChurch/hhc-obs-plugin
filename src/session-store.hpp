@@ -30,6 +30,8 @@ struct RecoveryReport {
 class SessionStore {
 public:
 	explicit SessionStore(QString root);
+	// Creates only a missing journal. False means retry a concurrent initialization or read.
+	bool initialize(const QString &account, const QString &localId);
 	void save(const CaptureJournal &);
 	// Single writer per session. Only newly appended bytes are hashed during capture;
 	// recovery and successful finalization revalidate all immutable objects.
@@ -42,7 +44,7 @@ public:
 	RecoveryReport scanPending(const QString &account, const std::atomic<bool> *cancelled = nullptr,
 				   const QString &localId = {}) const;
 	QString mediaDirectory(const QString &account, const QString &localId) const;
-	bool isPrepared(const QString &account, const QString &localId) const;
+	bool isPrepared(const QString &account, const QString &localId, bool *journalBusy = nullptr) const;
 	bool mayCleanup(const CaptureJournal &, QDateTime now) const;
 	// Caller holds the session sync lock. False means retain/retry, never a failed upload.
 	bool cleanupReady(const QString &account, const QString &localId) const;

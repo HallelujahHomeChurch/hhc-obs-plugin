@@ -474,12 +474,11 @@ void PlatformController::submit(bool revalidateLocal)
 			result.sync = bound.sync;
 			result.broadcast = bound.broadcast;
 		} else if (create) {
-			CaptureJournal j;
-			j.account = account;
-			j.localId = id;
 			SessionStore store(root_ + "/queue");
-			if (!QFileInfo::exists(store.mediaDirectory(account, id) + "/journal.json"))
-				store.save(j);
+			if (!store.initialize(account, id)) {
+				diagnostic("[HHC journal] stage=initialize result=busy");
+				throw RequestError(409, "local_session_busy");
+			}
 			result.sync = sync.begin(title, publish, live);
 		} else
 			result.sync = sync.step(active);
