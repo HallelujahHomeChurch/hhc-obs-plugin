@@ -264,6 +264,11 @@ void KeyController::setStreamActive(bool active)
 		action_->setStyleSheet(style);
 	}
 }
+bool KeyController::shouldWarnOnClose() const
+{
+	return !closing_ && !released_ && !id_.isEmpty() &&
+	       (stopping_ || (!starting_ && (!capture_ || capture_->finished())));
+}
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();

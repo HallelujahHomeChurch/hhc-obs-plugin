@@ -1,6 +1,17 @@
 #include "native-ui.hpp"
 #include <QTemporaryDir>
 #include <iostream>
+#include <memory>
+
+namespace hhc {
+struct KeyControllerTest {
+ static void setFinalizing(KeyController &controller, bool released) {
+  controller.timer_.stop();
+  controller.id_ = "test-output";
+  controller.released_ = released;
+ }
+};
+}
 
 class MockSettings : public QDialog {
  Q_OBJECT
@@ -31,13 +42,36 @@ int main(int argc, char **argv) {
  auto *youtube = new QPushButton("YouTube"); layout->addWidget(youtube);
  auto *settings = new QAction(&main); settings->setObjectName("action_Settings");
  hhc::KeyController controller(root.path());
- hhc::NativeUi ui(&main, controller);
- int failed = !ui.install();
+ auto ui = std::make_unique<hhc::NativeUi>(&main, controller);
+ int failed = !ui->install();
  auto check = [&](bool failure, int line) { if (failure) { ++failed; std::cerr << "FAIL line " << line << "\n"; } };
  check(layout->itemAt(0)->widget() != youtube || layout->itemAt(1)->widget() != controller.view(), __LINE__);
+ auto closeMain = [&](QMessageBox::StandardButton answer, bool expectPrompt, bool expectClose) {
+  bool prompted = false;
+  QTimer::singleShot(0, [&] {
+   auto *prompt = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+   if (!prompt) return;
+   prompted = true;
+   check(prompt->defaultButton() != prompt->button(QMessageBox::Cancel), __LINE__);
+   QCloseEvent duplicate;
+   QApplication::sendEvent(&main, &duplicate);
+   check(duplicate.isAccepted(), __LINE__);
+   prompt->button(answer)->click();
+  });
+  QCloseEvent close;
+  QApplication::sendEvent(&main, &close);
+  QApplication::processEvents();
+  check(prompted != expectPrompt || close.isAccepted() != expectClose, __LINE__);
+ };
+ closeMain(QMessageBox::Cancel, false, true);
+ hhc::KeyControllerTest::setFinalizing(controller, false);
+ closeMain(QMessageBox::Cancel, true, false);
+ closeMain(QMessageBox::Yes, true, true);
+ hhc::KeyControllerTest::setFinalizing(controller, true);
+ closeMain(QMessageBox::Cancel, false, true);
  for (int round = 0; round < 2; ++round) {
   auto *dialog = new MockSettings;
-  check(!ui.attach(dialog) || !ui.attach(dialog) || dialog->pages->count() != 2, __LINE__);
+  check(!ui->attach(dialog) || !ui->attach(dialog) || dialog->pages->count() != 2, __LINE__);
   dialog->list->setCurrentRow(1);
   check(dialog->pages->currentWidget() != controller.settingsPage() || controller.settingsPage()->isWindow(), __LINE__);
   controller.keyField()->setText("invalid-test-key");
@@ -92,7 +126,19 @@ int main(int argc, char **argv) {
   delete dialog;
   check(controller.settingsPage()->parentWidget() != controller.view(), __LINE__);
  }
- if (failed) std::cerr << "Native settings integration failures: " << failed << '\n';
+ hhc::KeyControllerTest::setFinalizing(controller, false);
+ QTimer::singleShot(0, [&] {
+  if (auto *prompt = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+   ui.reset();
+   prompt->reject();
+  }
+ });
+ QCloseEvent interruptedClose;
+ QApplication::sendEvent(&main, &interruptedClose);
+ QApplication::processEvents();
+ check(ui || interruptedClose.isAccepted(), __LINE__);
+ hhc::KeyControllerTest::setFinalizing(controller, true);
+ if (failed) std::cerr << "Native UI integration failures: " << failed << '\n';
  return failed ? 1 : 0;
 }
 #include "native-ui-test.moc"
