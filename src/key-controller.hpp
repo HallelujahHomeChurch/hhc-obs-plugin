@@ -21,6 +21,7 @@ public:
 	~KeyController() override;
 	QWidget *view() const { return view_; }
 	void shutdown();
+	bool shouldWarnOnClose() const;
 	QWidget *settingsPage() const { return settings_; }
 	QLabel *statusLabel() const { return status_; }
 	QLineEdit *keyField() const { return key_; }

@@ -23,11 +23,19 @@ void require(bool ok, const char *why)
 	if (!ok)
 		throw std::runtime_error(why);
 }
-QJsonObject readJson(const QString &path)
+QJsonObject readJson(const QString &path, bool activeJournal = false)
 {
 	QFile f(path);
-	require(!QFileInfo(f).isSymLink() && f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f),
-		"Queue document unavailable");
+	require(!QFileInfo(f).isSymLink(), "Queue document unavailable");
+	DWORD error;
+	if (!openSharedJsonRead(f, &error)) {
+		if (activeJournal && (metadataSharingBusy(error) || error == ERROR_FILE_NOT_FOUND)) {
+			diagnostic(QString("[HHC journal] stage=active_read result=busy win32=%1").arg(error));
+			throw RequestError(409, "local_session_busy");
+		}
+		throw std::runtime_error("Queue document unavailable");
+	}
+	require(f.size() <= 8 * 1024 * 1024, "Queue document unavailable");
 	QJsonParseError e;
 	auto d = QJsonDocument::fromJson(f.readAll(), &e);
 	require(e.error == QJsonParseError::NoError && d.isObject(), "Queue document corrupt; data retained");
@@ -148,11 +156,9 @@ SyncState CaptureSync::step(bool active, std::function<void()> beforeSeal)
 BroadcastSyncResult CaptureSync::broadcastStep(const QString &recordingId, bool active, bool creating)
 {
 	SessionStore store(root_);
-	if (!QFileInfo::exists(directory() + "/journal.json")) {
-		CaptureJournal j;
-		j.account = account_;
-		j.localId = id_;
-		store.save(j);
+	if (!active && !store.initialize(account_, id_)) {
+		diagnostic("[HHC journal] stage=initialize result=busy");
+		throw RequestError(409, "local_session_busy");
 	}
 	BroadcastControl control(directory(), account_, id_, api_);
 	BroadcastSyncResult result;
@@ -423,7 +429,7 @@ SyncState CaptureSync::stepImpl(bool active, std::function<void()> beforeSeal)
 			  journal_["liveEnabled"].toBool());
 	require(!state_.captureId.isEmpty(), "Capture unavailable");
 	auto capture = poll();
-	auto local = readJson(directory() + "/journal.json");
+	auto local = readJson(directory() + "/journal.json", active);
 	require(local["account"] == account_ && local["localId"] == id_, "Local session identity mismatch");
 	if (QStringList{"aborted", "expired", "failed"}.contains(state_.state))
 		return state_;

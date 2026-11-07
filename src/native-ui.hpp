@@ -86,6 +86,31 @@ public:
  }
 protected:
  bool eventFilter(QObject *object, QEvent *event) override {
+  if (object == main_ && event->type() == QEvent::Close) {
+   if (closePromptOpen_) {
+    event->ignore();
+    return true;
+   }
+   if (controller_.shouldWarnOnClose()) {
+    closePromptOpen_ = true;
+    // Windows session shutdown can destroy OBS's UI during the modal loop.
+    const QPointer<NativeUi> alive(this);
+    const QPointer<QMessageBox> prompt = new QMessageBox(QMessageBox::Warning, QString::fromUtf8("HHC 直播仍在收尾"),
+        QString::fromUtf8("HHC 正在完成收錄或等待平台確認。留在 OBS 可繼續收尾。"),
+        QMessageBox::Cancel | QMessageBox::Yes, main_);
+    prompt->button(QMessageBox::Cancel)->setText(QString::fromUtf8("留在 OBS"));
+    prompt->button(QMessageBox::Yes)->setText(QString::fromUtf8("仍要關閉"));
+    prompt->setDefaultButton(QMessageBox::Cancel);
+    prompt->setEscapeButton(QMessageBox::Cancel);
+    const auto answer = prompt->exec();
+    delete prompt.data();
+    if (alive) closePromptOpen_ = false;
+    if (!alive || answer != QMessageBox::Yes) {
+     event->ignore();
+     return true;
+    }
+   }
+  }
   if (object == dialog_ && controller_.settingsModified() &&
       (event->type() == QEvent::Close || (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape))) {
    const auto answer = QMessageBox::question(dialog_, QString::fromUtf8("尚未儲存的 HHC 變更"),
@@ -117,5 +142,6 @@ private:
  KeyController &controller_;
  QPointer<QDialog> dialog_;
  bool selectHhc_ = false;
+ bool closePromptOpen_ = false;
 };
 }

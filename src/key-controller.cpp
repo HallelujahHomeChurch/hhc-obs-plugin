@@ -264,6 +264,11 @@ void KeyController::setStreamActive(bool active)
 		action_->setStyleSheet(style);
 	}
 }
+bool KeyController::shouldWarnOnClose() const
+{
+	return !closing_ && !released_ && !id_.isEmpty() &&
+	       (stopping_ || (!starting_ && (!capture_ || capture_->finished())));
+}
 void KeyController::display()
 {
 	const bool running = capture_ && !capture_->finished();
@@ -775,11 +780,11 @@ void KeyController::recordFailure(const char *stage, const std::exception *error
 		const QString code = request ? safeDiagnosticCode(request->code)
 			: reason == "Remote journal commit failed" ? "local_remote_journal_write_failed"
 			: reason == "Queue document unavailable" ? "local_queue_unavailable"
-			: reason == "Queue document corrupt; data retained" ? "local_queue_corrupt"
+			: reason == "Queue document corrupt; data retained" || reason == "prior journal corrupt; refuse overwrite" ? "local_queue_corrupt"
 			: reason == "Remote journal limit" ? "local_remote_journal_limit"
 			: reason == "Closed upload bytes changed" ? "local_media_changed"
 			: reason == "Remote immutable object differs" ? "local_remote_media_conflict"
-			: reason == "journal commit failed" ? "local_journal_write_failed"
+			: reason == "journal commit failed" || reason == "journal initialization failed" ? "local_journal_write_failed"
 			: "local_validation_failed";
 		const auto correlation = safeDiagnosticRequestId(request ? request->requestId : QString{});
 		const auto localId = QUuid(id_).isNull() ? QString("unavailable") : id_;

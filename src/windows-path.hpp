@@ -27,10 +27,15 @@ inline bool moveQueueSegment(const QString &source, const QString &destination)
 	return MoveFileExW(reinterpret_cast<LPCWSTR>(from.utf16()), reinterpret_cast<LPCWSTR>(to.utf16()),
 			   MOVEFILE_WRITE_THROUGH);
 }
+inline bool metadataSharingBusy(DWORD error)
+{
+	return error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION;
+}
 // A mutable JSON reader must not deny the producer's atomic replacement on Windows.
 // Keep the opened snapshot readable; QFile owns the descriptor after successful adoption.
-inline bool openSharedJsonRead(QFile &file)
+inline bool openSharedJsonRead(QFile &file, DWORD *failure = nullptr)
 {
+	if (failure) *failure = ERROR_READ_FAULT;
 	if (file.isOpen())
 		return false;
 	const auto path = lockFilePath(file.fileName());
@@ -41,13 +46,15 @@ inline bool openSharedJsonRead(QFile &file)
 				     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
 				     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 		const auto error = GetLastError();
+		if (handle == INVALID_HANDLE_VALUE && failure) *failure = error;
 		if (handle != INVALID_HANDLE_VALUE ||
-		    (error != ERROR_FILE_NOT_FOUND && error != ERROR_SHARING_VIOLATION) || attempt == 4)
+		    (error != ERROR_FILE_NOT_FOUND && !metadataSharingBusy(error)) || attempt == 4)
 			break;
 		Sleep(10);
 	}
 	if (handle == INVALID_HANDLE_VALUE)
 		return false;
+	if (failure) *failure = ERROR_READ_FAULT;
 	const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
 	if (fd == -1) {
 		CloseHandle(handle);
@@ -60,16 +67,21 @@ inline bool openSharedJsonRead(QFile &file)
 }
 // Qt uses MoveFileEx for overwrite, which fails while a shared-delete reader is open.
 // Flush a same-directory temporary file and use ReplaceFile to preserve reader snapshots.
-inline bool writeAtomicMetadata(const QString &path, const QByteArray &bytes)
+enum class MetadataWrite { Replace, CreateOnly };
+inline bool writeAtomicMetadata(const QString &path, const QByteArray &bytes,
+				MetadataWrite mode = MetadataWrite::Replace, DWORD *failure = nullptr)
 {
+	if (failure) *failure = ERROR_WRITE_FAULT;
 	if (bytes.size() > 8 * 1024 * 1024)
 		return false;
 	const auto from = lockFilePath(path + "." + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".tmp");
 	const auto to = lockFilePath(path);
 	HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(from.utf16()), GENERIC_WRITE, 0, nullptr,
 				   CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (handle == INVALID_HANDLE_VALUE)
+	if (handle == INVALID_HANDLE_VALUE) {
+		if (failure) *failure = GetLastError();
 		return false;
+	}
 	DWORD written = 0;
 	const bool flushed = WriteFile(handle, bytes.constData(), static_cast<DWORD>(bytes.size()), &written, nullptr) &&
 		written == bytes.size() && FlushFileBuffers(handle);
@@ -78,15 +90,18 @@ inline bool writeAtomicMetadata(const QString &path, const QByteArray &bytes)
 		DeleteFileW(reinterpret_cast<LPCWSTR>(from.utf16()));
 		return false;
 	}
-	if (ReplaceFileW(reinterpret_cast<LPCWSTR>(to.utf16()), reinterpret_cast<LPCWSTR>(from.utf16()),
-			 nullptr, 0, nullptr, nullptr))
-		return true;
-	if (GetLastError() == ERROR_FILE_NOT_FOUND &&
+	if (mode == MetadataWrite::Replace) {
+		if (ReplaceFileW(reinterpret_cast<LPCWSTR>(to.utf16()), reinterpret_cast<LPCWSTR>(from.utf16()),
+				 nullptr, 0, nullptr, nullptr))
+			return true;
+	}
+	if ((mode == MetadataWrite::CreateOnly || GetLastError() == ERROR_FILE_NOT_FOUND) &&
 	    MoveFileExW(reinterpret_cast<LPCWSTR>(from.utf16()), reinterpret_cast<LPCWSTR>(to.utf16()),
 			MOVEFILE_WRITE_THROUGH))
 		return true;
+	if (failure) *failure = GetLastError();
 	// Keep flushed bytes if replacement failed after changing the destination's name.
-	if (QFileInfo::exists(path))
+	if (mode == MetadataWrite::CreateOnly || QFileInfo::exists(path))
 		DeleteFileW(reinterpret_cast<LPCWSTR>(from.utf16()));
 	return false;
 }

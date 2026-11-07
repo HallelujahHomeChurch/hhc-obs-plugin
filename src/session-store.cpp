@@ -139,6 +139,40 @@ QString SessionStore::mediaDirectory(const QString &account, const QString &id) 
 	identifiers(account, id);
 	return root_ + "/" + hash(account.toUtf8()) + "/" + id;
 }
+bool SessionStore::initialize(const QString &account, const QString &localId)
+{
+	const auto dir = mediaDirectory(account, localId);
+	require(!QFileInfo(root_).isSymLink() && !QFileInfo(QFileInfo(dir).absolutePath()).isSymLink() &&
+			!QFileInfo(dir).isSymLink(), "session ancestor is a link");
+	const auto path = dir + "/journal.json";
+	QFile current(path);
+	DWORD error;
+	require(!QFileInfo(path).isSymLink(), "session journal is a link");
+	if (openSharedJsonRead(current, &error)) {
+		require(current.size() <= 8 * 1024 * 1024, "prior journal unreadable");
+		QJsonParseError parseError;
+		const auto doc = QJsonDocument::fromJson(current.readAll(), &parseError);
+		require(parseError.error == QJsonParseError::NoError && doc.isObject(), "prior journal corrupt; refuse overwrite");
+		const auto existing = parse(doc.object());
+		require(existing.account == account && existing.localId == localId, "prior journal identity mismatch");
+		return true;
+	}
+	if (metadataSharingBusy(error))
+		return false;
+	require(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND, "prior journal unreadable");
+	require(!QFileInfo::exists(dir + "/local-session.json"), "capture journal missing; media retained");
+	require(QDir().mkpath(dir), "create session directory failed");
+	require(!QFileInfo(dir).isSymLink(), "session directory is a link");
+	CaptureJournal initial;
+	initial.account = account;
+	initial.localId = localId;
+	if (writeAtomicMetadata(path, QJsonDocument(json(initial)).toJson(QJsonDocument::Compact),
+				MetadataWrite::CreateOnly, &error))
+		return true;
+	if (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS || metadataSharingBusy(error))
+		return false;
+	throw std::runtime_error("journal initialization failed");
+}
 void SessionStore::save(const CaptureJournal &j)
 {
 	const auto dir = mediaDirectory(j.account, j.localId);
@@ -348,8 +382,9 @@ void SessionStore::confirmReady(const QString &account, const QString &id, const
 	require(writeAtomicMetadata(dir + "/journal.json", bytes),
 		"Ready evidence commit failed; media retained");
 }
-bool SessionStore::isPrepared(const QString &account, const QString &id) const
+bool SessionStore::isPrepared(const QString &account, const QString &id, bool *journalBusy) const
 {
+	if (journalBusy) *journalBusy = false;
 	try {
 		auto dir = mediaDirectory(account, id);
 		require(!QFileInfo(root_).isSymLink() && !QFileInfo(QFileInfo(dir).absolutePath()).isSymLink() &&
@@ -364,7 +399,13 @@ bool SessionStore::isPrepared(const QString &account, const QString &id) const
 					!QFileInfo(dir + "/" + name).isSymLink(),
 				"Prepared directory contains media or unknown files");
 		QFile f(dir + "/journal.json");
-		require(f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f), "Prepared journal unavailable");
+		require(!QFileInfo(f).isSymLink(), "Prepared journal is a link");
+		DWORD error;
+		if (!openSharedJsonRead(f, &error)) {
+			if (journalBusy) *journalBusy = metadataSharingBusy(error) || error == ERROR_FILE_NOT_FOUND;
+			return false;
+		}
+		require(f.size() <= 8 * 1024 * 1024, "Prepared journal unavailable");
 		QJsonParseError e;
 		auto doc = QJsonDocument::fromJson(f.readAll(), &e);
 		require(e.error == QJsonParseError::NoError && doc.isObject(), "Prepared journal corrupt");

@@ -65,12 +65,9 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 	auto api = ingest.api();
 	SessionStore store(root + "/queue");
 	const auto directory = store.mediaDirectory(out.actor, id);
-	const bool prepared = !QFileInfo::exists(directory + "/journal.json");
-	if (prepared) {
-		CaptureJournal j;
-		j.account = out.actor;
-		j.localId = id;
-		store.save(j);
+	if (!active && !store.initialize(out.actor, id)) {
+		diagnostic("[HHC journal] stage=initialize result=busy");
+		throw RequestError(409, "local_session_busy");
 	}
 	BroadcastControl control(directory, out.actor, id, api, true);
 	control.adoptIngest(result, ingest.metadata()["intent"].toObject());
@@ -94,7 +91,19 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 		out.serverEnd = control.serverEnd();
 		if (revoked || QFileInfo::exists(revokePath(root, id)))
 			out.sync = sync.abort();
-		else if (!(canStart && !out.serverEnd && store.isPrepared(out.actor, id))) {
+		else {
+			if (canStart && !out.serverEnd) {
+				bool journalBusy;
+				if (store.isPrepared(out.actor, id, &journalBusy)) {
+					out.bound = !QStringList{"aborted", "failed", "expired", "ready"}.contains(out.sync.state) &&
+						    !out.sync.stopAccepted;
+					return out;
+				}
+				if (journalBusy) {
+					diagnostic("[HHC journal] stage=prepare result=busy");
+					throw RequestError(409, "local_session_busy");
+				}
+			}
 			if (!active && !validated && !out.sync.sealAccepted) {
 				const auto recovery = store.scanPending(out.actor, cancelled, id);
 				if (!recovery.issues.empty())
@@ -109,9 +118,6 @@ KeyJob keyTransferStep(const QString &root, const QString &id, bool active, bool
 			markIngestRevoked(root, id);
 		throw;
 	}
-	out.bound = canStart && !out.serverEnd && store.isPrepared(out.actor, id) &&
-		    !QStringList{"aborted", "failed", "expired", "ready"}.contains(out.sync.state) &&
-		    !out.sync.stopAccepted;
 	return out;
 }
 } // namespace hhc
