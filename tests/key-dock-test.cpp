@@ -19,6 +19,43 @@
 #include <QtConcurrent/QtConcurrentRun>
 namespace hhc {
 struct KeyControllerTest {
+	static int releasedRestartConfirmation()
+	{
+		int failed = 0;
+		for (const QString mode : {"confirm", "cancel", "unreleased", "changed"}) {
+			QTemporaryDir root;
+			KeyController c(root.path()); c.timer_.stop();
+			c.id_ = "released-output";
+			c.stopping_ = true;
+			c.released_ = mode != "unreleased";
+			c.keyAvailable_ = false;
+			c.savedOptions_[0] = true;
+			int settingsCalls = 0, recorderCalls = 0;
+			c.openSettings = [&] { ++settingsCalls; };
+			c.recording = [&](bool) { ++recorderCalls; };
+			c.view_->show();
+			bool prompted = false;
+			QTimer answer;
+			answer.setSingleShot(true);
+			QObject::connect(&answer, &QTimer::timeout, [&] {
+				auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+				if (!box) return;
+				prompted = true;
+				if (mode == "changed") c.released_ = false;
+				box->button(mode == "cancel" ? QMessageBox::No : QMessageBox::Yes)->click();
+			});
+			answer.start(0);
+			c.startStop();
+			answer.stop();
+			// With no configured key, an accepted new start must reach source settings without touching the old output or recorder.
+			if (settingsCalls != (mode == "confirm" ? 1 : 0) || recorderCalls ||
+			    prompted != (mode != "unreleased") || c.id_ != "released-output" || c.starting_) {
+				++failed; std::cerr << "FAIL released restart confirmation " << qPrintable(mode) << '\n';
+			}
+			c.closing_ = true;
+		}
+		return failed;
+	}
 	static int automaticRecovery(QApplication &app)
 	{
 		QTemporaryDir root;
@@ -796,7 +833,7 @@ int main(int argc, char **argv)
 		hhc::KeyControllerTest::fatalRecovery(app);
 	if (app.arguments().contains("--stop-diagnostics")) return hhc::KeyControllerTest::stopDiagnostics();
 	if (app.arguments().contains("--recovery-safety")) return hhc::KeyControllerTest::recoverySafety(app);
-	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder() + hhc::KeyControllerTest::immediateStopFeedback();
+	if (app.arguments().contains("--stop-state-regression")) return hhc::KeyControllerTest::stoppedRestartProof() + hhc::KeyControllerTest::openingCancelRecorder() + hhc::KeyControllerTest::immediateStopFeedback() + hhc::KeyControllerTest::releasedRestartConfirmation();
 	if (app.arguments().contains("--controller-regression")) {
 		QTemporaryDir root;
 		hhc::KeyController c(root.path());
@@ -821,6 +858,7 @@ int main(int argc, char **argv)
 	failed += hhc::KeyControllerTest::stoppedRestartProof();
 	failed += hhc::KeyControllerTest::openingCancelRecorder();
 	failed += hhc::KeyControllerTest::immediateStopFeedback();
+	failed += hhc::KeyControllerTest::releasedRestartConfirmation();
 	failed += hhc::KeyControllerTest::controlRetry(app);
 	failed += hhc::KeyControllerTest::unprovenReleasedPointer();
 	const int gpu = hhc::sampleEncoderGpu();

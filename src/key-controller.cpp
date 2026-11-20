@@ -345,7 +345,7 @@ bool KeyController::applySettings()
 	for (size_t i = 0; i < outputOptions_.size(); ++i) savedOptions_[i] = outputOptions_[i]->isChecked();
 	if (!key_->isModified() || key_->text().isEmpty()) { key_->setModified(false); return true; }
 	try {
-		KeyIngest(root_ + "/intents", "settings").saveKey(key_->text().toUtf8());
+		KeyIngest(root_ + "/intents", "settings", credentials_, transport_).saveKey(key_->text().toUtf8());
 		key_->setModified(false); keyAvailable_ = true;
 		key_->setEchoMode(QLineEdit::Password);
 		showKey_->setText(QString::fromUtf8("顯示"));
@@ -361,7 +361,7 @@ void KeyController::beginSettings()
 {
 	discardSettings();
 	try {
-		KeyIngest ingest(root_ + "/intents", "settings");
+		KeyIngest ingest(root_ + "/intents", "settings", credentials_, transport_);
 		if (ingest.hasKey()) key_->setText(QString::fromLatin1(ingest.key()));
 		key_->setModified(false);
 	} catch (...) {
@@ -404,7 +404,7 @@ void KeyController::startStop()
 		    QString::fromUtf8(stopping ? "確定要停止 HHC 串流嗎？" : "確定要開始 HHC 串流嗎？"),
 		    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
 		// Control polling can finish this output while the modal confirmation is open.
-		if (stopping_ || stopping != (starting_ || (capture_ && !capture_->finished()))) return;
+		if ((stopping_ && !released_) || stopping != (starting_ || (capture_ && !capture_->finished()))) return;
 	}
 	if (capture_ && !capture_->finished()) {
 		++generation_;
