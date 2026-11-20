@@ -5,6 +5,11 @@
 
 namespace hhc {
 struct KeyControllerTest {
+ static void useMemoryCredentials(KeyController &controller, QMap<QString, QByteArray> &keys) {
+  controller.credentials_ = {[&keys](const QString &name) -> std::optional<QByteArray> {
+   return keys.contains(name) ? std::optional<QByteArray>(keys[name]) : std::nullopt;
+  }, [&keys](const QString &name, const QByteArray &value) { keys[name] = value; }};
+ }
  static void setFinalizing(KeyController &controller, bool released) {
   controller.timer_.stop();
   controller.id_ = "test-output";
@@ -41,7 +46,9 @@ int main(int argc, char **argv) {
  auto *layout = new QVBoxLayout(controls); layout->setObjectName("buttonsVLayout");
  auto *youtube = new QPushButton("YouTube"); layout->addWidget(youtube);
  auto *settings = new QAction(&main); settings->setObjectName("action_Settings");
+ QMap<QString, QByteArray> keys;
  hhc::KeyController controller(root.path());
+ hhc::KeyControllerTest::useMemoryCredentials(controller, keys);
  auto ui = std::make_unique<hhc::NativeUi>(&main, controller);
  int failed = !ui->install();
  auto check = [&](bool failure, int line) { if (failure) { ++failed; std::cerr << "FAIL line " << line << "\n"; } };
@@ -138,6 +145,10 @@ int main(int argc, char **argv) {
  QApplication::processEvents();
  check(ui || interruptedClose.isAccepted(), __LINE__);
  hhc::KeyControllerTest::setFinalizing(controller, true);
+ controller.keyField()->setText("hhc_stream_" + QString(43, 'A'));
+ controller.keyField()->setModified(true);
+ check(!controller.applySettings(), __LINE__);
+ check(keys.value("stream-key") != "hhc_stream_" + QByteArray(43, 'A'), __LINE__);
  if (failed) std::cerr << "Native UI integration failures: " << failed << '\n';
  return failed ? 1 : 0;
 }

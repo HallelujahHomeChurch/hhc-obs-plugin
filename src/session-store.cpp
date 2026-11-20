@@ -13,10 +13,10 @@
 #include <stdexcept>
 namespace hhc {
 namespace {
-void require(bool ok, const char *why)
+void require(bool ok, const char *why, std::source_location site = std::source_location::current())
 {
 	if (!ok)
-		throw std::runtime_error(why);
+		throw LocalStateError(why, site);
 }
 QString hash(const QByteArray &b)
 {
@@ -159,7 +159,8 @@ bool SessionStore::initialize(const QString &account, const QString &localId)
 	}
 	if (metadataSharingBusy(error))
 		return false;
-	require(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND, "prior journal unreadable");
+	if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+		throw LocalIoError(error);
 	require(!QFileInfo::exists(dir + "/local-session.json"), "capture journal missing; media retained");
 	require(QDir().mkpath(dir), "create session directory failed");
 	require(!QFileInfo(dir).isSymLink(), "session directory is a link");
@@ -171,7 +172,7 @@ bool SessionStore::initialize(const QString &account, const QString &localId)
 		return true;
 	if (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS || metadataSharingBusy(error))
 		return false;
-	throw std::runtime_error("journal initialization failed");
+	throw LocalIoError(error);
 }
 void SessionStore::save(const CaptureJournal &j)
 {
@@ -184,7 +185,7 @@ void SessionStore::save(const CaptureJournal &j)
 	validateObjects(dir, j);
 	QFile previous(dir + "/journal.json");
 	if (previous.exists()) {
-		require(previous.size() <= 8 * 1024 * 1024 && openSharedJsonRead(previous),
+		require(previous.size() <= 8 * 1024 * 1024 && openRequiredJsonRead(previous),
 			"prior journal unreadable");
 		QJsonParseError error;
 		auto doc = QJsonDocument::fromJson(previous.readAll(), &error);
@@ -202,7 +203,7 @@ void SessionStore::save(const CaptureJournal &j)
 	}
 	// Serialize an allowlist of typed local fields, never arbitrary server JSON.
 	const auto data = QJsonDocument(json(j)).toJson(QJsonDocument::Compact);
-	require(writeAtomicMetadata(dir + "/journal.json", data), "atomic journal commit failed");
+	writeRequiredMetadata(dir + "/journal.json", data);
 }
 QVector<CaptureJournal> SessionStore::loadPending(const QString &account) const
 {
@@ -230,7 +231,7 @@ RecoveryReport SessionStore::scanPending(const QString &account, const std::atom
 			QFile f(dir + "/journal.json");
 			if (!f.exists())
 				continue;
-			require(f.size() <= 8 * 1024 * 1024 && openSharedJsonRead(f),
+			require(f.size() <= 8 * 1024 * 1024 && openRequiredJsonRead(f),
 				"journal unreadable or too large");
 			QJsonParseError error;
 			const auto doc = QJsonDocument::fromJson(f.readAll(), &error);
@@ -247,7 +248,7 @@ RecoveryReport SessionStore::scanPending(const QString &account, const std::atom
 					if (!receipt.exists())
 						continue;
 					require(!QFileInfo(receipt).isSymLink() && receipt.size() <= 8 * 1024 * 1024 &&
-							openSharedJsonRead(receipt),
+							openRequiredJsonRead(receipt),
 						"close receipt unreadable");
 					QJsonParseError receiptError;
 					const auto closed = QJsonDocument::fromJson(receipt.readAll(), &receiptError);
@@ -281,7 +282,8 @@ RecoveryReport SessionStore::scanPending(const QString &account, const std::atom
 			else
 				require(mayCleanup(j, QDateTime::currentDateTimeUtc()), "Cleanup ready evidence invalid");
 			result.sessions.append(j);
-		} catch (const std::exception &) {
+		} catch (const std::exception &error) {
+			if (dynamic_cast<const LocalIoError *>(&error)) throw;
 			checkCancellation(cancelled);
 			// Never include raw JSON, credentials or server responses in recovery UI.
 			const bool safeId = QRegularExpression("\\A[a-zA-Z0-9_-]{1,80}\\z").match(id).hasMatch();
@@ -300,7 +302,7 @@ void SessionStore::checkpointLocal(const QString &account, const QString &localI
 			!QFileInfo(dir).isSymLink(),
 		"session ancestor is a link");
 	QFile file(dir + "/journal.json");
-	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && openSharedJsonRead(file),
+	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && openRequiredJsonRead(file),
 		"checkpoint requires existing journal");
 	QJsonParseError error;
 	const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
@@ -351,7 +353,7 @@ void SessionStore::confirmReady(const QString &account, const QString &id, const
 			!QFileInfo(dir).isSymLink(),
 		"Ready session ancestor is a link");
 	QFile file(dir + "/journal.json");
-	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && openSharedJsonRead(file),
+	require(!QFileInfo(file).isSymLink() && file.size() <= 8 * 1024 * 1024 && openRequiredJsonRead(file),
 		"Ready journal unavailable; media retained");
 	QJsonParseError error;
 	const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
@@ -443,7 +445,7 @@ bool SessionStore::cleanupReady(const QString &account, const QString &id) const
 		};
 		safePath(dir + "/journal.json");
 		QFile file(dir + "/journal.json");
-		require(file.size() <= 8 * 1024 * 1024 && openSharedJsonRead(file), "Cleanup journal unavailable");
+		require(file.size() <= 8 * 1024 * 1024 && openRequiredJsonRead(file), "Cleanup journal unavailable");
 		QJsonParseError error;
 		const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
 		file.close();

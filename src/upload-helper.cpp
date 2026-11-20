@@ -113,8 +113,16 @@ int main(int argc, char **argv)
 					QThread::msleep(static_cast<unsigned long>(
 						std::max<qint64>(0, std::min<qint64>(remaining, 1000))));
 				}
+			} catch (const std::exception &e) {
+				const auto failure = hhc::classifyLocalFailure(&e);
+				qInfo().noquote() << "[HHC helper] result=local_failure code=" + failure.code
+					<< "check=" + failure.check << "systemError=" + QString::number(failure.systemError)
+					<< "retryable=" + QString::number(failure.retryable);
+				if (!failure.retryable) return finish(6);
+				QThread::msleep(static_cast<unsigned long>(hhc::localRetryDelayMs(failures)));
 			} catch (...) {
-				return finish(6);
+				qInfo() << "[HHC helper] code=internal_unclassified_exception retryable=1";
+				QThread::msleep(static_cast<unsigned long>(hhc::localRetryDelayMs(failures)));
 			}
 		}
 		return 7;
@@ -220,10 +228,10 @@ int main(int argc, char **argv)
 		}
 		return 5;
 	} catch (const hhc::RequestError &e) {
-		std::cerr << e.what() << '\n';
+		std::cerr << qPrintable(hhc::safeDiagnosticCode(e.code)) << '\n';
 		return 6;
 	} catch (const std::exception &e) {
-		std::cerr << e.what() << "; account-bound media retained\n";
+		std::cerr << qPrintable(hhc::classifyLocalFailure(&e).code) << "; account-bound media retained\n";
 		return 7;
 	} catch (...) {
 		std::cerr << "Background synchronization failed; account-bound media retained\n";
