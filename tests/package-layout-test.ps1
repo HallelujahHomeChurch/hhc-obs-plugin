@@ -8,6 +8,16 @@ foreach ($layout in @('legacy','modern')) {
     $package=Join-Path $taskRoot "$PackageRoot/$base$suffix"
     $manifest=Get-Content -LiteralPath "$package/manifest.json" -Raw | ConvertFrom-Json
     if($manifest.sourceCommit -ne $revision -or $manifest.layout -ne $layout){throw 'Incorrect package manifest'}
+    $zip = [IO.Compression.ZipFile]::OpenRead("$package.zip")
+    try {
+        foreach ($entryPoint in @('Install-HHC.cmd','install-windows.ps1')) {
+            $expected = $layout -eq 'legacy'
+            if (($null -ne $zip.GetEntry($entryPoint)) -ne $expected -or
+                ($entryPoint -in $manifest.files.path) -ne $expected) {
+                throw "Unexpected installer contents in $layout ZIP"
+            }
+        }
+    } finally { $zip.Dispose() }
     foreach($entry in $manifest.files){
         if((Get-FileHash -LiteralPath (Join-Path $package $entry.path) -Algorithm SHA256).Hash.ToLower() -ne $entry.sha256){throw "Hash mismatch: $($entry.path)"}
     }
