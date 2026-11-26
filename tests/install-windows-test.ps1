@@ -79,6 +79,50 @@ public class FakeObs {
         if ($LASTEXITCODE -ne 0) { throw 'Double-click launcher failed with inherited module paths' }
     } finally { $env:PSModulePath = $previousModulePath }
     Write-Output 'PASS: launcher accepts an OBS path with spaces and uses Windows PowerShell system modules'
+
+    $releaseZip = Join-Path $root 'release.zip'
+    Compress-Archive -Path (Join-Path $package '*') -DestinationPath $releaseZip
+    $releaseTag = 'v0.2.1'
+    $archiveName = 'hhc-obs-plugin-windows-x64.zip'
+    $assetUri = "https://github.com/HallelujahHomeChurch/hhc-obs-plugin/releases/download/$releaseTag/$archiveName"
+    $releaseHash = (Get-FileHash -LiteralPath $releaseZip).Hash
+    $downloadHash = '0' * 64
+    function Invoke-RestMethod($Uri, [switch]$UseBasicParsing) {
+        if ($Uri -ne "https://api.github.com/repos/HallelujahHomeChurch/hhc-obs-plugin/releases/tags/$releaseTag") {
+            throw "Unexpected release URL: $Uri"
+        }
+        [pscustomobject]@{
+            tag_name = $releaseTag
+            draft = $false
+            assets = @([pscustomobject]@{
+                name = $archiveName
+                browser_download_url = $assetUri
+                state = 'uploaded'
+                digest = "sha256:$downloadHash"
+            })
+        }
+    }
+    function Invoke-WebRequest($Uri, [switch]$UseBasicParsing, $OutFile) {
+        if ($Uri -ne $assetUri) { throw "Unexpected archive URL: $Uri" }
+        Copy-Item -LiteralPath $releaseZip -Destination $OutFile
+    }
+    Set-Content -LiteralPath $installedDll -Value 'previous online DLL'
+    $onlineOldHash = (Get-FileHash -LiteralPath $installedDll).Hash
+    $refused = $false
+    try { & $script -ReleaseTag $releaseTag -ObsRoot $obs | Out-Null } catch {
+        $refused = $_.Exception.Message -match 'ZIP SHA-256'
+        if (-not $refused) { throw }
+    }
+    if (-not $refused -or (Get-FileHash -LiteralPath $installedDll).Hash -ne $onlineOldHash) {
+        throw 'Online install changed a binary before validating the ZIP hash'
+    }
+    $downloadHash = $releaseHash
+    $online = & $script -ReleaseTag $releaseTag -ObsRoot $obs
+    if ((Get-FileHash -LiteralPath $installedDll).Hash -ne $entries[0].sha256 -or
+        (Get-FileHash -LiteralPath (Join-Path $online.Backup $paths[0])).Hash -ne $onlineOldHash) {
+        throw 'Online install must reuse the existing installer and back up the old binary'
+    }
+    Write-Output 'PASS: online install verified the release ZIP before installing and backed up existing files'
 } finally {
     $resolved = (Resolve-Path -LiteralPath $root).ProviderPath
     $tmp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

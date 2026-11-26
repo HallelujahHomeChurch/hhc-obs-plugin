@@ -1,5 +1,5 @@
 [CmdletBinding(SupportsShouldProcess)]
-param([string]$ObsRoot)
+param([string]$ObsRoot, [string]$ReleaseTag)
 
 $ErrorActionPreference = 'Stop'
 $paths = @(
@@ -30,6 +30,57 @@ function Assert-ObsClosed {
 
 if (-not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
     throw 'Run this installer with 64-bit Windows PowerShell on Windows x64.'
+}
+
+if ($ReleaseTag) {
+    if ($ReleaseTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$') {
+        throw 'Specify a version tag such as v0.2.1.'
+    }
+    if (-not $ObsRoot) { $ObsRoot = Join-Path $env:ProgramFiles 'obs-studio' }
+    if (-not $PSCmdlet.ShouldProcess($ObsRoot, "Download and install HHC $ReleaseTag")) { return }
+
+    $repository = 'HallelujahHomeChurch/hhc-obs-plugin'
+    $release = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$repository/releases/tags/$ReleaseTag"
+    $assets = @($release.assets | Where-Object {
+        $_.state -eq 'uploaded' -and $_.name -cmatch '^hhc-obs-plugin-windows-x64(?:-platform-preview-[a-f0-9]{7})?\.zip$'
+    })
+    if ($release.draft -or $release.tag_name -cne $ReleaseTag -or $assets.Count -ne 1) {
+        throw "Expected one standard Windows ZIP in HHC release $ReleaseTag."
+    }
+    $asset = $assets[0]
+    $downloadUri = "https://github.com/$repository/releases/download/$ReleaseTag/$($asset.name)"
+    if ($asset.browser_download_url -cne $downloadUri -or $asset.digest -notmatch '^sha256:([a-f0-9]{64})$') {
+        throw 'Release ZIP SHA-256 or download URL is missing or invalid.'
+    }
+    $expectedHash = $Matches[1]
+    $temp = (Resolve-Path -LiteralPath ([IO.Path]::GetTempPath())).ProviderPath
+    Assert-OrdinaryPath $temp
+    $stage = Join-Path $temp ("hhc-online-install-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $stage | Out-Null
+    try {
+        $archive = Join-Path $stage 'package.zip'
+        Write-Host "Downloading HHC $ReleaseTag ..."
+        Invoke-WebRequest -UseBasicParsing -Uri $downloadUri -OutFile $archive
+        if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw 'Downloaded ZIP SHA-256 does not match the GitHub release.'
+        }
+        $package = Join-Path $stage 'package'
+        Expand-Archive -LiteralPath $archive -DestinationPath $package
+        $installer = Join-Path $package 'install-windows.ps1'
+        Assert-OrdinaryPath $installer
+        # Early preview ZIPs have the same manifest but predate the bundled installer.
+        if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            Copy-Item -LiteralPath $PSCommandPath -Destination $installer
+        }
+        & $installer -ObsRoot $ObsRoot
+    } finally {
+        $resolvedStage = (Resolve-Path -LiteralPath $stage).ProviderPath
+        if ($resolvedStage -eq $stage -and $resolvedStage.StartsWith($temp.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            Assert-OrdinaryPath $resolvedStage
+            Remove-Item -LiteralPath $resolvedStage -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return
 }
 $manifestPath = Join-Path $PSScriptRoot 'manifest.json'
 Assert-OrdinaryPath $manifestPath
