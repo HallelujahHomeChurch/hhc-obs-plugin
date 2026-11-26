@@ -69,6 +69,16 @@ public class FakeObs {
     if ((Get-FileHash -LiteralPath (Join-Path $result.Backup $paths[0])).Hash -ne $oldHash) { throw 'Previous plugin backup differs' }
     if ((Get-FileHash -LiteralPath $profile).Hash -ne $profileHash) { throw 'Profile changed' }
     Write-Output 'PASS: running OBS and tampered packages refused, partial install rolled back, install hashes and backup verified, profile untouched'
+
+    $launcher = Join-Path $package 'Install-HHC.cmd'
+    Copy-Item -LiteralPath (Join-Path (Split-Path $Installer) 'Install-HHC.cmd') -Destination $launcher
+    $previousModulePath = $env:PSModulePath
+    try {
+        $env:PSModulePath = Join-Path $root 'incompatible parent shell modules'
+        @($obs, '') | & $launcher | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Double-click launcher failed with inherited module paths' }
+    } finally { $env:PSModulePath = $previousModulePath }
+    Write-Output 'PASS: launcher accepts an OBS path with spaces and uses Windows PowerShell system modules'
 } finally {
     $resolved = (Resolve-Path -LiteralPath $root).ProviderPath
     $tmp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

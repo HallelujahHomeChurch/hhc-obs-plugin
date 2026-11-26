@@ -1,5 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
+set "PSModulePath=%SystemRoot%\System32\WindowsPowerShell\v1.0\Modules"
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy RemoteSigned -File "%~dp0install-windows.ps1"
 set "result=%errorlevel%"
 echo.
