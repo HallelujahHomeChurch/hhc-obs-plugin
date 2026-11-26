@@ -24,6 +24,7 @@ jobs:
       - run: ctest --test-dir build -C RelWithDebInfo --output-on-failure
       - run: python tests/media-grid-test.py
       - run: powershell.exe -NoProfile -File tests/watcher-path-test.ps1
+      - run: powershell.exe -NoProfile -File tests/install-windows-test.ps1
       - name: Package platform preview (E2E evidence separate)
         shell: pwsh
         run: |

@@ -28,6 +28,9 @@ try {
     Copy-Item -LiteralPath $tls -Destination "$dataDir/qt-plugins/tls/qschannelbackend.dll"
     Copy-Item -LiteralPath $dll -Destination "$moduleDir/hhc-obs-plugin.dll"
     Copy-Item -LiteralPath docs/windows-local-preview.md -Destination "$staging/README.md"
+    if ($Layout -eq 'legacy') {
+        Copy-Item -LiteralPath scripts/Install-HHC.cmd,scripts/install-windows.ps1 -Destination $staging
+    }
     Copy-Item -LiteralPath LICENSE -Destination "$staging/LICENSE"
     New-Item -ItemType Directory "$staging/licenses" -Force | Out-Null
     Copy-Item -LiteralPath .deps/qt/licenses/qt6 -Destination "$staging/licenses/qt6" -Recurse
